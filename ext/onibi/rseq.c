@@ -1,6 +1,7 @@
 #include "onibi_ast_internal.h"
 #include "onibi_compiler_internal.h"
 #include "onibi_gir_internal.h"
+#include "onibi_matchdata_internal.h"
 #include "onibi_rseq_internal.h"
 #include "onibi_ruby_api_internal.h"
 
@@ -1647,6 +1648,55 @@ onibi_ruby_character_position(VALUE str, OnibiBytePos byte_position)
     return rb_str_sublen(str, byte_position);
 }
 
+typedef struct {
+    VALUE self;
+    VALUE str;
+    VALUE position;
+    VALUE source_regexp;
+    OnibiRubyPosition origin;
+    OnibiRawMatch raw_match;
+    OnibiBytePos *ranges;
+} OnibiMatchCall;
+
+static VALUE
+onibi_match_body(VALUE opaque)
+{
+    OnibiMatchCall *call = (OnibiMatchCall *)(uintptr_t)opaque;
+    OnibiExecStatus search_status = onibi_vm_search(
+	call->self, call->str, call->origin.byte, &call->raw_match);
+    if (search_status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
+	rb_raise(eRegexpError, "Onibi execution failed");
+    if (search_status == ONIBI_EXEC_STATUS_NO_MATCH) {
+	rb_backref_set(Qnil);
+	return Qnil;
+    }
+    if (search_status == ONIBI_EXEC_STATUS_FALLBACK) {
+	VALUE match =
+	    NIL_P(call->position)
+		? rb_funcall(call->source_regexp, id_match, 1, call->str)
+		: rb_funcall(call->source_regexp, id_match, 2, call->str,
+			     LONG2NUM(call->origin.character));
+	if (NIL_P(match)) return Qnil;
+	return rb_block_given_p() ? rb_yield(match) : match;
+    }
+    if (search_status != ONIBI_EXEC_STATUS_MATCH)
+	rb_raise(eRegexpError, "Onibi execution returned an invalid status");
+    /* The VM selects the match and owns its priority.  Copy the exact raw
+     * ranges into the private Onibi::MatchData payload without rerunning MRI.
+     */
+    VALUE match = onibi_matchdata_new(call->self, call->str, &call->raw_match);
+    return rb_block_given_p() ? rb_yield(match) : match;
+}
+
+static VALUE
+onibi_match_ensure(VALUE opaque)
+{
+    OnibiMatchCall *call = (OnibiMatchCall *)(uintptr_t)opaque;
+    ruby_xfree(call->ranges);
+    call->ranges = NULL;
+    return Qnil;
+}
+
 static VALUE
 onibi_match(int argc, VALUE *argv, VALUE self)
 {
@@ -1673,24 +1723,33 @@ onibi_match(int argc, VALUE *argv, VALUE self)
 	    return Qnil;
 	}
     }
-    OnibiRawMatch raw_match = {.begin_byte = -1, .end_byte = -1};
-    OnibiExecStatus search_status =
-	onibi_vm_search(self, str, origin.byte, &raw_match);
-    if (search_status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
-	rb_raise(eRegexpError, "Onibi execution failed");
-    if (search_status == ONIBI_EXEC_STATUS_NO_MATCH) {
-	rb_backref_set(Qnil);
-	return Qnil;
-    }
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    /* VM execution selects the match.  MRI materializes MatchData and
-     * capture offsets from the same source regexp for API compatibility. */
-    VALUE match = NIL_P(pos) ? rb_funcall(obj->regexp, id_match, 1, str)
-			     : rb_funcall(obj->regexp, id_match, 2, str,
-					  LONG2NUM(origin.character));
-    if (NIL_P(match)) return Qnil;
-    return rb_block_given_p() ? rb_yield(match) : match;
+    uint32_t capture_count = !NIL_P(obj->rseq) && obj->rseq_view_valid &&
+				     obj->rseq_view.header != NULL
+				 ? obj->rseq_view.header->capture_count
+				 : 0;
+    if (capture_count == UINT32_MAX)
+	rb_raise(rb_eRangeError, "Onibi capture count is out of range");
+    uint32_t num_regs = capture_count + 1U;
+    if ((size_t)num_regs > SIZE_MAX / sizeof(OnibiBytePos) / 2U)
+	rb_raise(rb_eRangeError, "Onibi capture ranges are too large");
+    OnibiMatchCall call = {.self = self,
+			   .str = str,
+			   .position = pos,
+			   .source_regexp = obj->regexp,
+			   .origin = origin,
+			   .ranges = NULL};
+    call.ranges = ruby_xmalloc((size_t)num_regs * sizeof(OnibiBytePos) * 2U);
+    OnibiBytePos *beg = call.ranges;
+    OnibiBytePos *end = beg + num_regs;
+    call.raw_match = (OnibiRawMatch){.begin_byte = -1,
+				     .end_byte = -1,
+				     .num_regs = num_regs,
+				     .beg = beg,
+				     .end = end};
+    return rb_ensure(onibi_match_body, (VALUE)(uintptr_t)&call,
+		     onibi_match_ensure, (VALUE)(uintptr_t)&call);
 }
 
 static VALUE
