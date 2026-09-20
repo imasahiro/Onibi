@@ -276,3 +276,7 @@ Default Xcode wrapper remains blocked by its local license state; the Command Li
 Evidence is in docs/task-42b6b-evidence.md. Public match routing remains separate.
 
 Next: TASK-42C1, Luna/Max, supported native Regexp#match routing only. Keep backreference behavior and Ractor integration separate.
+
+TASK-42C1 review 1: REJECT input-sized stack allocation.
+Worker `01a0be3f-f3f2-7f31-9683-360b94f9b936` routed supported native matches correctly, but `rseq.c:onibi_match` uses `ALLOCA_N` for capture registers sized by the pattern.
+Require ensured heap storage with cleanup around native search and MatchData construction. Preserve the native/fallback split, unchanged match? path, and valid tests.
