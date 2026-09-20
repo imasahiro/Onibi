@@ -199,3 +199,8 @@ Build, RuboCop, C formatting, diff check, and build cleanup passed. Only the two
 Exact commands are in docs/task-42b3-evidence.md; logs remain in `/Users/masa/.codex/worktrees/6391/Onibi/.task-42b3-logs/`.
 Getters use copied registers and frozen subject bytes without MRI execution. Public routing remains unchanged.
 Next: TASK-42B4, Luna/High, named capture lookup and metadata return isolation only.
+
+TASK-42B4 review 1: REJECT unknown-name error escaping; retain duplicate-name lookup and metadata isolation.
+Worker: `01a0bd29-c433-73f1-8d4c-ed038ff0c464`, Luna/High, worktree `/Users/masa/.codex/worktrees/5b14/Onibi`.
+Root MRI 4.0.6 probe found that quote and backslash names gain extra escapes under `rb_str_inspect` slicing.
+Correction scope: MRI-compatible unknown-name formatting and differential edge cases; rerun original exact checks.
