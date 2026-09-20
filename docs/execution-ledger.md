@@ -247,3 +247,13 @@ Keep match/values_at, copy/value/deconstruction, inspect, public routing, and TA
 
 TASK-42B5B review boundary: value and copy work must split before dispatch.
 Next TASK-42B6A covers inspect, equality, eql?, and hash only. TASK-42B6B will cover dup/clone and deconstruction after A is accepted.
+
+TASK-42B6A ACCEPT at worker commit `00b9b573`: inspect, equality, eql?, and hash.
+Root verified callback identity, native value sources, hash/equality consistency, and reran the checks.
+Focused tests passed: 3 runs, 14 assertions. Required regression group passed: 50 runs, 665 assertions.
+Build, RuboCop, C formatting, diff check, and cleanup passed with the two known warnings.
+Exact root results are in `/Users/masa/.codex/worktrees/27f7/Onibi/.task-42b6a-logs/checks.txt`; evidence is in docs/task-42b6a-evidence.md.
+The initial pre-build distclean had no Makefile; the post-build cleanup passed. No functional failures occurred.
+
+Next: TASK-42B6B, Luna/High, dup/clone and deconstruction/deconstruct_keys only.
+Keep match, values_at, public routing, and MRI integration separate.
