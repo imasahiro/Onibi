@@ -234,3 +234,13 @@ TASK-42B and TASK-55 remain incomplete. No worker is active and no publication i
 Continuation check: five-hour usage reached 90% on 2026-09-20. The user's dispatch-stop rule now applies.
 No new worker was opened. Accepted source and the working tree remain clean.
 Resume after the reported reset at 18:05 JST with TASK-42B5B as specified above.
+
+TASK-42B5B ACCEPT at worker commit `cc5f3896`: lazy character begin/end/offset/match_length.
+Root verified callback identity, source/workspace, per-payload cache allocation, publication-after-success, encoding-aware conversion, and cleanup.
+Focused MRI checks passed: 7 runs, 83 assertions. Required capture and contract group passed: 40 runs, 568 assertions.
+Build, RuboCop, diff check, and cleanup passed with only the two known compiler warnings.
+Exact commands are in docs/task-42b5b-evidence.md; retain worker logs in `/Users/masa/.codex/worktrees/ef8b/Onibi/.task-42b5b-logs/`.
+No public match routing or fallback behavior changed.
+
+Next: TASK-42B6, Luna/High, remaining MatchData values and selector APIs, split by invariant if needed.
+Keep match/values_at, copy/value/deconstruction, inspect, public routing, and TASK-55 integration separate.
