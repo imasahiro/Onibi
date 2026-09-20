@@ -145,6 +145,16 @@ Init_onibi(void)
     rb_define_alloc_func(cMatchData, onibi_matchdata_alloc);
     rb_define_private_method(cMatchData, "__onibi_match_data_diagnostics__",
 			     onibi_matchdata_summary, 0);
+    rb_define_method(cMatchData, "[]", onibi_matchdata_aref, -1);
+    rb_define_method(cMatchData, "captures", onibi_matchdata_captures, 0);
+    rb_define_method(cMatchData, "to_a", onibi_matchdata_to_a, 0);
+    rb_define_method(cMatchData, "size", onibi_matchdata_size, 0);
+    rb_define_method(cMatchData, "length", onibi_matchdata_size, 0);
+    rb_define_method(cMatchData, "to_s", onibi_matchdata_to_s, 0);
+    rb_define_method(cMatchData, "string", onibi_matchdata_string, 0);
+    rb_define_method(cMatchData, "pre_match", onibi_matchdata_pre_match, 0);
+    rb_define_method(cMatchData, "post_match", onibi_matchdata_post_match, 0);
+    rb_define_method(cMatchData, "regexp", onibi_matchdata_regexp, 0);
     rb_define_private_method(rb_singleton_class(cMatchData), "__onibi_new__",
 			     onibi_matchdata_factory, -1);
     rb_define_singleton_method(cRegexp, "timeout=", onibi_timeout_set, 1);

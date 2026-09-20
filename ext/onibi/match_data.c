@@ -314,3 +314,131 @@ onibi_matchdata_summary(VALUE self)
     rb_hash_aset(result, ID2SYM(rb_intern("lazy_character_cache")), Qtrue);
     return result;
 }
+
+static OnibiMatchData *
+onibi_matchdata_get(VALUE self)
+{
+    OnibiMatchData *data;
+    TypedData_Get_Struct(self, OnibiMatchData, &onibi_matchdata_type, data);
+    return data;
+}
+
+static VALUE
+onibi_matchdata_capture(VALUE self, long index)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    if (index < 0 || (uint64_t)index >= data->num_regs) return Qnil;
+    OnibiBytePos begin = data->beg[index];
+    OnibiBytePos end = data->end[index];
+    if (begin < 0 || end < 0) return Qnil;
+    return rb_str_subseq(data->subject_snapshot, begin, end - begin);
+}
+
+static VALUE
+onibi_matchdata_capture_array(VALUE self, long start, long length)
+{
+    VALUE result = rb_ary_new_capa(length);
+    for (long i = 0; i < length; i++)
+	rb_ary_push(result, onibi_matchdata_capture(self, start + i));
+    return result;
+}
+
+static VALUE
+onibi_matchdata_numeric_capture(VALUE self, VALUE index, long count)
+{
+    if (RB_TYPE_P(index, T_STRING) || RB_TYPE_P(index, T_SYMBOL))
+	rb_raise(rb_eIndexError, "undefined group name reference");
+    long selected = rb_num2int(index);
+    if (selected < 0) {
+	selected += count;
+	if (selected <= 0) return Qnil;
+    }
+    return onibi_matchdata_capture(self, selected);
+}
+
+static VALUE
+onibi_matchdata_aref(int argc, VALUE *argv, VALUE self)
+{
+    rb_check_arity(argc, 1, 2);
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    long count = (long)data->num_regs;
+    VALUE index = argv[0];
+
+    if (argc == 2 && NIL_P(argv[1])) return onibi_matchdata_aref(1, argv, self);
+
+    if (argc == 2) {
+	long start = rb_num2long(index);
+	long length = rb_num2long(argv[1]);
+	if (length < 0) return Qnil;
+	if (start < 0) start += count;
+	if (start < 0 || start > count) return Qnil;
+	if (start == count) return rb_ary_new();
+	if (length > count - start) length = count - start;
+	return onibi_matchdata_capture_array(self, start, length);
+    }
+
+    if (rb_obj_is_kind_of(index, rb_cRange)) {
+	long start, length;
+	VALUE status = rb_range_beg_len(index, &start, &length, count, 0);
+	if (status == Qnil) return Qnil;
+	if (status == Qfalse)
+	    rb_raise(rb_eTypeError, "invalid MatchData index");
+	return onibi_matchdata_capture_array(self, start, length);
+    }
+    return onibi_matchdata_numeric_capture(self, index, count);
+}
+
+static VALUE
+onibi_matchdata_captures(VALUE self)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    if (data->num_regs <= 1) return rb_ary_new();
+    return onibi_matchdata_capture_array(self, 1, (long)data->num_regs - 1);
+}
+
+static VALUE
+onibi_matchdata_to_a(VALUE self)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    return onibi_matchdata_capture_array(self, 0, (long)data->num_regs);
+}
+
+static VALUE
+onibi_matchdata_size(VALUE self)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    return UINT2NUM(data->num_regs);
+}
+
+static VALUE
+onibi_matchdata_to_s(VALUE self)
+{
+    return onibi_matchdata_capture(self, 0);
+}
+
+static VALUE
+onibi_matchdata_string(VALUE self)
+{
+    return onibi_matchdata_get(self)->subject_snapshot;
+}
+
+static VALUE
+onibi_matchdata_pre_match(VALUE self)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    return rb_str_subseq(data->subject_snapshot, 0, data->beg[0]);
+}
+
+static VALUE
+onibi_matchdata_post_match(VALUE self)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    long length = RSTRING_LEN(data->subject_snapshot) - data->end[0];
+    return rb_str_subseq(data->subject_snapshot, data->end[0], length);
+}
+
+static VALUE
+onibi_matchdata_regexp(VALUE self)
+{
+    return onibi_matchdata_get(self)->regexp;
+}

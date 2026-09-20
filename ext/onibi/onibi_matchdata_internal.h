@@ -18,6 +18,15 @@ typedef struct {
 static VALUE onibi_matchdata_new(VALUE regexp, VALUE subject,
 				 const OnibiRawMatch *raw_match);
 static VALUE onibi_matchdata_summary(VALUE self);
+static VALUE onibi_matchdata_aref(int argc, VALUE *argv, VALUE self);
+static VALUE onibi_matchdata_captures(VALUE self);
+static VALUE onibi_matchdata_to_a(VALUE self);
+static VALUE onibi_matchdata_size(VALUE self);
+static VALUE onibi_matchdata_to_s(VALUE self);
+static VALUE onibi_matchdata_string(VALUE self);
+static VALUE onibi_matchdata_pre_match(VALUE self);
+static VALUE onibi_matchdata_post_match(VALUE self);
+static VALUE onibi_matchdata_regexp(VALUE self);
 static VALUE onibi_matchdata_payload_diagnostics(int argc, VALUE *argv,
 						 VALUE self);
 static VALUE onibi_matchdata_payload_new(int argc, VALUE *argv, VALUE self);
