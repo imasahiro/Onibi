@@ -170,6 +170,13 @@ Init_onibi(void)
     rb_define_method(cMatchData, "==", onibi_matchdata_equal, 1);
     rb_define_method(cMatchData, "eql?", onibi_matchdata_eql, 1);
     rb_define_method(cMatchData, "hash", onibi_matchdata_hash, 0);
+    rb_define_method(cMatchData, "dup", onibi_matchdata_dup, 0);
+    rb_define_method(cMatchData, "clone", onibi_matchdata_clone, 0);
+    rb_define_private_method(cMatchData, "initialize_copy",
+			     onibi_matchdata_initialize_copy, 1);
+    rb_define_method(cMatchData, "deconstruct", onibi_matchdata_deconstruct, 0);
+    rb_define_method(cMatchData, "deconstruct_keys",
+		     onibi_matchdata_deconstruct_keys, 1);
     rb_define_private_method(rb_singleton_class(cMatchData), "__onibi_new__",
 			     onibi_matchdata_factory, -1);
     rb_define_singleton_method(cRegexp, "timeout=", onibi_timeout_set, 1);

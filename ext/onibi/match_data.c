@@ -4,6 +4,7 @@
 #include <string.h>
 
 static _Thread_local int onibi_matchdata_failure_stage_value;
+static _Thread_local int onibi_matchdata_copy_allocation;
 static size_t onibi_matchdata_live_native_allocations;
 
 static void
@@ -100,9 +101,19 @@ static const rb_data_type_t onibi_matchdata_type = {
 static VALUE
 onibi_matchdata_alloc(VALUE klass)
 {
-    (void)klass;
-    rb_raise(rb_eTypeError, "Onibi::MatchData cannot be allocated directly");
-    return Qnil;
+    if (!onibi_matchdata_copy_allocation) {
+	rb_raise(rb_eTypeError,
+		 "Onibi::MatchData cannot be allocated directly");
+    }
+    OnibiMatchData *data;
+    VALUE object = TypedData_Make_Struct(klass, OnibiMatchData,
+					 &onibi_matchdata_type, data);
+    MEMZERO(data, OnibiMatchData, 1);
+    data->subject_snapshot = Qnil;
+    data->regexp = Qnil;
+    data->names = Qnil;
+    data->named_index = Qnil;
+    return object;
 }
 
 static void
@@ -876,4 +887,136 @@ onibi_matchdata_hash(VALUE self)
 	hash = rb_hash_uint(hash, (st_data_t)data->end[i]);
     }
     return ST2FIX(rb_hash_end(hash));
+}
+
+typedef struct {
+    VALUE object;
+    VALUE source;
+} OnibiMatchDataCopy;
+
+static VALUE
+onibi_matchdata_copy_body(VALUE opaque)
+{
+    OnibiMatchDataCopy *copy = (OnibiMatchDataCopy *)(uintptr_t)opaque;
+    OnibiMatchData *source = onibi_matchdata_get(copy->source);
+    OnibiMatchData *target = onibi_matchdata_get(copy->object);
+
+    target->subject_snapshot = source->subject_snapshot;
+    target->regexp = source->regexp;
+    target->names = source->names;
+    target->named_index = source->named_index;
+    target->num_regs = source->num_regs;
+
+    size_t register_bytes =
+	(size_t)source->num_regs * sizeof(OnibiBytePos) * 2U;
+    target->beg = ruby_xmalloc(register_bytes);
+    onibi_matchdata_live_native_allocations++;
+    target->end = target->beg + source->num_regs;
+    memcpy(target->beg, source->beg,
+	   (size_t)source->num_regs * sizeof(OnibiBytePos));
+    memcpy(target->end, source->end,
+	   (size_t)source->num_regs * sizeof(OnibiBytePos));
+
+    if (source->char_beg != NULL) {
+	if (source->num_regs > SIZE_MAX / (sizeof(long) * 2U))
+	    rb_raise(rb_eRangeError,
+		     "Onibi MatchData character cache is too large");
+	size_t cache_bytes = (size_t)source->num_regs * sizeof(long) * 2U;
+	long *cache = ruby_xmalloc(cache_bytes);
+	target->char_beg = cache;
+	target->char_end = cache + source->num_regs;
+	memcpy(target->char_beg, source->char_beg,
+	       (size_t)source->num_regs * sizeof(long));
+	memcpy(target->char_end, source->char_end,
+	       (size_t)source->num_regs * sizeof(long));
+    }
+    return copy->object;
+}
+
+static VALUE
+onibi_matchdata_initialize_copy(VALUE self, VALUE source_object)
+{
+    rb_obj_init_copy(self, source_object);
+    OnibiMatchDataCopy copy = {self, source_object};
+    int state = 0;
+    rb_protect(onibi_matchdata_copy_body, (VALUE)(uintptr_t)&copy, &state);
+    if (state) rb_jump_tag(state);
+    return self;
+}
+
+typedef struct {
+    VALUE source;
+    int clone;
+} OnibiMatchDataRubyCopy;
+
+static VALUE
+onibi_matchdata_ruby_copy_body(VALUE opaque)
+{
+    OnibiMatchDataRubyCopy *copy = (OnibiMatchDataRubyCopy *)(uintptr_t)opaque;
+    return copy->clone ? rb_obj_clone(copy->source) : rb_obj_dup(copy->source);
+}
+
+static VALUE
+onibi_matchdata_ruby_copy_cleanup(VALUE opaque)
+{
+    (void)opaque;
+    onibi_matchdata_copy_allocation = 0;
+    return Qnil;
+}
+
+static VALUE
+onibi_matchdata_dup(VALUE self)
+{
+    OnibiMatchDataRubyCopy copy = {self, 0};
+    onibi_matchdata_copy_allocation = 1;
+    return rb_ensure(onibi_matchdata_ruby_copy_body, (VALUE)(uintptr_t)&copy,
+		     onibi_matchdata_ruby_copy_cleanup,
+		     (VALUE)(uintptr_t)&copy);
+}
+
+static VALUE
+onibi_matchdata_clone(VALUE self)
+{
+    OnibiMatchDataRubyCopy copy = {self, 1};
+    onibi_matchdata_copy_allocation = 1;
+    return rb_ensure(onibi_matchdata_ruby_copy_body, (VALUE)(uintptr_t)&copy,
+		     onibi_matchdata_ruby_copy_cleanup,
+		     (VALUE)(uintptr_t)&copy);
+}
+
+static VALUE
+onibi_matchdata_deconstruct(VALUE self)
+{
+    return onibi_matchdata_captures(self);
+}
+
+static VALUE
+onibi_matchdata_deconstruct_keys(VALUE self, VALUE keys)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    VALUE result = rb_hash_new();
+
+    if (NIL_P(keys)) {
+	for (long i = 0; i < RARRAY_LEN(data->names); i++) {
+	    VALUE name = rb_ary_entry(data->names, i);
+	    long index = onibi_matchdata_named_capture_index(data, name);
+	    VALUE value =
+		index < 0 ? Qnil : onibi_matchdata_capture(self, index);
+	    rb_hash_aset(result, rb_str_intern(name), value);
+	}
+	return result;
+    }
+
+    Check_Type(keys, T_ARRAY);
+    for (long i = 0; i < RARRAY_LEN(keys); i++) {
+	VALUE key = rb_ary_entry(keys, i);
+	Check_Type(key, T_SYMBOL);
+	VALUE name = rb_sym2str(key);
+	VALUE indices = rb_hash_lookup(data->named_index, name);
+	if (NIL_P(indices)) continue;
+	long index = onibi_matchdata_named_capture_index(data, name);
+	VALUE value = index < 0 ? Qnil : onibi_matchdata_capture(self, index);
+	rb_hash_aset(result, key, value);
+    }
+    return result;
 }

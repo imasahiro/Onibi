@@ -40,6 +40,11 @@ static VALUE onibi_matchdata_inspect(VALUE self);
 static VALUE onibi_matchdata_equal(VALUE self, VALUE other);
 static VALUE onibi_matchdata_eql(VALUE self, VALUE other);
 static VALUE onibi_matchdata_hash(VALUE self);
+static VALUE onibi_matchdata_dup(VALUE self);
+static VALUE onibi_matchdata_clone(VALUE self);
+static VALUE onibi_matchdata_initialize_copy(VALUE self, VALUE source);
+static VALUE onibi_matchdata_deconstruct(VALUE self);
+static VALUE onibi_matchdata_deconstruct_keys(VALUE self, VALUE keys);
 static VALUE onibi_matchdata_payload_diagnostics(int argc, VALUE *argv,
 						 VALUE self);
 static VALUE onibi_matchdata_payload_new(int argc, VALUE *argv, VALUE self);
