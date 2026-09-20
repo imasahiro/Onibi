@@ -169,3 +169,17 @@ Keep the probe and output at `/Users/masa/.codex/worktrees/f7d9/Onibi/.task-42b1
 TASK-42B2 review 1: repair requested from Luna/High worker `01a0bbfa-5d2c-7912-afdc-ee07f34d9583`.
 Keep payload ownership design; replace input-sized diagnostic stack arrays with ensured heap ownership.
 Required remaining evidence: explicit validation errors, coercion-failure cleanup, GC compaction, MRI capture-outside-group0 example, and restored diagnostic injection state.
+
+TASK-42B2 ACCEPT: native payload/lifetime at worker commit `2c267baf`.
+Root inspected range validation, copied raw buffers, frozen subject/metadata, mark/free/memsize, and ensured diagnostic heap cleanup.
+After commit-hook C formatting, root rebuilt with MRI 4.0.6 and reran the focused group: 23 runs, 242 assertions, no failures/errors/skips.
+Exact root test command: `ruby -Ilib -Itest -e 'ARGV.each { |f| require_relative f }' test/features/captures/match_data_payload_test.rb test/features/captures/match_data_contract_test.rb test/features/api/regexp_metadata_isolation_test.rb test/features/quality/module_interface_contract_test.rb`.
+Build and cleanup: `(cd ext/onibi && ruby extconf.rb && make)` and `(cd ext/onibi && make distclean)` exited 0.
+Environment: `PATH=/opt/homebrew/opt/ruby/bin:$PATH`, `DEVELOPER_DIR=/Library/Developer/CommandLineTools`.
+Worker checks and known warnings are recorded in docs/task-42b2-evidence.md. Keep its worktree logs.
+Public accessors, copy/value behavior, and match routing remain incomplete.
+
+At the review boundary the five-hour window was 88% used, near the 90% stop threshold. No new worker was dispatched.
+Next after reset: TASK-42B3, Luna/High, numeric capture/string access only.
+Scope: match_data.c, private header, method registration, focused MRI differential tests; implement numeric [], captures, to_a, size/length, to_s, string, pre_match/post_match, and regexp without public Regexp#match routing.
+Use private payload creation for differential fixtures. Keep named lookup, character offsets, value/copy/deconstruction, and routing as separate later units.
