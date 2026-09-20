@@ -230,3 +230,7 @@ Next action: dispatch TASK-42B5B, Luna/High, lazy character offsets and begin/en
 Define encoding-aware conversion, cache ownership/failure cleanup, and MRI differential cases before dispatch.
 Keep remaining match/values_at, copy/value/deconstruction, public routing, and final TASK-55 work separate.
 TASK-42B and TASK-55 remain incomplete. No worker is active and no publication is authorized.
+
+Continuation check: five-hour usage reached 90% on 2026-09-20. The user's dispatch-stop rule now applies.
+No new worker was opened. Accepted source and the working tree remain clean.
+Resume after the reported reset at 18:05 JST with TASK-42B5B as specified above.
