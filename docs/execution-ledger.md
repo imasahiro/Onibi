@@ -187,3 +187,7 @@ Use private payload creation for differential fixtures. Keep named lookup, chara
 TASK-42B3 review 1: REJECT numeric semantics; same Luna/High worker `01a0bd16-430d-74c0-b74a-a947d5af44a4`.
 MRI evidence: single index -num_regs returns nil; +/-2**40 raises int-conversion RangeError; two-argument String index raises TypeError.
 Keep byte slicing and snapshot ownership. Correct per-form coercion and add real runtime MRI differential coverage.
+
+TASK-42B3 review 2: narrow correction remains for explicit nil-length Range dispatch.
+MRI `m[1..2, nil]` returns the range slice; current scalar-only nil branch raises TypeError.
+After reassessment, preserve all corrected numeric work and repair only this dispatch path with differential cases. Same Luna/High worker.
