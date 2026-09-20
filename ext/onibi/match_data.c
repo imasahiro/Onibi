@@ -1,5 +1,6 @@
 #include "onibi_matchdata_internal.h"
 
+#include <limits.h>
 #include <string.h>
 
 static _Thread_local int onibi_matchdata_failure_stage_value;
@@ -39,7 +40,6 @@ onibi_matchdata_clear(OnibiMatchData *data)
 	onibi_matchdata_live_native_allocations--;
     xfree(data->beg);
     xfree(data->char_beg);
-    xfree(data->char_end);
     data->beg = NULL;
     data->end = NULL;
     data->char_beg = NULL;
@@ -312,6 +312,8 @@ onibi_matchdata_summary(VALUE self)
 		 onibi_matchdata_copy_names_for_summary(data->names));
     rb_hash_aset(result, ID2SYM(rb_intern("named_index")), named_index);
     rb_hash_aset(result, ID2SYM(rb_intern("lazy_character_cache")), Qtrue);
+    rb_hash_aset(result, ID2SYM(rb_intern("character_cache_present")),
+		 data->char_beg != NULL ? Qtrue : Qfalse);
     return result;
 }
 
@@ -321,6 +323,78 @@ onibi_matchdata_get(VALUE self)
     OnibiMatchData *data;
     TypedData_Get_Struct(self, OnibiMatchData, &onibi_matchdata_type, data);
     return data;
+}
+
+#define ONIBI_MATCHDATA_CHAR_UNSET LONG_MIN
+
+static void
+onibi_matchdata_set_char_boundary(OnibiMatchData *data, long *char_beg,
+				  long *char_end, OnibiBytePos byte,
+				  long characters)
+{
+    for (uint32_t i = 0; i < data->num_regs; i++) {
+	if (data->beg[i] == byte && char_beg[i] == ONIBI_MATCHDATA_CHAR_UNSET)
+	    char_beg[i] = characters;
+	if (data->end[i] == byte && char_end[i] == ONIBI_MATCHDATA_CHAR_UNSET)
+	    char_end[i] = characters;
+    }
+}
+
+static void
+onibi_matchdata_cache_char_positions(OnibiMatchData *data)
+{
+    if (data->char_beg != NULL) return;
+
+    if (data->num_regs > SIZE_MAX / (sizeof(long) * 2U))
+	rb_raise(rb_eRangeError,
+		 "Onibi MatchData character cache is too large");
+
+    size_t bytes = (size_t)data->num_regs * sizeof(long) * 2U;
+    long *cache = ruby_xmalloc(bytes);
+    long *char_beg = cache;
+    long *char_end = cache + data->num_regs;
+    for (uint32_t i = 0; i < data->num_regs; i++) {
+	char_beg[i] = ONIBI_MATCHDATA_CHAR_UNSET;
+	char_end[i] = ONIBI_MATCHDATA_CHAR_UNSET;
+    }
+
+    OnibiBytePos maximum = 0;
+    for (uint32_t i = 0; i < data->num_regs; i++) {
+	if (data->beg[i] >= 0 && data->beg[i] > maximum) maximum = data->beg[i];
+	if (data->end[i] >= 0 && data->end[i] > maximum) maximum = data->end[i];
+    }
+
+    VALUE subject = data->subject_snapshot;
+    const char *base = RSTRING_PTR(subject);
+    const char *tail = base + RSTRING_LEN(subject);
+    rb_encoding *encoding = rb_enc_get(subject);
+    OnibiBytePos byte = 0;
+    long characters = 0;
+    onibi_matchdata_set_char_boundary(data, char_beg, char_end, 0, characters);
+    while (byte < maximum) {
+	int encoded_length = rb_enc_precise_mbclen(base + byte, tail, encoding);
+	if (!MBCLEN_CHARFOUND_P(encoded_length)) {
+	    ruby_xfree(cache);
+	    rb_raise(rb_eArgError, "invalid byte sequence in %s",
+		     rb_enc_name(encoding));
+	}
+	long width = MBCLEN_CHARFOUND_LEN(encoded_length);
+	if (width <= 0 || byte > maximum - width) break;
+	byte += width;
+	characters++;
+	onibi_matchdata_set_char_boundary(data, char_beg, char_end, byte,
+					  characters);
+    }
+
+    for (uint32_t i = 0; i < data->num_regs; i++) {
+	if (data->beg[i] >= 0 && char_beg[i] == ONIBI_MATCHDATA_CHAR_UNSET)
+	    char_beg[i] = rb_enc_strlen(base, base + data->beg[i], encoding);
+	if (data->end[i] >= 0 && char_end[i] == ONIBI_MATCHDATA_CHAR_UNSET)
+	    char_end[i] = rb_enc_strlen(base, base + data->end[i], encoding);
+    }
+
+    data->char_beg = char_beg;
+    data->char_end = char_end;
 }
 
 static VALUE
@@ -654,4 +728,54 @@ onibi_matchdata_byteoffset(VALUE self, VALUE selector)
     if (!onibi_matchdata_byte_range(data, selector, &begin, &end))
 	return rb_ary_new_from_args(2, Qnil, Qnil);
     return rb_ary_new_from_args(2, LONG2NUM(begin), LONG2NUM(end));
+}
+
+static int
+onibi_matchdata_char_range(OnibiMatchData *data, VALUE selector, long *begin,
+			   long *end)
+{
+    long index = onibi_matchdata_byte_index(data, selector);
+    if (index < 0) return 0;
+    if (data->beg[index] < 0 || data->end[index] < 0) return 0;
+    onibi_matchdata_cache_char_positions(data);
+    *begin = data->char_beg[index];
+    *end = data->char_end[index];
+    return 1;
+}
+
+static VALUE
+onibi_matchdata_begin(VALUE self, VALUE selector)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    long begin, end;
+    if (!onibi_matchdata_char_range(data, selector, &begin, &end)) return Qnil;
+    return LONG2NUM(begin);
+}
+
+static VALUE
+onibi_matchdata_end(VALUE self, VALUE selector)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    long begin, end;
+    if (!onibi_matchdata_char_range(data, selector, &begin, &end)) return Qnil;
+    return LONG2NUM(end);
+}
+
+static VALUE
+onibi_matchdata_offset(VALUE self, VALUE selector)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    long begin, end;
+    if (!onibi_matchdata_char_range(data, selector, &begin, &end))
+	return rb_ary_new_from_args(2, Qnil, Qnil);
+    return rb_ary_new_from_args(2, LONG2NUM(begin), LONG2NUM(end));
+}
+
+static VALUE
+onibi_matchdata_match_length(VALUE self, VALUE selector)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    long begin, end;
+    if (!onibi_matchdata_char_range(data, selector, &begin, &end)) return Qnil;
+    return LONG2NUM(end - begin);
 }

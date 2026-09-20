@@ -161,6 +161,11 @@ Init_onibi(void)
     rb_define_method(cMatchData, "bytebegin", onibi_matchdata_bytebegin, 1);
     rb_define_method(cMatchData, "byteend", onibi_matchdata_byteend, 1);
     rb_define_method(cMatchData, "byteoffset", onibi_matchdata_byteoffset, 1);
+    rb_define_method(cMatchData, "begin", onibi_matchdata_begin, 1);
+    rb_define_method(cMatchData, "end", onibi_matchdata_end, 1);
+    rb_define_method(cMatchData, "offset", onibi_matchdata_offset, 1);
+    rb_define_method(cMatchData, "match_length", onibi_matchdata_match_length,
+		     1);
     rb_define_private_method(rb_singleton_class(cMatchData), "__onibi_new__",
 			     onibi_matchdata_factory, -1);
     rb_define_singleton_method(cRegexp, "timeout=", onibi_timeout_set, 1);
