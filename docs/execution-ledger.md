@@ -204,3 +204,8 @@ TASK-42B4 review 1: REJECT unknown-name error escaping; retain duplicate-name lo
 Worker: `01a0bd29-c433-73f1-8d4c-ed038ff0c464`, Luna/High, worktree `/Users/masa/.codex/worktrees/5b14/Onibi`.
 Root MRI 4.0.6 probe found that quote and backslash names gain extra escapes under `rb_str_inspect` slicing.
 Correction scope: MRI-compatible unknown-name formatting and differential edge cases; rerun original exact checks.
+
+TASK-42B4 review 2: retain formatter ownership and corrected quote/backslash/control cases.
+Root checked all single-byte names under binary and UTF-8 encodings, plus four additional selectors: 514/516 matched MRI.
+Literal `#@foo` and `#$foo` still gain an extra backslash. The formatter removes only the `#{` escape.
+After reassessment, keep the same Luna/High worker for this narrow interpolation-escape correction and full required checks.
