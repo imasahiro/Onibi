@@ -209,3 +209,11 @@ TASK-42B4 review 2: retain formatter ownership and corrected quote/backslash/con
 Root checked all single-byte names under binary and UTF-8 encodings, plus four additional selectors: 514/516 matched MRI.
 Literal `#@foo` and `#$foo` still gain an extra backslash. The formatter removes only the `#{` escape.
 After reassessment, keep the same Luna/High worker for this narrow interpolation-escape correction and full required checks.
+
+TASK-42B4 ACCEPT at worker commit `eac367e2`: named lookup and metadata isolation.
+Root inspected final interpolation handling, ordered duplicate-name participation, index bounds, and ensured formatter cleanup.
+Required MRI differential checks passed: 7 runs, 106 assertions. Regression group passed: 28 runs, 323 assertions.
+Build, Ruby/C formatting, diff check, and cleanup passed with only the two baseline compiler warnings.
+Exact commands are in docs/task-42b4-evidence.md; retain worker `.task-42b4-logs/` in worktree `5b14`.
+Public routing remains incomplete. Next bounded unit: TASK-42B5A, Luna/High, byte offsets only.
+Character conversion, remaining accessors/value methods, and routing stay separate.
