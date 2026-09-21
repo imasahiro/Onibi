@@ -3,17 +3,13 @@
 require "test_helper"
 
 class GsubMutationTest < Minitest::Test
-  class ToStrMutation
+  class ToSMutation
     def initialize(subject, mode)
       @subject = subject
       @mode = mode
     end
 
     def to_s
-      "S"
-    end
-
-    def to_str
       case @mode
       when :append
         @subject << "x"
@@ -29,6 +25,10 @@ class GsubMutationTest < Minitest::Test
         @subject.force_encoding(Encoding::BINARY)
       end
       "T"
+    end
+
+    def to_str
+      raise "to_str must not be called"
     end
   end
 
@@ -81,7 +81,7 @@ class GsubMutationTest < Minitest::Test
 
   def test_frozen_subjects_keep_mri_mutation_errors
     regexp = Onibi::Regexp.new("a")
-    input = "aa"
+    input = "aa".freeze # rubocop:disable Style/RedundantFreeze
     assert_equal "XX", regexp.gsub(input) { "X" }
     assert_predicate input, :frozen?
 
@@ -94,7 +94,7 @@ class GsubMutationTest < Minitest::Test
     assert_equal "can't modify frozen String: \"aa\"", error.message
   end
 
-  def test_block_result_to_str_mutations_are_checked_before_range_reuse
+  def test_block_result_to_s_mutations_are_checked_before_range_reuse
     {
       append: "string modified",
       clear: "string modified",
@@ -103,14 +103,14 @@ class GsubMutationTest < Minitest::Test
       input = +"a"
       error = assert_raises(RuntimeError) do
         Onibi::Regexp.new("a").gsub(input) do
-          ToStrMutation.new(input, mutation)
+          ToSMutation.new(input, mutation)
         end
       end
       assert_equal message, error.message, mutation
     end
   end
 
-  def test_block_mutation_is_checked_before_result_conversion
+  def test_block_mutation_is_checked_after_result_conversion
     input = +"a"
     error = assert_raises(RuntimeError) do
       Onibi::Regexp.new("a").gsub(input) do
@@ -121,7 +121,7 @@ class GsubMutationTest < Minitest::Test
     assert_equal "string modified", error.message
   end
 
-  def test_same_length_to_str_mutations_remain_supported
+  def test_same_length_to_s_mutations_remain_supported
     {
       replace_same: %w[T z UTF-8],
       setbyte: %w[T z UTF-8],
@@ -129,7 +129,7 @@ class GsubMutationTest < Minitest::Test
     }.each do |mutation, expected|
       input = +"a"
       result = Onibi::Regexp.new("a").gsub(input) do
-        ToStrMutation.new(input, mutation)
+        ToSMutation.new(input, mutation)
       end
       assert_equal expected[0], result, mutation
       assert_equal expected[1], input, mutation

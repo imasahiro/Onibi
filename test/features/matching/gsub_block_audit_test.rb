@@ -151,7 +151,7 @@ class GsubBlockAuditTest < Minitest::Test
     assert_same $LAST_MATCH_INFO, Onibi::Regexp.last_match
   end
 
-  def test_block_return_coercion_records_the_current_difference
+  def test_block_return_coercion_matches_mri_to_s
     object_class = Class.new do
       def to_s
         "to_s"
@@ -166,18 +166,7 @@ class GsubBlockAuditTest < Minitest::Test
       mri = observe_return(:mri, returned)
       native = observe_return(:onibi, returned)
       assert_equal "ok", mri[:status], returned.class.name
-
-      if returned.nil? || returned.is_a?(Integer)
-        assert_equal "error", native[:status]
-        assert_equal "TypeError", native[:error_class]
-        expected_type = returned.nil? ? "nil" : "Integer"
-        assert_equal "no implicit conversion of #{expected_type} into String",
-                     native[:message]
-      else
-        assert_equal "ok", native[:status]
-        assert_equal "to_str", native[:result]
-        assert_equal "to_s", mri[:result]
-      end
+      assert_equal mri, native, returned.class.name
     end
   end
 

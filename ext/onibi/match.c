@@ -718,8 +718,7 @@ onibi_gsub_body(VALUE opaque)
 	if (call->with_block) {
 	    VALUE value = rb_yield(onibi_byte_slice(
 		call->str, raw_match.begin_byte, raw_match.end_byte));
-	    onibi_gsub_check_subject(call);
-	    StringValue(value);
+	    value = rb_obj_as_string(value);
 	    onibi_gsub_check_subject(call);
 	    rb_str_buf_cat(call->result, RSTRING_PTR(value),
 			   RSTRING_LEN(value));
