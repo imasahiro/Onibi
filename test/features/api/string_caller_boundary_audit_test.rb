@@ -42,7 +42,7 @@ class StringCallerBoundaryAuditTest < Minitest::Test
     end
   end
 
-  def test_native_scan_values_and_ignored_blocks_preserve_state
+  def test_native_scan_values_and_blocks_preserve_state
     CASES.each do |pattern, input|
       expected = input.scan(::Regexp.new(pattern))
       regexp = Onibi::Regexp.new(pattern)
@@ -51,14 +51,14 @@ class StringCallerBoundaryAuditTest < Minitest::Test
       assert_equal expected, regexp.scan(input)
       assert_same before, $~
       yielded = []
-      assert_equal expected, regexp.scan(input) { |value| yielded << value }
-      assert_empty yielded
+      assert_same input, regexp.scan(input) { |value| yielded << value }
+      assert_equal expected, yielded
       assert_same before, $~
       assert_same before, Onibi::Regexp.last_match
     end
   end
 
-  def test_fallback_scan_ignores_blocks_but_publishes_mri_state
+  def test_fallback_scan_forwards_blocks_and_publishes_mri_state
     ['\X', '(\X)'].each do |pattern|
       ["éあ", ""].each do |input|
         mri = ::Regexp.new(pattern)
@@ -74,8 +74,8 @@ class StringCallerBoundaryAuditTest < Minitest::Test
                    else
                      regexp.scan(input)
                    end
-          assert_equal expected, actual
-          assert_empty yielded
+          with_block ? assert_same(input, actual) : assert_equal(expected, actual)
+          assert_equal(with_block ? expected : [], yielded)
           if captures
             assert_instance_of ::MatchData, $~
             refute_same before, $~
@@ -207,6 +207,7 @@ class StringCallerBoundaryAuditTest < Minitest::Test
     originals.each_key { |name| String.define_method(name) { |*| raise "String adapter called" } }
     regexps.each do |regexp, input|
       assert_instance_of Array, regexp.scan(input)
+      assert_same input, regexp.scan(input) { |_| }
       assert_instance_of String, regexp.gsub(input, "x")
       assert_instance_of String, regexp.gsub(input) { "x" }
     end

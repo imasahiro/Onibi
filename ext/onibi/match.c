@@ -292,12 +292,36 @@ typedef struct {
     VALUE self;
     VALUE str;
     VALUE result;
+    VALUE snapshot;
+    int with_block;
     uint32_t capture_count;
     uint32_t num_regs;
     OnibiBytePos *ranges;
     OnibiBytePos *beg;
     OnibiBytePos *end;
 } OnibiScanCall;
+
+static VALUE
+onibi_scan_yield(OnibiScanCall *call, VALUE value)
+{
+    VALUE result = rb_yield(value);
+    VALUE str = call->str;
+    /* MRI permits same-length byte changes. Check length and encoding
+     * before any raw range or character advance is used again. */
+    if (RSTRING_LEN(str) != RSTRING_LEN(call->snapshot) ||
+	rb_enc_get_index(str) != rb_enc_get_index(call->snapshot))
+	rb_raise(rb_eRuntimeError, "string modified");
+    return result;
+}
+
+static VALUE
+onibi_scan_fallback_yield(RB_BLOCK_CALL_FUNC_ARGLIST(value, opaque))
+{
+    (void)argc;
+    (void)argv;
+    (void)blockarg;
+    return onibi_scan_yield((OnibiScanCall *)(uintptr_t)opaque, value);
+}
 
 static VALUE
 onibi_scan_body(VALUE opaque)
@@ -307,6 +331,7 @@ onibi_scan_body(VALUE opaque)
     OnibiBytePos *beg = call->beg;
     OnibiBytePos *end = call->end;
     OnibiBytePos origin = 0;
+    if (call->with_block) call->snapshot = rb_str_new_frozen(str);
 
     for (;;) {
 	OnibiRawMatch raw_match = {.begin_byte = -1,
@@ -321,14 +346,17 @@ onibi_scan_body(VALUE opaque)
 	if (status == ONIBI_EXEC_STATUS_FALLBACK) {
 	    onibi_regexp_t *obj;
 	    TypedData_Get_Struct(call->self, onibi_regexp_t, &onibi_type, obj);
+	    if (call->with_block)
+		return rb_block_call(str, id_scan, 1, &obj->regexp,
+				     onibi_scan_fallback_yield, opaque);
 	    VALUE plain = rb_str_dup(call->str);
 	    return rb_funcall(plain, id_scan, 1, obj->regexp);
 	}
 	if (status == ONIBI_EXEC_STATUS_NO_MATCH) break;
+	VALUE value;
 	if (call->capture_count == 0) {
-	    rb_ary_push(call->result,
-			onibi_byte_slice(str, raw_match.begin_byte,
-					 raw_match.end_byte));
+	    value =
+		onibi_byte_slice(str, raw_match.begin_byte, raw_match.end_byte);
 	}
 	else {
 	    VALUE captures = rb_ary_new_capa(call->capture_count);
@@ -338,8 +366,12 @@ onibi_scan_body(VALUE opaque)
 				    : onibi_byte_slice(str, beg[i], end[i]);
 		rb_ary_push(captures, capture);
 	    }
-	    rb_ary_push(call->result, captures);
+	    value = captures;
 	}
+	if (call->with_block)
+	    onibi_scan_yield(call, value);
+	else
+	    rb_ary_push(call->result, value);
 	if (raw_match.end_byte > raw_match.begin_byte)
 	    origin = raw_match.end_byte;
 	else {
@@ -350,7 +382,7 @@ onibi_scan_body(VALUE opaque)
 				   rb_enc_get(str));
 	}
     }
-    return call->result;
+    return call->with_block ? str : call->result;
 }
 
 static VALUE
@@ -381,7 +413,9 @@ onibi_scan(VALUE self, VALUE str)
 
     OnibiScanCall call = {.self = self,
 			  .str = str,
-			  .result = rb_ary_new(),
+			  .result = rb_block_given_p() ? Qnil : rb_ary_new(),
+			  .snapshot = Qnil,
+			  .with_block = rb_block_given_p(),
 			  .capture_count = capture_count,
 			  .num_regs = num_regs,
 			  .ranges = ruby_xmalloc(range_bytes),

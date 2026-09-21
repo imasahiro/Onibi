@@ -67,8 +67,9 @@ class BackreferenceBoundaryAuditTest < Minitest::Test
     /prior/.match("prior")
     before = $~
     yielded = []
-    assert_equal [["a"], ["a"]], regexp.scan("aba") { |value| yielded << value }
-    assert_empty yielded
+    input = "aba"
+    assert_same input, regexp.scan(input) { |value| yielded << value }
+    assert_equal [["a"], ["a"]], yielded
     assert_equal "xbx", regexp.gsub("aba") { |value|
       assert_equal "a", value
       assert_same before, $~
