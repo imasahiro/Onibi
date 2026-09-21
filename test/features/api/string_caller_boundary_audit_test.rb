@@ -115,25 +115,17 @@ class StringCallerBoundaryAuditTest < Minitest::Test
     end
   end
 
-  def test_backslash_replacements_use_mri_state_even_for_native_patterns
+  def test_native_backslash_replacements_keep_prior_state
     [["(a)", '\1'], ["(a)", '\&'], ["(?<letter>a)", '\k<letter>'],
      ["a", '\\\\'], ["a", '\q'], ["", '\&']].each do |pattern, replacement|
       ["aba", ""].each do |input|
         mri = ::Regexp.new(pattern)
         expected = input.gsub(mri, replacement)
-        captures = $~&.to_a
         /(prior)/.match("prior")
         before = $~
         assert_equal expected, Onibi::Regexp.new(pattern).gsub(input, replacement)
-        if captures
-          assert_instance_of ::MatchData, $~
-          refute_same before, $~
-          assert_equal captures, $~.to_a
-          assert_equal mri, $~.regexp
-        else
-          assert_nil $~
-        end
-        $~ ? assert_same($~, Onibi::Regexp.last_match) : assert_nil(Onibi::Regexp.last_match)
+        assert_same before, $~
+        assert_same before, Onibi::Regexp.last_match
       end
     end
   end

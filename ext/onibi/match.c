@@ -506,6 +506,245 @@ onibi_tilde(VALUE self)
     }
     return LONG2NUM(onibi_ruby_character_position(input, raw_match.begin_byte));
 }
+
+typedef struct {
+    VALUE self;
+    VALUE str;
+    VALUE replacement;
+    VALUE result;
+    OnibiBytePos origin;
+    OnibiBytePos copied;
+    uint32_t capture_count;
+    uint32_t num_regs;
+    OnibiBytePos *ranges;
+    OnibiBytePos *beg;
+    OnibiBytePos *end;
+    int with_block;
+} OnibiGsubCall;
+
+static void
+onibi_gsub_append_range(OnibiGsubCall *call, OnibiBytePos start,
+			OnibiBytePos end)
+{
+    if (start < 0 || end < start || end > RSTRING_LEN(call->str))
+	rb_raise(eRegexpError, "Onibi returned an invalid replacement range");
+    if (end > start)
+	rb_str_buf_cat(call->result, RSTRING_PTR(call->str) + start,
+		       end - start);
+}
+
+static int
+onibi_gsub_named_capture(const onibi_regexp_t *obj, OnibiGsubCall *call,
+			 const char *name, long name_length)
+{
+    VALUE name_value = rb_str_new(name, name_length);
+    VALUE indexes = rb_hash_lookup(obj->named_captures, name_value);
+    if (NIL_P(indexes)) return 0;
+    for (long i = RARRAY_LEN(indexes) - 1; i >= 0; i--) {
+	long index = NUM2LONG(rb_ary_entry(indexes, i));
+	if (index <= 0 || (uint32_t)index > call->capture_count) continue;
+	if (call->beg[index] < 0 || call->end[index] < 0) continue;
+	onibi_gsub_append_range(call, call->beg[index], call->end[index]);
+	break;
+    }
+    return 1;
+}
+
+/* Expand the replacement forms that use only the native raw registers.  A
+ * zero return means that MRI must handle the replacement grammar. */
+static int
+onibi_gsub_append_replacement(OnibiGsubCall *call, const onibi_regexp_t *obj,
+			      OnibiBytePos match_begin, OnibiBytePos match_end)
+{
+    const char *replacement = RSTRING_PTR(call->replacement);
+    long length = RSTRING_LEN(call->replacement);
+    long literal = 0;
+    int named = RARRAY_LEN(obj->names) != 0;
+    for (long i = 0; i < length; i++) {
+	if (replacement[i] != '\\') continue;
+	if (i > literal)
+	    rb_str_buf_cat(call->result, replacement + literal, i - literal);
+	if (++i == length) {
+	    rb_str_buf_cat(call->result, "\\", 1);
+	    literal = i;
+	    break;
+	}
+	char escape = replacement[i];
+	if (escape == '\\') {
+	    rb_str_buf_cat(call->result, "\\", 1);
+	    literal = i + 1;
+	    continue;
+	}
+	if (escape == '&' || escape == '0') {
+	    onibi_gsub_append_range(call, match_begin, match_end);
+	    literal = i + 1;
+	    continue;
+	}
+	if (escape == '`') {
+	    onibi_gsub_append_range(call, 0, match_begin);
+	    literal = i + 1;
+	    continue;
+	}
+	if (escape == '\'') {
+	    onibi_gsub_append_range(call, match_end, RSTRING_LEN(call->str));
+	    literal = i + 1;
+	    continue;
+	}
+	if (escape == '+') {
+	    if (named) {
+		for (long name_index = RARRAY_LEN(obj->names) - 1;
+		     name_index >= 0; name_index--) {
+		    VALUE name = rb_ary_entry(obj->names, name_index);
+		    VALUE indexes = rb_hash_lookup(obj->named_captures, name);
+		    for (long index = RARRAY_LEN(indexes) - 1; index >= 0;
+			 index--) {
+			long capture = NUM2LONG(rb_ary_entry(indexes, index));
+			if (capture > 0 &&
+			    (uint32_t)capture <= call->capture_count &&
+			    call->beg[capture] >= 0 &&
+			    call->end[capture] >= 0) {
+			    onibi_gsub_append_range(call, call->beg[capture],
+						    call->end[capture]);
+			    name_index = -1;
+			    break;
+			}
+		    }
+		}
+	    }
+	    else {
+		for (uint32_t index = call->capture_count; index > 0; index--)
+		    if (call->beg[index] >= 0 && call->end[index] >= 0) {
+			onibi_gsub_append_range(call, call->beg[index],
+						call->end[index]);
+			break;
+		    }
+	    }
+	    literal = i + 1;
+	    continue;
+	}
+	if (escape == 'k') {
+	    if (i + 1 >= length || replacement[i + 1] != '<') return 0;
+	    long name_start = i + 2;
+	    long name_end = name_start;
+	    while (name_end < length && replacement[name_end] != '>')
+		name_end++;
+	    if (name_end == length ||
+		!onibi_gsub_named_capture(obj, call, replacement + name_start,
+					  name_end - name_start))
+		return 0;
+	    literal = name_end + 1;
+	    i = name_end;
+	    continue;
+	}
+	if (escape >= '1' && escape <= '9') {
+	    long number_start = i;
+	    long number_end = i + 1;
+	    while (number_end < length && replacement[number_end] >= '0' &&
+		   replacement[number_end] <= '9')
+		number_end++;
+	    long number = 0;
+	    long selected_end = number_start + 1;
+	    for (long digit_end = number_start + 1; digit_end <= number_end;
+		 digit_end++) {
+		long digit = replacement[digit_end - 1] - '0';
+		if (number > (LONG_MAX - digit) / 10) break;
+		number = number * 10 + digit;
+		if (number > 0 && number <= call->capture_count) {
+		    selected_end = digit_end;
+		    continue;
+		}
+		break;
+	    }
+	    if (named) selected_end = number_start + 1;
+	    if (!named && (number == 0 || number > call->capture_count)) {
+		number = replacement[number_start] - '0';
+		selected_end = number_start + 1;
+	    }
+	    if (number > 0 && number <= call->capture_count && !named &&
+		call->beg[number] >= 0 && call->end[number] >= 0)
+		onibi_gsub_append_range(call, call->beg[number],
+					call->end[number]);
+	    literal = selected_end;
+	    i = selected_end - 1;
+	    continue;
+	}
+	/* MRI preserves an unrecognised escape as two literal bytes. */
+	rb_str_buf_cat(call->result, replacement + i - 1, 2);
+	literal = i + 1;
+    }
+    if (literal < length)
+	rb_str_buf_cat(call->result, replacement + literal, length - literal);
+    return 1;
+}
+
+static VALUE
+onibi_gsub_body(VALUE opaque)
+{
+    OnibiGsubCall *call = (OnibiGsubCall *)(uintptr_t)opaque;
+    onibi_regexp_t *obj;
+    TypedData_Get_Struct(call->self, onibi_regexp_t, &onibi_type, obj);
+    for (;;) {
+	OnibiRawMatch raw_match = {.begin_byte = -1,
+				   .end_byte = -1,
+				   .num_regs = call->num_regs,
+				   .beg = call->beg,
+				   .end = call->end};
+	OnibiExecStatus status =
+	    onibi_vm_search(call->self, call->str, call->origin, &raw_match);
+	if (status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
+	    rb_raise(eRegexpError, "Onibi execution failed");
+	if (status == ONIBI_EXEC_STATUS_FALLBACK) {
+	    VALUE plain = rb_str_dup(call->str);
+	    if (call->with_block)
+		return rb_block_call(plain, id_gsub, 1, &obj->regexp,
+				     rb_yield_block, Qnil);
+	    return rb_funcall(plain, id_gsub, 2, obj->regexp,
+			      call->replacement);
+	}
+	if (status == ONIBI_EXEC_STATUS_NO_MATCH) break;
+	rb_str_buf_cat(call->result, RSTRING_PTR(call->str) + call->copied,
+		       raw_match.begin_byte - call->copied);
+	if (call->with_block) {
+	    VALUE value = rb_yield(onibi_byte_slice(
+		call->str, raw_match.begin_byte, raw_match.end_byte));
+	    StringValue(value);
+	    rb_str_buf_cat(call->result, RSTRING_PTR(value),
+			   RSTRING_LEN(value));
+	}
+	else if (!onibi_gsub_append_replacement(call, obj, raw_match.begin_byte,
+						raw_match.end_byte)) {
+	    VALUE plain = rb_str_dup(call->str);
+	    return rb_funcall(plain, id_gsub, 2, obj->regexp,
+			      call->replacement);
+	}
+	call->copied = raw_match.end_byte;
+	if (raw_match.end_byte > raw_match.begin_byte)
+	    call->origin = raw_match.end_byte;
+	else {
+	    if (raw_match.end_byte >= RSTRING_LEN(call->str)) break;
+	    call->origin =
+		raw_match.end_byte +
+		rb_enc_mbclen(RSTRING_PTR(call->str) + raw_match.end_byte,
+			      RSTRING_PTR(call->str) + RSTRING_LEN(call->str),
+			      rb_enc_get(call->str));
+	}
+    }
+    rb_str_buf_cat(call->result, RSTRING_PTR(call->str) + call->copied,
+		   RSTRING_LEN(call->str) - call->copied);
+    return call->result;
+}
+
+static VALUE
+onibi_gsub_ensure_cleanup(VALUE opaque)
+{
+    OnibiGsubCall *call = (OnibiGsubCall *)(uintptr_t)opaque;
+    ruby_xfree(call->ranges);
+    call->ranges = NULL;
+    call->beg = NULL;
+    call->end = NULL;
+    return Qnil;
+}
+
 static VALUE
 onibi_gsub(int argc, VALUE *argv, VALUE self)
 {
@@ -515,56 +754,30 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     StringValue(str);
     if (!rb_block_given_p()) StringValue(replacement);
-    if (!rb_block_given_p() && RB_TYPE_P(replacement, T_STRING) &&
-	memchr(RSTRING_PTR(replacement), '\\', RSTRING_LEN(replacement)) !=
-	    NULL) {
-	/* MRI expands numbered and named replacement references.  Keep this
-	 * compatibility boundary explicit until Onibi owns MatchData. */
-	VALUE plain = rb_str_dup(str);
-	return rb_funcall(plain, id_gsub, 2, obj->regexp, replacement);
-    }
-    VALUE result = rb_str_buf_new(RSTRING_LEN(str));
-    rb_enc_associate(result, rb_enc_get(str));
-    OnibiBytePos origin = 0, copied = 0;
-    for (;;) {
-	OnibiRawMatch raw_match = {.begin_byte = -1, .end_byte = -1};
-	OnibiExecStatus status = onibi_vm_search(self, str, origin, &raw_match);
-	if (status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
-	    rb_raise(eRegexpError, "Onibi execution failed");
-	if (status == ONIBI_EXEC_STATUS_FALLBACK) {
-	    onibi_regexp_t *obj;
-	    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-	    VALUE plain = rb_str_dup(str);
-	    if (rb_block_given_p())
-		return rb_block_call(plain, id_gsub, 1, &obj->regexp,
-				     rb_yield_block, Qnil);
-	    return rb_funcall(plain, id_gsub, 2, obj->regexp, replacement);
-	}
-	if (status == ONIBI_EXEC_STATUS_NO_MATCH) break;
-	rb_str_buf_cat(result, RSTRING_PTR(str) + copied,
-		       raw_match.begin_byte - copied);
-	VALUE replacement_value =
-	    rb_block_given_p()
-		? rb_yield(onibi_byte_slice(str, raw_match.begin_byte,
-					    raw_match.end_byte))
-		: replacement;
-	StringValue(replacement_value);
-	rb_str_buf_cat(result, RSTRING_PTR(replacement_value),
-		       RSTRING_LEN(replacement_value));
-	copied = raw_match.end_byte;
-	if (raw_match.end_byte > raw_match.begin_byte)
-	    origin = raw_match.end_byte;
-	else {
-	    if (raw_match.end_byte >= RSTRING_LEN(str)) break;
-	    origin = raw_match.end_byte +
-		     rb_enc_mbclen(RSTRING_PTR(str) + raw_match.end_byte,
-				   RSTRING_PTR(str) + RSTRING_LEN(str),
-				   rb_enc_get(str));
-	}
-    }
-    rb_str_buf_cat(result, RSTRING_PTR(str) + copied,
-		   RSTRING_LEN(str) - copied);
-    return result;
+    uint32_t capture_count = onibi_public_capture_count(obj);
+    if (capture_count == UINT32_MAX)
+	rb_raise(rb_eRangeError, "Onibi capture count is too large");
+    uint32_t num_regs = capture_count + 1U;
+    if ((size_t)num_regs > SIZE_MAX / sizeof(OnibiBytePos) / 2U)
+	rb_raise(rb_eRangeError, "Onibi capture ranges are too large");
+    OnibiGsubCall call = {
+	.self = self,
+	.str = str,
+	.replacement = replacement,
+	.result = rb_str_buf_new(RSTRING_LEN(str)),
+	.origin = 0,
+	.copied = 0,
+	.capture_count = capture_count,
+	.num_regs = num_regs,
+	.ranges = ruby_xmalloc((size_t)num_regs * sizeof(OnibiBytePos) * 2U),
+	.beg = NULL,
+	.end = NULL,
+	.with_block = rb_block_given_p()};
+    rb_enc_associate(call.result, rb_enc_get(str));
+    call.beg = call.ranges;
+    call.end = call.ranges + num_regs;
+    return rb_ensure(onibi_gsub_body, (VALUE)(uintptr_t)&call,
+		     onibi_gsub_ensure_cleanup, (VALUE)(uintptr_t)&call);
 }
 
 void
