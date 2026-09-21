@@ -220,16 +220,23 @@ class GsubBlockAuditTest < Minitest::Test
     assert_same before, $LAST_MATCH_INFO
   end
 
-  def test_replacement_argument_precedes_block_on_mri_but_not_native
+  def test_replacement_argument_precedes_block_on_mri_and_native
     [[Onibi::Regexp.new("a"), :onibi], [/a/, :mri]].each do |regexp, engine|
       input = "aba"
+      yielded = []
       result = if engine == :onibi
-                 regexp.gsub(input, "ignored") { |value| "<#{value}>" }
+                 regexp.gsub(input, "ignored") do |value|
+                   yielded << value
+                   "<#{value}>"
+                 end
                else
-                 input.gsub(regexp, "ignored") { |value| "<#{value}>" }
+                 input.gsub(regexp, "ignored") do |value|
+                   yielded << value
+                   "<#{value}>"
+                 end
                end
-      expected = engine == :onibi ? "<a>b<a>" : "ignoredbignored"
-      assert_equal expected, result
+      assert_equal "ignoredbignored", result, engine
+      assert_empty yielded, engine
     end
   end
 

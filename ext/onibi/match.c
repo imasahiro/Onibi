@@ -765,7 +765,8 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     StringValue(str);
-    if (!rb_block_given_p()) StringValue(replacement);
+    int replacement_given = argc == 2;
+    if (replacement_given || !rb_block_given_p()) StringValue(replacement);
     uint32_t capture_count = onibi_public_capture_count(obj);
     if (capture_count == UINT32_MAX)
 	rb_raise(rb_eRangeError, "Onibi capture count is too large");
@@ -785,7 +786,7 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
 	.beg = NULL,
 	.end = NULL,
 	.subject_length = RSTRING_LEN(str),
-	.with_block = rb_block_given_p()};
+	.with_block = !replacement_given && rb_block_given_p()};
     rb_enc_associate(call.result, rb_enc_get(str));
     call.beg = call.ranges;
     call.end = call.ranges + num_regs;
