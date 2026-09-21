@@ -247,20 +247,11 @@ class GsubBlockAuditTest < Minitest::Test
   def test_mutation_probes_keep_mri_expectations_visible
     append_mri = mutation_probe("mri", "a", "append")
     append_native = mutation_probe("onibi", "a", "append")
-    assert_equal "error", append_mri[:status]
-    assert_equal "RuntimeError", append_mri[:error_class]
-    assert_equal "string modified", append_mri[:message]
-    assert_equal "ok", append_native[:status]
-    assert_equal "XXxx", append_native[:result]
+    assert_equal append_mri, append_native
 
     clear_mri = mutation_probe("mri", "a", "clear")
     clear_native = mutation_probe("onibi", "a", "clear")
-    assert_equal "error", clear_mri[:status]
-    assert_equal "RuntimeError", clear_mri[:error_class]
-    assert_equal "string modified", clear_mri[:message]
-    assert_equal "error", clear_native[:status]
-    assert_equal "ArgumentError", clear_native[:error_class]
-    assert_equal "negative string size (or size too big)", clear_native[:message]
+    assert_equal clear_mri, clear_native
 
     %w[same_byte encoding].each do |mutation|
       mri = mutation_probe("mri", "a", mutation)
@@ -275,9 +266,8 @@ class GsubBlockAuditTest < Minitest::Test
     assert_equal "RuntimeError", mri[:error_class]
     assert_equal "string modified", mri[:message]
 
-    native = mutation_probe("onibi", "", "append", timeout_seconds: 0.75)
-    assert_equal "timeout", native[:status]
-    assert_operator native[:signal], :>, 0
+    native = mutation_probe("onibi", "", "append")
+    assert_equal mri, native
   end
 
   def test_child_harness_bounds_and_classifies_exit_signal_and_stall

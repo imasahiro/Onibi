@@ -519,8 +519,19 @@ typedef struct {
     OnibiBytePos *ranges;
     OnibiBytePos *beg;
     OnibiBytePos *end;
+    OnibiBytePos subject_length;
     int with_block;
 } OnibiGsubCall;
+
+static void
+onibi_gsub_check_subject(OnibiGsubCall *call)
+{
+    /* MRI permits same-length byte and encoding changes during gsub.  A
+     * length change invalidates the saved byte ranges and must stop before
+     * the next native read. */
+    if (RSTRING_LEN(call->str) != call->subject_length)
+	rb_raise(rb_eRuntimeError, "string modified");
+}
 
 static void
 onibi_gsub_append_range(OnibiGsubCall *call, OnibiBytePos start,
@@ -707,7 +718,9 @@ onibi_gsub_body(VALUE opaque)
 	if (call->with_block) {
 	    VALUE value = rb_yield(onibi_byte_slice(
 		call->str, raw_match.begin_byte, raw_match.end_byte));
+	    onibi_gsub_check_subject(call);
 	    StringValue(value);
+	    onibi_gsub_check_subject(call);
 	    rb_str_buf_cat(call->result, RSTRING_PTR(value),
 			   RSTRING_LEN(value));
 	}
@@ -772,6 +785,7 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
 	.ranges = ruby_xmalloc((size_t)num_regs * sizeof(OnibiBytePos) * 2U),
 	.beg = NULL,
 	.end = NULL,
+	.subject_length = RSTRING_LEN(str),
 	.with_block = rb_block_given_p()};
     rb_enc_associate(call.result, rb_enc_get(str));
     call.beg = call.ranges;
