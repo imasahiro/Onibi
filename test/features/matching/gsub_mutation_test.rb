@@ -81,7 +81,8 @@ class GsubMutationTest < Minitest::Test
 
   def test_frozen_subjects_keep_mri_mutation_errors
     regexp = Onibi::Regexp.new("a")
-    input = "aa".freeze # rubocop:disable Style/RedundantFreeze
+    input = +"aa"
+    input.freeze # Explicit frozen input for MRI mutation parity.
     assert_equal "XX", regexp.gsub(input) { "X" }
     assert_predicate input, :frozen?
 
@@ -153,6 +154,7 @@ class GsubMutationTest < Minitest::Test
       source: input.bytes,
       source_encoding: input.encoding.name
     }
+  # This probe records every exception class for MRI differential checks.
   rescue Exception => e # rubocop:disable Lint/RescueException
     {
       status: "error",

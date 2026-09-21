@@ -294,6 +294,7 @@ class GsubBlockAuditTest < Minitest::Test
                input.gsub(regexp) { returned }
              end
     { status: "ok", result: result }
+  # This child probe records every exception class for MRI differential checks.
   rescue Exception => e # rubocop:disable Lint/RescueException
     { status: "error", error_class: e.class.name, message: e.message }
   end
@@ -309,6 +310,7 @@ class GsubBlockAuditTest < Minitest::Test
     run_child(command, timeout_seconds: timeout_seconds)
   end
 
+  # The child lifecycle harness keeps timeout, stream, and cleanup state together.
   # rubocop:disable Metrics/BlockLength
   def run_child(command, timeout_seconds:)
     Open3.popen3(*command) do |stdin, stdout, stderr, wait_thread|

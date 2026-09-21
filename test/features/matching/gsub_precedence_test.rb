@@ -140,6 +140,7 @@ class GsubPrecedenceTest < Minitest::Test
                end
              end
     { status: :ok, result: result, yielded: yielded }
+  # This probe records every exception class for MRI differential checks.
   rescue Exception => e # rubocop:disable Lint/RescueException
     { status: :error, error_class: e.class.name, message: e.message,
       yielded: yielded }

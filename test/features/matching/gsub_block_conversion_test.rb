@@ -67,10 +67,11 @@ class GsubBlockConversionTest < Minitest::Test
   end
 
   def test_native_block_results_follow_mri_to_s_conversion
+    false_label = "false"
     values = {
       nil: nil,
       integer: 17,
-      false: false, # rubocop:disable Lint/BooleanSymbol
+      false_label => false,
       only_to_s: OnlyToS.new,
       both_conversions: BothConversions.new,
       string_subclass: StringSubclass.new("subclass"),
@@ -155,6 +156,7 @@ class GsubBlockConversionTest < Minitest::Test
       result_bytes: result.bytes,
       result_encoding: result.encoding.name
     }
+  # This probe records every exception class for MRI differential checks.
   rescue Exception => e # rubocop:disable Lint/RescueException
     {
       status: "error",
@@ -169,7 +171,7 @@ class GsubBlockConversionTest < Minitest::Test
     value = OrderedToS.new(input, events, conversion_action)
     operation = proc do
       events << :block
-      block_mutation.call(input) if block_mutation # rubocop:disable Style/SafeNavigation
+      block_mutation&.call(input)
       value
     end
     result = if engine == :mri
@@ -183,6 +185,7 @@ class GsubBlockConversionTest < Minitest::Test
       input: input,
       events: events
     }
+  # This probe records every exception class for MRI differential checks.
   rescue Exception => e # rubocop:disable Lint/RescueException
     {
       status: "error",
