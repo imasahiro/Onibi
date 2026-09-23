@@ -565,10 +565,65 @@ onibi_gsub_append_range(OnibiGsubCall *call, VALUE target, OnibiBytePos start,
 }
 
 static int
-onibi_gsub_named_capture(const onibi_regexp_t *obj, OnibiGsubCall *call,
-			 VALUE target, const char *name, long name_length)
+onibi_gsub_next_replacement_char(VALUE replacement, long length, long offset,
+				 rb_encoding *encoding, int *codepoint,
+				 long *width)
 {
-    VALUE name_value = rb_str_new(name, name_length);
+    long remaining;
+    const char *bytes;
+    const char *cursor;
+    const char *end;
+    int precise;
+
+    if (offset < 0 || offset >= length) return 0;
+    remaining = length - offset;
+    bytes = RSTRING_PTR(replacement);
+    cursor = bytes + offset;
+    end = bytes + length;
+    precise = rb_enc_precise_mbclen(cursor, end, encoding);
+    if (MBCLEN_CHARFOUND_P(precise)) {
+	int found_width = MBCLEN_CHARFOUND_LEN(precise);
+	if (found_width <= 0 || (long)found_width > remaining)
+	    rb_raise(eRegexpError, "Onibi found an invalid replacement width");
+	*width = found_width;
+	*codepoint = rb_enc_ascget(cursor, end, NULL, encoding);
+	return 1;
+    }
+
+    /* MRI keeps broken replacement bytes literal.  Use its boundary helper
+     * to advance over one malformed character without decoding it. */
+    int malformed_width = rb_enc_mbclen(cursor, end, encoding);
+    if (malformed_width <= 0) malformed_width = 1;
+    *width = (long)malformed_width > remaining ? remaining : malformed_width;
+    *codepoint = -1;
+    return 1;
+}
+
+static void
+onibi_gsub_append_replacement_range(VALUE target, VALUE replacement, long start,
+				    long end, rb_encoding *encoding)
+{
+    long length = RSTRING_LEN(replacement);
+    if (start < 0 || end < start || end > length)
+	rb_raise(eRegexpError, "Onibi returned an invalid replacement range");
+
+    if (end > start)
+	onibi_gsub_append_bytes(target, RSTRING_PTR(replacement) + start,
+				end - start, encoding);
+}
+
+static int
+onibi_gsub_named_capture(const onibi_regexp_t *obj, OnibiGsubCall *call,
+			 VALUE target, VALUE replacement, long name_start,
+			 long name_end, rb_encoding *replacement_encoding)
+{
+    long replacement_length = RSTRING_LEN(replacement);
+    if (name_start < 0 || name_end < name_start ||
+	name_end > replacement_length)
+	rb_raise(eRegexpError, "Onibi returned an invalid capture name range");
+    VALUE name_value =
+	rb_enc_str_new(RSTRING_PTR(replacement) + name_start,
+		       name_end - name_start, replacement_encoding);
     VALUE indexes = rb_hash_lookup(obj->named_captures, name_value);
     if (NIL_P(indexes)) return 0;
     for (long i = RARRAY_LEN(indexes) - 1; i >= 0; i--) {
@@ -586,44 +641,71 @@ onibi_gsub_named_capture(const onibi_regexp_t *obj, OnibiGsubCall *call,
  * zero return means that MRI must handle the replacement grammar. */
 static int
 onibi_gsub_append_replacement(OnibiGsubCall *call, const onibi_regexp_t *obj,
-			      VALUE target, OnibiBytePos match_begin,
+			      VALUE *expanded, OnibiBytePos match_begin,
 			      OnibiBytePos match_end)
 {
-    const char *replacement = RSTRING_PTR(call->replacement);
     long length = RSTRING_LEN(call->replacement);
     long literal = 0;
+    long cursor = 0;
     int named = RARRAY_LEN(obj->names) != 0;
     rb_encoding *replacement_encoding = rb_enc_get(call->replacement);
-    for (long i = 0; i < length; i++) {
-	if (replacement[i] != '\\') continue;
-	if (i > literal)
-	    onibi_gsub_append_bytes(target, replacement + literal, i - literal,
-				    replacement_encoding);
-	if (++i == length) {
-	    onibi_gsub_append_bytes(target, "\\", 1, replacement_encoding);
-	    literal = i;
+    VALUE output = Qnil;
+    while (cursor < length) {
+	long character_width;
+	int character;
+	if (!onibi_gsub_next_replacement_char(call->replacement, length, cursor,
+					      replacement_encoding, &character,
+					      &character_width))
 	    break;
+	if (character != '\\') {
+	    cursor += character_width;
+	    continue;
 	}
-	char escape = replacement[i];
+
+	long slash_start = cursor;
+	long escape_start = cursor + character_width;
+	if (escape_start == length) {
+	    cursor = escape_start;
+	    continue;
+	}
+	if (NIL_P(output)) output = rb_str_buf_new(cursor - literal);
+	onibi_gsub_append_replacement_range(output, call->replacement, literal,
+					    cursor, replacement_encoding);
+
+	long escape_width;
+	int escape;
+	if (!onibi_gsub_next_replacement_char(
+		call->replacement, length, escape_start, replacement_encoding,
+		&escape, &escape_width))
+	    break;
+	long after_escape = escape_start + escape_width;
+	if (escape < 0) {
+	    onibi_gsub_append_replacement_range(output, call->replacement,
+						cursor, after_escape,
+						replacement_encoding);
+	    literal = after_escape;
+	    cursor = after_escape;
+	    continue;
+	}
+	literal = after_escape;
+	cursor = after_escape;
 	if (escape == '\\') {
-	    onibi_gsub_append_bytes(target, "\\", 1, replacement_encoding);
-	    literal = i + 1;
+	    onibi_gsub_append_replacement_range(output, call->replacement,
+						escape_start, after_escape,
+						replacement_encoding);
 	    continue;
 	}
 	if (escape == '&' || escape == '0') {
-	    onibi_gsub_append_range(call, target, match_begin, match_end);
-	    literal = i + 1;
+	    onibi_gsub_append_range(call, output, match_begin, match_end);
 	    continue;
 	}
 	if (escape == '`') {
-	    onibi_gsub_append_range(call, target, 0, match_begin);
-	    literal = i + 1;
+	    onibi_gsub_append_range(call, output, 0, match_begin);
 	    continue;
 	}
 	if (escape == '\'') {
-	    onibi_gsub_append_range(call, target, match_end,
+	    onibi_gsub_append_range(call, output, match_end,
 				    call->subject_length);
-	    literal = i + 1;
 	    continue;
 	}
 	if (escape == '+') {
@@ -639,7 +721,7 @@ onibi_gsub_append_replacement(OnibiGsubCall *call, const onibi_regexp_t *obj,
 			    (uint32_t)capture <= call->capture_count &&
 			    call->beg[capture] >= 0 &&
 			    call->end[capture] >= 0) {
-			    onibi_gsub_append_range(call, target,
+			    onibi_gsub_append_range(call, output,
 						    call->beg[capture],
 						    call->end[capture]);
 			    name_index = -1;
@@ -651,69 +733,64 @@ onibi_gsub_append_replacement(OnibiGsubCall *call, const onibi_regexp_t *obj,
 	    else {
 		for (uint32_t index = call->capture_count; index > 0; index--)
 		    if (call->beg[index] >= 0 && call->end[index] >= 0) {
-			onibi_gsub_append_range(call, target, call->beg[index],
+			onibi_gsub_append_range(call, output, call->beg[index],
 						call->end[index]);
 			break;
 		    }
 	    }
-	    literal = i + 1;
 	    continue;
 	}
 	if (escape == 'k') {
-	    if (i + 1 >= length || replacement[i + 1] != '<') return 0;
-	    long name_start = i + 2;
-	    long name_end = name_start;
-	    while (name_end < length && replacement[name_end] != '>')
-		name_end++;
-	    if (name_end == length ||
-		!onibi_gsub_named_capture(obj, call, target,
-					  replacement + name_start,
-					  name_end - name_start))
+	    long open_width;
+	    int open;
+	    if (after_escape >= length ||
+		!onibi_gsub_next_replacement_char(
+		    call->replacement, length, after_escape,
+		    replacement_encoding, &open, &open_width) ||
+		open != '<')
 		return 0;
-	    literal = name_end + 1;
-	    i = name_end;
+	    long name_start = after_escape + open_width;
+	    long name_end = name_start;
+	    long close_width = 0;
+	    while (name_end < length) {
+		int name_character;
+		if (!onibi_gsub_next_replacement_char(
+			call->replacement, length, name_end,
+			replacement_encoding, &name_character, &close_width))
+		    return 0;
+		if (name_character == '>') break;
+		name_end += close_width;
+	    }
+	    if (name_end == length ||
+		!onibi_gsub_named_capture(obj, call, output, call->replacement,
+					  name_start, name_end,
+					  replacement_encoding))
+		return 0;
+	    cursor = name_end + close_width;
+	    literal = cursor;
 	    continue;
 	}
 	if (escape >= '1' && escape <= '9') {
-	    long number_start = i;
-	    long number_end = i + 1;
-	    while (number_end < length && replacement[number_end] >= '0' &&
-		   replacement[number_end] <= '9')
-		number_end++;
-	    long number = 0;
-	    long selected_end = number_start + 1;
-	    for (long digit_end = number_start + 1; digit_end <= number_end;
-		 digit_end++) {
-		long digit = replacement[digit_end - 1] - '0';
-		if (number > (LONG_MAX - digit) / 10) break;
-		number = number * 10 + digit;
-		if (number > 0 && number <= call->capture_count) {
-		    selected_end = digit_end;
-		    continue;
-		}
-		break;
-	    }
-	    if (named) selected_end = number_start + 1;
-	    if (!named && (number == 0 || number > call->capture_count)) {
-		number = replacement[number_start] - '0';
-		selected_end = number_start + 1;
-	    }
-	    if (number > 0 && number <= call->capture_count && !named &&
+	    long number = escape - '0';
+	    if (!named && number <= call->capture_count &&
 		call->beg[number] >= 0 && call->end[number] >= 0)
-		onibi_gsub_append_range(call, target, call->beg[number],
+		onibi_gsub_append_range(call, output, call->beg[number],
 					call->end[number]);
-	    literal = selected_end;
-	    i = selected_end - 1;
 	    continue;
 	}
-	/* MRI preserves an unrecognised escape as two literal bytes. */
-	onibi_gsub_append_bytes(target, replacement + i - 1, 2,
-				replacement_encoding);
-	literal = i + 1;
+	/* MRI preserves an unknown escape as its encoded two-character span. */
+	onibi_gsub_append_replacement_range(output, call->replacement,
+					    slash_start, after_escape,
+					    replacement_encoding);
+    }
+    if (NIL_P(output)) {
+	*expanded = call->replacement;
+	return 1;
     }
     if (literal < length)
-	onibi_gsub_append_bytes(target, replacement + literal, length - literal,
-				replacement_encoding);
+	onibi_gsub_append_replacement_range(output, call->replacement, literal,
+					    length, replacement_encoding);
+    *expanded = output;
     return 1;
 }
 
@@ -753,9 +830,8 @@ onibi_gsub_body(VALUE opaque)
 				    RSTRING_LEN(value), rb_enc_get(value));
 	}
 	else {
-	    VALUE expanded = rb_str_buf_new(RSTRING_LEN(call->replacement));
-	    rb_enc_associate(expanded, rb_enc_get(call->replacement));
-	    if (!onibi_gsub_append_replacement(call, obj, expanded,
+	    VALUE expanded = call->replacement;
+	    if (!onibi_gsub_append_replacement(call, obj, &expanded,
 					       raw_match.begin_byte,
 					       raw_match.end_byte)) {
 		VALUE plain = rb_str_dup(call->str);
