@@ -509,11 +509,21 @@ onibi_tilde(VALUE self)
     return LONG2NUM(onibi_ruby_character_position(input, raw_match.begin_byte));
 }
 
+typedef enum {
+    ONIBI_GSUB_REPLACEMENT_STRING,
+    ONIBI_GSUB_REPLACEMENT_HASH
+} OnibiGsubReplacementKind;
+
+/* This state stays in the active C frame across Ruby callbacks. */
 typedef struct {
     VALUE self;
     VALUE str;
     VALUE replacement;
     VALUE result;
+    VALUE hash;
+    VALUE hash_key;
+    VALUE hash_value;
+    VALUE hash_string;
     OnibiBytePos origin;
     OnibiBytePos copied;
     uint32_t capture_count;
@@ -522,6 +532,7 @@ typedef struct {
     OnibiBytePos *beg;
     OnibiBytePos *end;
     OnibiBytePos subject_length;
+    OnibiGsubReplacementKind replacement_kind;
     int with_block;
 } OnibiGsubCall;
 
@@ -562,6 +573,37 @@ onibi_gsub_append_range(OnibiGsubCall *call, VALUE target, OnibiBytePos start,
     onibi_gsub_append_bytes(target, RSTRING_PTR(call->str) + start,
 			    onibi_gsub_length(end - start),
 			    rb_enc_get(call->str));
+}
+
+static void
+onibi_gsub_append_hash_replacement(OnibiGsubCall *call,
+				   OnibiBytePos match_begin,
+				   OnibiBytePos match_end)
+{
+    if (match_begin < 0 || match_end < match_begin ||
+	match_end > RSTRING_LEN(call->str))
+	rb_raise(eRegexpError, "Onibi returned an invalid replacement range");
+
+    call->hash_key = Qnil;
+    call->hash_value = Qnil;
+    call->hash_string = Qnil;
+    long key_length = onibi_gsub_length(match_end - match_begin);
+    rb_encoding *key_encoding = rb_enc_get(call->str);
+    call->hash_key = rb_enc_str_new(RSTRING_PTR(call->str) + match_begin,
+				    key_length, key_encoding);
+    call->hash_value = rb_hash_aref(call->hash, call->hash_key);
+    RB_GC_GUARD(call->hash);
+    RB_GC_GUARD(call->hash_key);
+
+    call->hash_string = rb_obj_as_string(call->hash_value);
+    RB_GC_GUARD(call->hash_value);
+
+    onibi_gsub_check_subject(call);
+    onibi_gsub_append_range(call, call->result, call->copied, match_begin);
+    onibi_gsub_append_bytes(call->result, RSTRING_PTR(call->hash_string),
+			    RSTRING_LEN(call->hash_string),
+			    rb_enc_get(call->hash_string));
+    RB_GC_GUARD(call->hash_string);
 }
 
 static int
@@ -819,7 +861,11 @@ onibi_gsub_body(VALUE opaque)
 			      call->replacement);
 	}
 	if (status == ONIBI_EXEC_STATUS_NO_MATCH) break;
-	if (call->with_block) {
+	if (call->replacement_kind == ONIBI_GSUB_REPLACEMENT_HASH) {
+	    onibi_gsub_append_hash_replacement(call, raw_match.begin_byte,
+					       raw_match.end_byte);
+	}
+	else if (call->with_block) {
 	    VALUE value = rb_yield(onibi_byte_slice(
 		call->str, raw_match.begin_byte, raw_match.end_byte));
 	    value = rb_obj_as_string(value);
@@ -881,7 +927,18 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     StringValue(str);
     int replacement_given = argc == 2;
-    if (replacement_given || !rb_block_given_p()) StringValue(replacement);
+    OnibiGsubReplacementKind replacement_kind = ONIBI_GSUB_REPLACEMENT_STRING;
+    if (replacement_given) {
+	VALUE hash =
+	    rb_check_convert_type(replacement, T_HASH, "Hash", "to_hash");
+	if (!NIL_P(hash)) {
+	    replacement = hash;
+	    replacement_kind = ONIBI_GSUB_REPLACEMENT_HASH;
+	}
+    }
+    if (replacement_kind == ONIBI_GSUB_REPLACEMENT_STRING &&
+	(replacement_given || !rb_block_given_p()))
+	StringValue(replacement);
     uint32_t capture_count = onibi_public_capture_count(obj);
     if (capture_count == UINT32_MAX)
 	rb_raise(rb_eRangeError, "Onibi capture count is too large");
@@ -893,6 +950,11 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
 	.str = str,
 	.replacement = replacement,
 	.result = rb_str_buf_new(RSTRING_LEN(str)),
+	.hash = replacement_kind == ONIBI_GSUB_REPLACEMENT_HASH ? replacement
+								: Qnil,
+	.hash_key = Qnil,
+	.hash_value = Qnil,
+	.hash_string = Qnil,
 	.origin = 0,
 	.copied = 0,
 	.capture_count = capture_count,
@@ -901,6 +963,7 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
 	.beg = NULL,
 	.end = NULL,
 	.subject_length = RSTRING_LEN(str),
+	.replacement_kind = replacement_kind,
 	.with_block = !replacement_given && rb_block_given_p()};
     rb_enc_associate(call.result, rb_enc_get(str));
     call.beg = call.ranges;
