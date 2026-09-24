@@ -997,6 +997,7 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
     rb_scan_args(argc, argv, "11", &str, &replacement);
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+    if (argc == 1) RETURN_ENUMERATOR(self, argc, argv);
     StringValue(str);
     int replacement_given = argc == 2;
     OnibiGsubReplacementKind replacement_kind = ONIBI_GSUB_REPLACEMENT_STRING;

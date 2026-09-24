@@ -3,6 +3,8 @@
 require "test_helper"
 
 # These checks record current boundaries. They do not define future support.
+# This audit tests caller-local match globals, so it checks `$~` and `$1` directly.
+# rubocop:disable Style/SpecialGlobalVars, Style/PerlBackrefs
 class StringCallerBoundaryAuditTest < Minitest::Test
   CASES = [["a", "aba"], ["(a)(z)?", "aba"], ["", "aba"],
            ["()", ""], ["z", "aba"]].freeze
@@ -34,7 +36,7 @@ class StringCallerBoundaryAuditTest < Minitest::Test
       else
         assert_instance_of ::MatchData, $~
         refute_same before, $~
-        assert_equal ["あ", "あ"], $~.to_a
+        assert_equal %w[あ あ], $~.to_a
       end
       assert_same $~, Onibi::Regexp.last_match
       assert_nil "" =~ regexp
@@ -95,7 +97,10 @@ class StringCallerBoundaryAuditTest < Minitest::Test
       mri = ::Regexp.new(pattern)
       expected = input.gsub(mri, "x")
       expected_yields = []
-      input.gsub(mri) { |value| expected_yields << value; "x" }
+      input.gsub(mri) do |value|
+        expected_yields << value
+        "x"
+      end
       regexp = Onibi::Regexp.new(pattern)
       /(prior)/.match("prior")
       before = $~
@@ -117,7 +122,7 @@ class StringCallerBoundaryAuditTest < Minitest::Test
 
   def test_native_backslash_replacements_keep_prior_state
     [["(a)", '\1'], ["(a)", '\&'], ["(?<letter>a)", '\k<letter>'],
-     ["a", '\\\\'], ["a", '\q'], ["", '\&']].each do |pattern, replacement|
+     ["a", "\\\\"], ["a", '\q'], ["", '\&']].each do |pattern, replacement|
       ["aba", ""].each do |input|
         mri = ::Regexp.new(pattern)
         expected = input.gsub(mri, replacement)
@@ -185,10 +190,10 @@ class StringCallerBoundaryAuditTest < Minitest::Test
     assert_same $~, Onibi::Regexp.last_match
   end
 
-  def test_missing_gsub_replacement_is_not_an_enumerator
+  def test_missing_gsub_replacement_returns_an_enumerator
     /(prior)/.match("prior")
     before = $~
-    assert_raises(TypeError) { Onibi::Regexp.new("a").gsub("a") }
+    assert_instance_of Enumerator, Onibi::Regexp.new("a").gsub("a")
     assert_same before, $~
     assert_instance_of Enumerator, "a".gsub(/a/)
   end
@@ -207,3 +212,4 @@ class StringCallerBoundaryAuditTest < Minitest::Test
     originals&.each { |name, method| String.define_method(name, method) }
   end
 end
+# rubocop:enable Style/SpecialGlobalVars, Style/PerlBackrefs
