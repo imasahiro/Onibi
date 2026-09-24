@@ -4,6 +4,70 @@
 
 #include <limits.h>
 
+typedef struct {
+    OnibiBytePos *ranges;
+    size_t bytes;
+} OnibiCaptureRangeOwner;
+
+static void
+onibi_capture_range_owner_release(OnibiCaptureRangeOwner *owner)
+{
+    if (owner == NULL) return;
+    OnibiBytePos *ranges = owner->ranges;
+    owner->ranges = NULL;
+    owner->bytes = 0;
+    if (ranges != NULL) ruby_xfree(ranges);
+}
+
+static void
+onibi_capture_range_owner_free(void *opaque)
+{
+    OnibiCaptureRangeOwner *owner = (OnibiCaptureRangeOwner *)opaque;
+    if (owner == NULL) return;
+    onibi_capture_range_owner_release(owner);
+    ruby_xfree(owner);
+}
+
+static size_t
+onibi_capture_range_owner_size(const void *opaque)
+{
+    const OnibiCaptureRangeOwner *owner =
+	(const OnibiCaptureRangeOwner *)opaque;
+    if (owner == NULL) return 0;
+    if (owner->bytes > SIZE_MAX - sizeof(*owner)) return SIZE_MAX;
+    return sizeof(*owner) + owner->bytes;
+}
+
+static const rb_data_type_t onibi_capture_range_owner_type = {
+    .wrap_struct_name = "OnibiCaptureRangeOwner",
+    .function =
+	{
+	    .dfree = onibi_capture_range_owner_free,
+	    .dsize = onibi_capture_range_owner_size,
+	},
+};
+
+static VALUE
+onibi_capture_range_owner_new(size_t bytes, OnibiBytePos **ranges_out)
+{
+    VALUE value =
+	rb_data_typed_object_zalloc(rb_cObject, sizeof(OnibiCaptureRangeOwner),
+				    &onibi_capture_range_owner_type);
+    OnibiCaptureRangeOwner *owner = RTYPEDDATA_DATA(value);
+    owner->ranges = ruby_xmalloc(bytes);
+    owner->bytes = bytes;
+    *ranges_out = owner->ranges;
+    RB_GC_GUARD(value);
+    return value;
+}
+
+static void
+onibi_capture_range_owner_release_value(VALUE value)
+{
+    OnibiCaptureRangeOwner *owner = RTYPEDDATA_DATA(value);
+    onibi_capture_range_owner_release(owner);
+}
+
 /* The search loop receives byte offsets, but a multibyte subject has only
  * character boundaries as valid candidate starts.  The input eligibility
  * gate rejects broken multibyte strings before this helper runs. */
@@ -298,6 +362,7 @@ typedef struct {
     int with_block;
     uint32_t capture_count;
     uint32_t num_regs;
+    VALUE range_owner;
     OnibiBytePos *ranges;
     OnibiBytePos *beg;
     OnibiBytePos *end;
@@ -391,7 +456,7 @@ static VALUE
 onibi_scan_ensure_cleanup(VALUE opaque)
 {
     OnibiScanCall *call = (OnibiScanCall *)(uintptr_t)opaque;
-    ruby_xfree(call->ranges);
+    onibi_capture_range_owner_release_value(call->range_owner);
     call->ranges = NULL;
     call->beg = NULL;
     call->end = NULL;
@@ -415,18 +480,24 @@ onibi_scan(VALUE self, VALUE str)
 
     OnibiScanCall call = {.self = self,
 			  .str = str,
-			  .result = rb_block_given_p() ? Qnil : rb_ary_new(),
+			  .result = Qnil,
 			  .snapshot = Qnil,
 			  .with_block = rb_block_given_p(),
 			  .capture_count = capture_count,
 			  .num_regs = num_regs,
-			  .ranges = ruby_xmalloc(range_bytes),
+			  .range_owner = Qnil,
+			  .ranges = NULL,
 			  .beg = NULL,
 			  .end = NULL};
+    if (!call.with_block) call.result = rb_ary_new();
+    call.range_owner = onibi_capture_range_owner_new(range_bytes, &call.ranges);
     call.beg = call.ranges;
     call.end = call.ranges + num_regs;
-    return rb_ensure(onibi_scan_body, (VALUE)(uintptr_t)&call,
-		     onibi_scan_ensure_cleanup, (VALUE)(uintptr_t)&call);
+    VALUE result =
+	rb_ensure(onibi_scan_body, (VALUE)(uintptr_t)&call,
+		  onibi_scan_ensure_cleanup, (VALUE)(uintptr_t)&call);
+    RB_GC_GUARD(call.range_owner);
+    return result;
 }
 static VALUE
 onibi_case_equal(VALUE self, VALUE other)
@@ -528,6 +599,7 @@ typedef struct {
     OnibiBytePos copied;
     uint32_t capture_count;
     uint32_t num_regs;
+    VALUE range_owner;
     OnibiBytePos *ranges;
     OnibiBytePos *beg;
     OnibiBytePos *end;
@@ -911,7 +983,7 @@ static VALUE
 onibi_gsub_ensure_cleanup(VALUE opaque)
 {
     OnibiGsubCall *call = (OnibiGsubCall *)(uintptr_t)opaque;
-    ruby_xfree(call->ranges);
+    onibi_capture_range_owner_release_value(call->range_owner);
     call->ranges = NULL;
     call->beg = NULL;
     call->end = NULL;
@@ -945,11 +1017,12 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
     uint32_t num_regs = capture_count + 1U;
     if ((size_t)num_regs > SIZE_MAX / sizeof(OnibiBytePos) / 2U)
 	rb_raise(rb_eRangeError, "Onibi capture ranges are too large");
+    size_t range_bytes = (size_t)num_regs * sizeof(OnibiBytePos) * 2U;
     OnibiGsubCall call = {
 	.self = self,
 	.str = str,
 	.replacement = replacement,
-	.result = rb_str_buf_new(RSTRING_LEN(str)),
+	.result = Qnil,
 	.hash = replacement_kind == ONIBI_GSUB_REPLACEMENT_HASH ? replacement
 								: Qnil,
 	.hash_key = Qnil,
@@ -959,17 +1032,23 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
 	.copied = 0,
 	.capture_count = capture_count,
 	.num_regs = num_regs,
-	.ranges = ruby_xmalloc((size_t)num_regs * sizeof(OnibiBytePos) * 2U),
+	.range_owner = Qnil,
+	.ranges = NULL,
 	.beg = NULL,
 	.end = NULL,
 	.subject_length = RSTRING_LEN(str),
 	.replacement_kind = replacement_kind,
 	.with_block = !replacement_given && rb_block_given_p()};
+    call.result = rb_str_buf_new(RSTRING_LEN(str));
     rb_enc_associate(call.result, rb_enc_get(str));
+    call.range_owner = onibi_capture_range_owner_new(range_bytes, &call.ranges);
     call.beg = call.ranges;
     call.end = call.ranges + num_regs;
-    return rb_ensure(onibi_gsub_body, (VALUE)(uintptr_t)&call,
-		     onibi_gsub_ensure_cleanup, (VALUE)(uintptr_t)&call);
+    VALUE result =
+	rb_ensure(onibi_gsub_body, (VALUE)(uintptr_t)&call,
+		  onibi_gsub_ensure_cleanup, (VALUE)(uintptr_t)&call);
+    RB_GC_GUARD(call.range_owner);
+    return result;
 }
 
 void
