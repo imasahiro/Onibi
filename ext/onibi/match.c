@@ -738,7 +738,18 @@ onibi_gsub_named_capture(const onibi_regexp_t *obj, OnibiGsubCall *call,
     VALUE name_value =
 	rb_enc_str_new(RSTRING_PTR(replacement) + name_start,
 		       name_end - name_start, replacement_encoding);
-    VALUE indexes = rb_hash_lookup(obj->named_captures, name_value);
+    VALUE indexes = Qnil;
+    for (long i = 0; i < RARRAY_LEN(obj->names); i++) {
+	VALUE regexp_name = rb_ary_entry(obj->names, i);
+	if (!RTEST(rb_str_equal(name_value, regexp_name))) continue;
+	VALUE metadata_key =
+	    rb_enc_str_new(RSTRING_PTR(regexp_name), RSTRING_LEN(regexp_name),
+			   rb_ascii8bit_encoding());
+	indexes = rb_hash_lookup(obj->named_captures, metadata_key);
+	RB_GC_GUARD(metadata_key);
+	RB_GC_GUARD(regexp_name);
+	break;
+    }
     if (NIL_P(indexes)) return 0;
     for (long i = RARRAY_LEN(indexes) - 1; i >= 0; i--) {
 	long index = NUM2LONG(rb_ary_entry(indexes, i));

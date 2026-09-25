@@ -712,37 +712,525 @@ onibi_compiled_get(VALUE value)
     return compiled;
 }
 
+#define ONIBI_NAME_KEY_PENDING_CAPACITY 16
+
+typedef struct {
+    const unsigned char *bytes;
+    size_t length;
+    size_t cursor;
+    rb_encoding *encoding;
+    unsigned char pending[ONIBI_NAME_KEY_PENDING_CAPACITY];
+    size_t pending_length;
+    size_t pending_cursor;
+    int unicode_brace;
+    int unicode_brace_has_value;
+} OnibiNameKeyIterator;
+
+static int
+onibi_name_hex_value(unsigned char byte)
+{
+    if (byte >= '0' && byte <= '9') return byte - '0';
+    if (byte >= 'a' && byte <= 'f') return byte - 'a' + 10;
+    if (byte >= 'A' && byte <= 'F') return byte - 'A' + 10;
+    return -1;
+}
+
+static int
+onibi_name_ascii_space(unsigned char byte)
+{
+    return byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r' ||
+	   byte == '\f' || byte == '\v';
+}
+
+static void
+onibi_name_key_iterator_init(OnibiNameKeyIterator *iterator,
+			     const OnibiAstArena *arena, OnibiTokenSlice name,
+			     rb_encoding *encoding)
+{
+    memset(iterator, 0, sizeof(*iterator));
+    if (!name.present || name.offset > arena->bytes_count ||
+	name.length > arena->bytes_count - name.offset)
+	rb_raise(eRegexpError, "invalid capture name range");
+    iterator->bytes = arena->bytes + name.offset;
+    iterator->length = name.length;
+    iterator->encoding = encoding;
+}
+
+static void
+onibi_name_key_set_byte(OnibiNameKeyIterator *iterator, unsigned char byte)
+{
+    iterator->pending[0] = byte;
+    iterator->pending_length = 1;
+    iterator->pending_cursor = 0;
+}
+
+static void
+onibi_name_key_set_ascii_escape(OnibiNameKeyIterator *iterator,
+				unsigned int codepoint)
+{
+    static const unsigned char digits[] = "0123456789ABCDEF";
+    if (codepoint > 0x7f)
+	rb_raise(eRegexpError, "invalid ASCII capture name escape");
+    iterator->pending[0] = '\\';
+    iterator->pending[1] = 'x';
+    iterator->pending[2] = digits[(codepoint >> 4) & 0x0f];
+    iterator->pending[3] = digits[codepoint & 0x0f];
+    iterator->pending_length = 4;
+    iterator->pending_cursor = 0;
+}
+
+static void
+onibi_name_key_set_unicode(OnibiNameKeyIterator *iterator,
+			   unsigned int codepoint)
+{
+    if (codepoint <= 0x7f) {
+	onibi_name_key_set_ascii_escape(iterator, codepoint);
+	return;
+    }
+    if (codepoint > 0x10ffff || (codepoint >= 0xd800 && codepoint <= 0xdfff))
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    rb_encoding *utf8 = rb_utf8_encoding();
+    int width = rb_enc_code_to_mbclen((int)codepoint, utf8);
+    if (width <= 0 || width > ONIBI_NAME_KEY_PENDING_CAPACITY)
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    int written = rb_enc_mbcput(codepoint, iterator->pending, utf8);
+    if (written != width)
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    iterator->pending_length = (size_t)written;
+    iterator->pending_cursor = 0;
+}
+
+static unsigned int onibi_name_key_read_hex(const unsigned char *bytes,
+					    size_t length, size_t *cursor,
+					    size_t limit);
+
+static unsigned int
+onibi_name_key_read_x_escape(const unsigned char *bytes, size_t length,
+			     size_t *cursor, rb_encoding *encoding)
+{
+    if (*cursor > length)
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    unsigned int value = 0;
+    size_t digits = 0;
+    while (digits < 2 && *cursor < length) {
+	int width = 0;
+	int ascii =
+	    rb_enc_ascget((const char *)(bytes + *cursor),
+			  (const char *)(bytes + length), &width, encoding);
+	int digit = ascii >= 0 && width == 1
+			? onibi_name_hex_value((unsigned char)ascii)
+			: -1;
+	if (digit < 0) break;
+	value = value * 16 + (unsigned int)digit;
+	(*cursor)++;
+	digits++;
+    }
+    if (digits == 0)
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    return value;
+}
+
+static int
+onibi_name_key_source_ascii(const unsigned char *bytes, size_t length,
+			    size_t cursor, rb_encoding *encoding)
+{
+    if (cursor >= length) return -1;
+    int width = 0;
+    int ascii = rb_enc_ascget((const char *)(bytes + cursor),
+			      (const char *)(bytes + length), &width, encoding);
+    return width == 1 ? ascii : -1;
+}
+
+static unsigned int
+onibi_name_key_read_modifier_operand(OnibiNameKeyIterator *iterator,
+				     size_t *cursor);
+
+static unsigned int
+onibi_name_key_read_control_meta_value(OnibiNameKeyIterator *iterator,
+				       size_t *cursor)
+{
+    int control = 0;
+    int meta = 0;
+    for (;;) {
+	if (onibi_name_key_source_ascii(iterator->bytes, iterator->length,
+					*cursor, iterator->encoding) != '\\')
+	    break;
+	int operation = onibi_name_key_source_ascii(
+	    iterator->bytes, iterator->length, *cursor + 1, iterator->encoding);
+	if (operation == 'c') {
+	    if (control)
+		rb_raise(eRegexpError, "duplicate control capture name escape");
+	    control = 1;
+	    *cursor += 2;
+	    continue;
+	}
+	int marker = onibi_name_key_source_ascii(
+	    iterator->bytes, iterator->length, *cursor + 2, iterator->encoding);
+	if (operation == 'C' && marker == '-') {
+	    if (control)
+		rb_raise(eRegexpError, "duplicate control capture name escape");
+	    control = 1;
+	    *cursor += 3;
+	    continue;
+	}
+	if (operation == 'M' && marker == '-') {
+	    if (meta)
+		rb_raise(eRegexpError, "duplicate meta capture name escape");
+	    meta = 1;
+	    *cursor += 3;
+	    continue;
+	}
+	break;
+    }
+
+    unsigned int value = onibi_name_key_read_modifier_operand(iterator, cursor);
+    if (control) value &= 0x1f;
+    if (meta) value |= 0x80;
+    return value;
+}
+
+/* Read one source spelling that contributes one byte to an encoded character.
+ */
+static int
+onibi_name_key_read_source_byte(OnibiNameKeyIterator *iterator,
+				unsigned char *byte)
+{
+    if (iterator->cursor >= iterator->length) return 0;
+    int first =
+	onibi_name_key_source_ascii(iterator->bytes, iterator->length,
+				    iterator->cursor, iterator->encoding);
+    if (first != '\\') return 0;
+    int operation =
+	onibi_name_key_source_ascii(iterator->bytes, iterator->length,
+				    iterator->cursor + 1, iterator->encoding);
+    if (operation == '\\') {
+	iterator->cursor += 2;
+	*byte = '\\';
+	return 1;
+    }
+    if (operation == 'x') {
+	size_t cursor = iterator->cursor + 2;
+	unsigned int value = onibi_name_key_read_x_escape(
+	    iterator->bytes, iterator->length, &cursor, iterator->encoding);
+	iterator->cursor = cursor;
+	*byte = (unsigned char)value;
+	return 1;
+    }
+    int marker =
+	onibi_name_key_source_ascii(iterator->bytes, iterator->length,
+				    iterator->cursor + 2, iterator->encoding);
+    if (operation == 'c' ||
+	((operation == 'C' || operation == 'M') && marker == '-')) {
+	size_t cursor = iterator->cursor;
+	unsigned int value =
+	    onibi_name_key_read_control_meta_value(iterator, &cursor);
+	if (value > 0xff)
+	    rb_raise(eRegexpError, "invalid encoded capture name");
+	iterator->cursor = cursor;
+	*byte = (unsigned char)value;
+	return 1;
+    }
+    return 0;
+}
+
+static void
+onibi_name_key_set_hex_escape(OnibiNameKeyIterator *iterator,
+			      unsigned int codepoint)
+{
+    if (codepoint <= 0x7f) {
+	onibi_name_key_set_ascii_escape(iterator, codepoint);
+	return;
+    }
+    onibi_name_key_set_byte(iterator, (unsigned char)codepoint);
+    int encoded_length = rb_enc_precise_mbclen((const char *)iterator->pending,
+					       (const char *)iterator->pending +
+						   iterator->pending_length,
+					       iterator->encoding);
+    if (ONIGENC_MBCLEN_NEEDMORE_P(encoded_length)) {
+	int width = (int)iterator->pending_length +
+		    ONIGENC_MBCLEN_NEEDMORE_LEN(encoded_length);
+	if (width <= 1 || width > ONIBI_NAME_KEY_PENDING_CAPACITY)
+	    rb_raise(eRegexpError, "invalid encoded capture name");
+	while (iterator->pending_length < (size_t)width) {
+	    unsigned char next_byte = 0;
+	    if (!onibi_name_key_read_source_byte(iterator, &next_byte)) {
+		if (iterator->cursor >= iterator->length)
+		    rb_raise(eRegexpError, "invalid encoded capture name");
+		next_byte = iterator->bytes[iterator->cursor++];
+	    }
+	    iterator->pending[iterator->pending_length++] = next_byte;
+	}
+	encoded_length = rb_enc_precise_mbclen((const char *)iterator->pending,
+					       (const char *)iterator->pending +
+						   iterator->pending_length,
+					       iterator->encoding);
+	if (!ONIGENC_MBCLEN_CHARFOUND_P(encoded_length) ||
+	    ONIGENC_MBCLEN_CHARFOUND_LEN(encoded_length) != width)
+	    rb_raise(eRegexpError, "invalid encoded capture name");
+    }
+    else if (!ONIGENC_MBCLEN_CHARFOUND_P(encoded_length) ||
+	     ONIGENC_MBCLEN_CHARFOUND_LEN(encoded_length) != 1) {
+	rb_raise(eRegexpError, "invalid encoded capture name");
+    }
+}
+
+static unsigned int
+onibi_name_key_read_modifier_operand(OnibiNameKeyIterator *iterator,
+				     size_t *cursor)
+{
+    int ascii = onibi_name_key_source_ascii(iterator->bytes, iterator->length,
+					    *cursor, iterator->encoding);
+    if (ascii == '\\') {
+	int escaped = onibi_name_key_source_ascii(
+	    iterator->bytes, iterator->length, *cursor + 1, iterator->encoding);
+	if (escaped < 0)
+	    rb_raise(eRegexpError, "invalid control/meta capture name escape");
+	*cursor += 2;
+	switch (escaped) {
+	case 'n': return '\n';
+	case 't': return '\t';
+	case 'r': return '\r';
+	case 'f': return '\f';
+	case 'v': return '\v';
+	case 'a': return '\a';
+	case 'e': return 0x1b;
+	case '0': return 0;
+	case 'x':
+	    return onibi_name_key_read_x_escape(
+		iterator->bytes, iterator->length, cursor, iterator->encoding);
+	case 'u':
+	    rb_raise(eRegexpError, "invalid control/meta capture name escape");
+	default: return (unsigned int)escaped;
+	}
+    }
+    if (ascii >= 0) {
+	(*cursor)++;
+	return (unsigned int)ascii;
+    }
+
+    if (*cursor >= iterator->length)
+	rb_raise(eRegexpError, "unterminated control/meta capture name escape");
+    int width = rb_enc_precise_mbclen(
+	(const char *)(iterator->bytes + *cursor),
+	(const char *)(iterator->bytes + iterator->length), iterator->encoding);
+    if (!ONIGENC_MBCLEN_CHARFOUND_P(width) ||
+	ONIGENC_MBCLEN_CHARFOUND_LEN(width) != 1)
+	rb_raise(eRegexpError, "too short control/meta capture name escape");
+    return iterator->bytes[(*cursor)++];
+}
+
+static void
+onibi_name_key_fill_control_meta(OnibiNameKeyIterator *iterator)
+{
+    size_t cursor = iterator->cursor;
+    unsigned int value =
+	onibi_name_key_read_control_meta_value(iterator, &cursor);
+    iterator->cursor = cursor;
+    if (value <= 0x7f)
+	onibi_name_key_set_ascii_escape(iterator, value);
+    else
+	onibi_name_key_set_hex_escape(iterator, value);
+}
+
+static unsigned int
+onibi_name_key_read_hex(const unsigned char *bytes, size_t length,
+			size_t *cursor, size_t limit)
+{
+    if (*cursor > length || limit > length - *cursor || limit == 0 || limit > 6)
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    unsigned int value = 0;
+    for (size_t i = 0; i < limit; i++) {
+	int digit = onibi_name_hex_value(bytes[*cursor + i]);
+	if (digit < 0)
+	    rb_raise(eRegexpError, "invalid Unicode capture name escape");
+	value = value * 16 + (unsigned int)digit;
+    }
+    *cursor += limit;
+    if (value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff))
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    return value;
+}
+
+static void
+onibi_name_key_fill_unicode_brace(OnibiNameKeyIterator *iterator)
+{
+    while (iterator->cursor < iterator->length &&
+	   onibi_name_ascii_space(iterator->bytes[iterator->cursor]))
+	iterator->cursor++;
+    if (iterator->cursor >= iterator->length)
+	rb_raise(eRegexpError, "unterminated Unicode capture name escape");
+    if (iterator->bytes[iterator->cursor] == '}') {
+	if (!iterator->unicode_brace_has_value)
+	    rb_raise(eRegexpError, "empty Unicode capture name escape");
+	iterator->cursor++;
+	iterator->unicode_brace = 0;
+	return;
+    }
+    size_t start = iterator->cursor;
+    while (iterator->cursor < iterator->length &&
+	   onibi_name_hex_value(iterator->bytes[iterator->cursor]) >= 0)
+	iterator->cursor++;
+    size_t digits = iterator->cursor - start;
+    if (digits == 0 || digits > 6)
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    size_t value_cursor = start;
+    unsigned int codepoint = onibi_name_key_read_hex(
+	iterator->bytes, iterator->length, &value_cursor, digits);
+    iterator->unicode_brace_has_value = 1;
+    onibi_name_key_set_unicode(iterator, codepoint);
+}
+
+static void
+onibi_name_key_fill(OnibiNameKeyIterator *iterator)
+{
+    while (iterator->pending_cursor == iterator->pending_length) {
+	iterator->pending_cursor = 0;
+	iterator->pending_length = 0;
+	if (iterator->unicode_brace) {
+	    onibi_name_key_fill_unicode_brace(iterator);
+	    if (iterator->pending_length != 0) return;
+	    continue;
+	}
+	if (iterator->cursor >= iterator->length) return;
+	const unsigned char *start = iterator->bytes + iterator->cursor;
+	const unsigned char *end = iterator->bytes + iterator->length;
+	int character_width = 0;
+	int ascii = rb_enc_ascget((const char *)start, (const char *)end,
+				  &character_width, iterator->encoding);
+	if (ascii >= 0 && character_width == 1 && ascii == '\\') {
+	    size_t next_cursor = iterator->cursor + 1;
+	    int next_width = 0;
+	    int next =
+		next_cursor < iterator->length
+		    ? rb_enc_ascget(
+			  (const char *)(iterator->bytes + next_cursor),
+			  (const char *)end, &next_width, iterator->encoding)
+		    : -1;
+	    int next_next = next_cursor + 1 < iterator->length
+				? onibi_name_key_source_ascii(
+				      iterator->bytes, iterator->length,
+				      next_cursor + 1, iterator->encoding)
+				: -1;
+	    if (next_width == 1 &&
+		(next == 'c' ||
+		 ((next == 'C' || next == 'M') && next_next == '-'))) {
+		onibi_name_key_fill_control_meta(iterator);
+		return;
+	    }
+	    if (next == '\\' && next_width == 1) {
+		iterator->pending[0] = '\\';
+		iterator->pending[1] = '\\';
+		iterator->pending_length = 2;
+		iterator->cursor += 2;
+		return;
+	    }
+	    if (next == 'u' && next_width == 1) {
+		size_t code_cursor = next_cursor + 1;
+		if (code_cursor < iterator->length &&
+		    iterator->bytes[code_cursor] == '{') {
+		    iterator->cursor = code_cursor + 1;
+		    iterator->unicode_brace = 1;
+		    iterator->unicode_brace_has_value = 0;
+		    continue;
+		}
+		unsigned int codepoint = onibi_name_key_read_hex(
+		    iterator->bytes, iterator->length, &code_cursor, 4);
+		iterator->cursor = code_cursor;
+		onibi_name_key_set_unicode(iterator, codepoint);
+		return;
+	    }
+	    if (next == 'x' && next_width == 1) {
+		size_t value_cursor = next_cursor + 1;
+		unsigned int codepoint = onibi_name_key_read_x_escape(
+		    iterator->bytes, iterator->length, &value_cursor,
+		    iterator->encoding);
+		iterator->cursor = value_cursor;
+		onibi_name_key_set_hex_escape(iterator, codepoint);
+		return;
+	    }
+	}
+	if (ascii >= 0) {
+	    if (character_width <= 0 ||
+		(size_t)character_width > ONIBI_NAME_KEY_PENDING_CAPACITY ||
+		iterator->cursor + (size_t)character_width > iterator->length)
+		rb_raise(eRegexpError, "invalid encoded capture name");
+	    memcpy(iterator->pending, start, (size_t)character_width);
+	    iterator->pending_length = (size_t)character_width;
+	    iterator->cursor += (size_t)character_width;
+	    return;
+	}
+	int encoded_length = rb_enc_precise_mbclen(
+	    (const char *)start, (const char *)end, iterator->encoding);
+	if (!ONIGENC_MBCLEN_CHARFOUND_P(encoded_length))
+	    rb_raise(eRegexpError, "invalid encoded capture name");
+	int width = ONIGENC_MBCLEN_CHARFOUND_LEN(encoded_length);
+	if (width <= 0 || width > ONIBI_NAME_KEY_PENDING_CAPACITY ||
+	    iterator->cursor + (size_t)width > iterator->length)
+	    rb_raise(eRegexpError, "invalid encoded capture name");
+	memcpy(iterator->pending, start, (size_t)width);
+	iterator->pending_length = (size_t)width;
+	iterator->cursor += (size_t)width;
+	return;
+    }
+}
+
+static int
+onibi_name_key_next(OnibiNameKeyIterator *iterator, unsigned char *byte)
+{
+    onibi_name_key_fill(iterator);
+    if (iterator->pending_cursor == iterator->pending_length) return 0;
+    *byte = iterator->pending[iterator->pending_cursor++];
+    return 1;
+}
+
 static int
 onibi_ast_slice_equal(const OnibiAstArena *arena, OnibiTokenSlice first,
-		      OnibiTokenSlice second)
+		      OnibiTokenSlice second, rb_encoding *encoding)
 {
-    return first.present && second.present && first.length == second.length &&
-	   memcmp(arena->bytes + first.offset, arena->bytes + second.offset,
-		  first.length) == 0;
+    if (!first.present || !second.present) return 0;
+    OnibiNameKeyIterator first_iterator;
+    OnibiNameKeyIterator second_iterator;
+    onibi_name_key_iterator_init(&first_iterator, arena, first, encoding);
+    onibi_name_key_iterator_init(&second_iterator, arena, second, encoding);
+    for (;;) {
+	unsigned char first_byte = 0;
+	unsigned char second_byte = 0;
+	int first_has_byte = onibi_name_key_next(&first_iterator, &first_byte);
+	int second_has_byte =
+	    onibi_name_key_next(&second_iterator, &second_byte);
+	if (first_has_byte != second_has_byte) return 0;
+	if (!first_has_byte) return 1;
+	if (first_byte != second_byte) return 0;
+    }
 }
 
 static uint64_t
-onibi_name_hash(const OnibiAstArena *arena, OnibiTokenSlice name)
+onibi_name_hash(const OnibiAstArena *arena, OnibiTokenSlice name,
+		rb_encoding *encoding)
 {
-    uint64_t h = UINT64_C(1469598103934665603);
-    for (size_t i = 0; i < name.length; i++) {
-	h ^= arena->bytes[name.offset + i];
-	h *= UINT64_C(1099511628211);
+    OnibiNameKeyIterator iterator;
+    onibi_name_key_iterator_init(&iterator, arena, name, encoding);
+    uint64_t hash = UINT64_C(1469598103934665603);
+    unsigned char byte;
+    while (onibi_name_key_next(&iterator, &byte)) {
+	hash ^= byte;
+	hash *= UINT64_C(1099511628211);
     }
-    return h;
+    return hash;
 }
 
 static OnibiNameIndexEntry *
 onibi_name_index_find(OnibiResolvedArena *semantics, const OnibiAstArena *arena,
-		      OnibiTokenSlice name)
+		      OnibiTokenSlice name, rb_encoding *encoding)
 {
     if (semantics->name_index_capacity == 0) return NULL;
     size_t mask = semantics->name_index_capacity - 1;
-    size_t slot = (size_t)onibi_name_hash(arena, name) & mask;
+    size_t slot = (size_t)onibi_name_hash(arena, name, encoding) & mask;
     for (;;) {
 	OnibiNameIndexEntry *entry = &semantics->name_entries[slot];
 	if (!entry->used) return entry;
-	if (onibi_ast_slice_equal(arena, entry->name, name)) return entry;
+	if (onibi_ast_slice_equal(arena, entry->name, name, encoding))
+	    return entry;
 	slot = (slot + 1) & mask;
     }
 }
@@ -764,7 +1252,8 @@ onibi_name_index_build(OnibiParsed *parsed)
 	    onibi_ast_node_const(&parsed->arena, (OnibiAstId)i);
 	if (node->kind != ONIBI_AST_CAPTURE || !node->name.present) continue;
 	OnibiNameIndexEntry *entry =
-	    onibi_name_index_find(semantics, &parsed->arena, node->name);
+	    onibi_name_index_find(semantics, &parsed->arena, node->name,
+				  rb_enc_from_index(parsed->encoding_index));
 	if (!entry->used) {
 	    entry->used = 1;
 	    entry->name = node->name;
@@ -801,10 +1290,10 @@ onibi_ast_slice_number(const OnibiAstArena *arena, OnibiTokenSlice slice,
 static OnibiAstId
 onibi_resolved_named_capture(const OnibiAstArena *arena,
 			     const OnibiResolvedArena *semantics,
-			     OnibiTokenSlice name)
+			     OnibiTokenSlice name, rb_encoding *encoding)
 {
-    OnibiNameIndexEntry *entry =
-	onibi_name_index_find((OnibiResolvedArena *)semantics, arena, name);
+    OnibiNameIndexEntry *entry = onibi_name_index_find(
+	(OnibiResolvedArena *)semantics, arena, name, encoding);
     if (entry != NULL && entry->used && entry->definition_count != 0)
 	return entry->definitions[0];
     return ONIBI_AST_NONE;
@@ -813,10 +1302,10 @@ onibi_resolved_named_capture(const OnibiAstArena *arena,
 static OnibiSubprogramId
 onibi_resolved_named_subprogram(const OnibiAstArena *arena,
 				const OnibiResolvedArena *semantics,
-				OnibiTokenSlice name)
+				OnibiTokenSlice name, rb_encoding *encoding)
 {
-    OnibiNameIndexEntry *entry =
-	onibi_name_index_find((OnibiResolvedArena *)semantics, arena, name);
+    OnibiNameIndexEntry *entry = onibi_name_index_find(
+	(OnibiResolvedArena *)semantics, arena, name, encoding);
     return entry != NULL && entry->used ? entry->subprogram_id : UINT32_MAX;
 }
 
@@ -847,7 +1336,8 @@ onibi_compile_backref_descriptor(const OnibiAstNode *node,
 
     if (node->name.present) {
 	OnibiNameIndexEntry *entry = onibi_name_index_find(
-	    (OnibiResolvedArena *)builder->semantics, builder->ast, node->name);
+	    (OnibiResolvedArena *)builder->semantics, builder->ast, node->name,
+	    rb_enc_from_index(builder->encoding_index));
 	if (entry == NULL || !entry->used || entry->definition_count == 0 ||
 	    entry->definition_count > UINT16_MAX)
 	    rb_raise(eRegexpError, "invalid GIR backreference capture list");
@@ -947,8 +1437,9 @@ onibi_resolve_semantic_node(OnibiParsed *parsed, OnibiAstId id,
     if (node->kind == ONIBI_AST_BACKREF) {
 	OnibiAstId target = ONIBI_AST_NONE;
 	if (node->name.present)
-	    target = onibi_resolved_named_capture(arena, &parsed->semantics,
-						  node->name);
+	    target = onibi_resolved_named_capture(
+		arena, &parsed->semantics, node->name,
+		rb_enc_from_index(parsed->encoding_index));
 	else
 	    target = onibi_resolved_numbered_capture(&parsed->semantics,
 						     node->capture);
@@ -962,15 +1453,17 @@ onibi_resolve_semantic_node(OnibiParsed *parsed, OnibiAstId id,
 	OnibiAstId target =
 	    onibi_ast_slice_number(arena, node->name, &number)
 		? onibi_resolved_numbered_capture(&parsed->semantics, number)
-		: onibi_resolved_named_capture(arena, &parsed->semantics,
-					       node->name);
+		: onibi_resolved_named_capture(
+		      arena, &parsed->semantics, node->name,
+		      rb_enc_from_index(parsed->encoding_index));
 	if (target == ONIBI_AST_NONE)
 	    rb_raise(eRegexpError, "undefined subroutine call");
 	semantic->reference_target = target;
 	semantic->capture_id = parsed->semantics.nodes[target].capture_id;
 	if (number == 0) {
 	    OnibiSubprogramId indexed = onibi_resolved_named_subprogram(
-		arena, &parsed->semantics, node->name);
+		arena, &parsed->semantics, node->name,
+		rb_enc_from_index(parsed->encoding_index));
 	    if (indexed != UINT32_MAX) semantic->subprogram_id = indexed;
 	}
 	if (semantic->subprogram_id == UINT32_MAX) {
@@ -981,7 +1474,8 @@ onibi_resolve_semantic_node(OnibiParsed *parsed, OnibiAstId id,
 		parsed->semantics.nodes[target].subprogram_id;
 	    if (number == 0) {
 		OnibiNameIndexEntry *entry = onibi_name_index_find(
-		    &parsed->semantics, arena, node->name);
+		    &parsed->semantics, arena, node->name,
+		    rb_enc_from_index(parsed->encoding_index));
 		if (entry != NULL)
 		    entry->subprogram_id = semantic->subprogram_id;
 	    }
@@ -1003,8 +1497,9 @@ onibi_resolve_semantic_node(OnibiParsed *parsed, OnibiAstId id,
 	OnibiAstId target =
 	    onibi_ast_slice_number(arena, condition, &number)
 		? onibi_resolved_numbered_capture(&parsed->semantics, number)
-		: onibi_resolved_named_capture(arena, &parsed->semantics,
-					       condition);
+		: onibi_resolved_named_capture(
+		      arena, &parsed->semantics, condition,
+		      rb_enc_from_index(parsed->encoding_index));
 	if (target == ONIBI_AST_NONE)
 	    rb_raise(eRegexpError, "conditional capture is undefined");
 	semantic->reference_target = target;

@@ -4729,6 +4729,11 @@ The executor merges threads only when their future observable behavior is equal.
 
 All input pointer movement follows the active MRI encoding.
 
+Named-group tokens and AST slices retain source bytes.
+The C name index uses one canonical byte iterator for hashing and equality.
+It applies MRI name-escape rules without changing those source slices.
+Duplicate definitions retain source order. Named replacement lookup uses the existing MRI metadata adapter; it does not execute matching.
+
 ### JIT invariant
 
 Interpreter and native code execute the same RSeq semantics.

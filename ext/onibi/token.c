@@ -267,6 +267,7 @@ onibi_token_record_push(OnibiTokenVector *vector, OnibiTokenRecord record)
 typedef struct {
     const char *bytes;
     long length;
+    rb_encoding *encoding;
     int extended;
     int in_class;
     long class_depth;
@@ -314,6 +315,35 @@ onibi_group_start_p(OnibiTokenKind kind)
 	   kind == ONIBI_TOKEN_LOOKAHEAD_START ||
 	   kind == ONIBI_TOKEN_LOOKBEHIND_START ||
 	   kind == ONIBI_TOKEN_OPTION_SCOPE_START;
+}
+
+/* Find one ASCII syntax delimiter without treating an encoded trail byte as
+ * syntax. Leave broken input for MRI's constructor error path. */
+static long
+onibi_token_find_ascii_delimiter(const OnibiTokenScanState *scan, long start,
+				 unsigned char delimiter)
+{
+    if (start < 0 || start > scan->length) return -1;
+    const char *source = scan->bytes;
+    const char *cursor = source + start;
+    const char *end = source + scan->length;
+    while (cursor < end) {
+	int character_width = 0;
+	int character =
+	    rb_enc_ascget(cursor, end, &character_width, scan->encoding);
+	if (character >= 0) {
+	    if (character == delimiter) return (long)(cursor - source);
+	    if (character_width <= 0) return -1;
+	    cursor += character_width;
+	    continue;
+	}
+	int encoded_length = rb_enc_precise_mbclen(cursor, end, scan->encoding);
+	if (!ONIGENC_MBCLEN_CHARFOUND_P(encoded_length)) return -1;
+	int width = ONIGENC_MBCLEN_CHARFOUND_LEN(encoded_length);
+	if (width <= 0 || cursor + width > end) return -1;
+	cursor += width;
+    }
+    return -1;
 }
 
 /* Recognize one complete inline option grammar.  Invalid candidates are not
@@ -444,10 +474,18 @@ onibi_token_scan_group(OnibiTokenScanState *scan, long *cursor,
 	return 0;
     }
     if (i + 3 < scan->length && source[i + 1] == '?' && source[i + 2] == '<') {
-	long close = i + 3;
-	while (close < scan->length && source[close] != '>')
-	    close++;
-	if (close < scan->length) {
+	long close = onibi_token_find_ascii_delimiter(scan, i + 3, '>');
+	if (close >= 0) {
+	    recognition->kind = ONIBI_TOKEN_GROUP_START;
+	    recognition->name_start = i + 3;
+	    recognition->name_length = close - (i + 3);
+	    *cursor = close;
+	    return 1;
+	}
+    }
+    if (i + 2 < scan->length && source[i + 1] == '?' && source[i + 2] == '\'') {
+	long close = onibi_token_find_ascii_delimiter(scan, i + 3, '\'');
+	if (close >= 0) {
 	    recognition->kind = ONIBI_TOKEN_GROUP_START;
 	    recognition->name_start = i + 3;
 	    recognition->name_length = close - (i + 3);
@@ -475,30 +513,32 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
     recognition->kind = ONIBI_TOKEN_LITERAL;
     recognition->byte = '\\';
     recognition->name_start = -1;
-    if (!scan->in_class && i + 3 < scan->length && source[i + 1] == 'k' &&
-	source[i + 2] == '<') {
-	long close = i + 3;
-	while (close < scan->length && source[close] != '>')
-	    close++;
-	if (close < scan->length) {
+    if (!scan->in_class && i + 2 < scan->length && source[i + 1] == 'k' &&
+	(source[i + 2] == '<' || source[i + 2] == '\'')) {
+	unsigned char delimiter = source[i + 2] == '<' ? '>' : '\'';
+	long name_start = i + 3;
+	long close =
+	    onibi_token_find_ascii_delimiter(scan, name_start, delimiter);
+	if (close >= 0) {
 	    recognition->kind = ONIBI_TOKEN_BACKREF;
 	    recognition->byte = 'k';
-	    recognition->name_start = i + 3;
-	    recognition->name_length = close - (i + 3);
+	    recognition->name_start = name_start;
+	    recognition->name_length = close - name_start;
 	    *cursor = close;
 	    return 1;
 	}
     }
     if (!scan->in_class && i + 2 < scan->length && source[i + 1] == 'g' &&
-	source[i + 2] == '<') {
-	long close = i + 3;
-	while (close < scan->length && source[close] != '>')
-	    close++;
-	if (close < scan->length) {
+	(source[i + 2] == '<' || source[i + 2] == '\'')) {
+	unsigned char delimiter = source[i + 2] == '<' ? '>' : '\'';
+	long name_start = i + 3;
+	long close =
+	    onibi_token_find_ascii_delimiter(scan, name_start, delimiter);
+	if (close >= 0) {
 	    recognition->kind = ONIBI_TOKEN_SUBROUTINE;
 	    recognition->byte = 'g';
-	    recognition->name_start = i + 3;
-	    recognition->name_length = close - (i + 3);
+	    recognition->name_start = name_start;
+	    recognition->name_length = close - name_start;
 	    *cursor = close;
 	    return 1;
 	}
@@ -793,6 +833,7 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
        enter the AST as syntax. */
     OnibiTokenScanState scan = {.bytes = RSTRING_PTR(src),
 				.length = RSTRING_LEN(src),
+				.encoding = rb_enc_get(src),
 				.extended = extended,
 				.in_class = 0,
 				.class_depth = 0,
