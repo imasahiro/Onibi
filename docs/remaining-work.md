@@ -121,12 +121,12 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | --- | --- | --- | --- | --- |
 | 1 | TASK-42C22 | Accepted | C21B | One-digit hex literals match MRI. |
 | 2 | TASK-42C23A | Accepted | C22 | A frozen decoded-run atom contract. |
-| 3 | TASK-42C23B | Ready | C23A | Quantifiers apply to the correct decoded character. |
+| 3 | TASK-42C23B | Accepted | C23A | Quantifiers apply to the correct decoded character. |
 | 4 | TASK-API01 | Ready | C21B | A measured public method inventory. |
 | 5 | TASK-API02 | Waiting | API01 | Native MatchData `match` accessor. |
 | 6 | TASK-API03 | Waiting | API01 | Native MatchData `values_at` accessor. |
 | 7 | TASK-API04 | Waiting | API02, API03 | RBS agrees with the accepted API. |
-| 8 | TASK-42C24 | Waiting | C23B | Four escape fallback cases have exact support classifications. |
+| 8 | TASK-42C24 | Ready | C23B | Four escape fallback cases have exact support classifications. |
 | 9 | TASK-42C25A | Ready | C21B | Current match-reset failure and MRI matrix. |
 | 10 | TASK-42C25B | Conditional | C25A | The measured native match-reset gap is repaired. |
 | 11 | TASK-42C26A | Ready | C18B | Current named-group error encoding matrix. |

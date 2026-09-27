@@ -537,6 +537,69 @@ onibi_token_scan_group(OnibiTokenScanState *scan, long *cursor,
     return 0;
 }
 
+/* Decode one adjacent hex or octal byte escape.  Keep the source cursor on
+ * the final byte so the tokenizer can store an exclusive end position. */
+static int
+onibi_token_next_encoded_byte(const OnibiTokenScanState *scan, long after,
+			      long *last, unsigned char *byte)
+{
+    const char *source = scan->bytes;
+    if (after < 0 || after > scan->length || scan->length - after < 3) return 0;
+    long escape = after + 1;
+    if (source[escape] != '\\') return 0;
+
+    unsigned char kind = (unsigned char)source[escape + 1];
+    if (kind == 'x' && scan->length - escape >= 3) {
+	int hi = onibi_hex_digit((unsigned char)source[escape + 2]);
+	if (hi < 0) return 0;
+	int lo = scan->length - escape >= 4
+		     ? onibi_hex_digit((unsigned char)source[escape + 3])
+		     : -1;
+	int two_digits = lo >= 0;
+	*byte =
+	    two_digits ? (unsigned char)((hi << 4) | lo) : (unsigned char)hi;
+	*last = escape + (two_digits ? 3 : 2);
+	return 1;
+    }
+
+    if (kind == '0') {
+	long position = escape + 1;
+	int value = 0;
+	int digits = 0;
+	while (digits < 3 && position < scan->length &&
+	       source[position] >= '0' && source[position] <= '7') {
+	    value = (value << 3) | (source[position] - '0');
+	    position++;
+	    digits++;
+	}
+	*byte = (unsigned char)value;
+	*last = position - 1;
+	return digits > 0;
+    }
+
+    if (kind < '1' || kind > '7' || scan->length - escape < 4) return 0;
+    int value = 0;
+    for (long position = escape + 1; position <= escape + 3; position++) {
+	if (source[position] < '0' || source[position] > '7') return 0;
+	value = (value << 3) | (source[position] - '0');
+    }
+    *byte = (unsigned char)value;
+    *last = escape + 3;
+    return 1;
+}
+
+/* Keep byte-slice offsets, not pointers, across token-vector growth. */
+static int
+onibi_token_decoded_char_needs_more(const OnibiTokenVector *tokens,
+				    size_t offset, size_t length,
+				    rb_encoding *encoding)
+{
+    const char *start = (const char *)(tokens->bytes + offset);
+    const char *end = start + length;
+    int result = rb_enc_precise_mbclen(start, end, encoding);
+    return ONIGENC_MBCLEN_NEEDMORE_P(result);
+}
+
 /* Recognize one complete escape token.  This includes named and numeric
  * references, byte decoding, meta/control forms, properties, and anchors.
  * The helper owns the cursor advance so no escape prefix is re-scanned by
@@ -631,19 +694,17 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 	    i += two_digits ? 3 : 2;
 	    cursor_on_last_consumed = 1;
 	    hex_literal = 1;
-	    if (two_digits) {
-		while (i + 4 < scan->length && source[i + 1] == '\\' &&
-		       source[i + 2] == 'x') {
-		    int next_hi = onibi_hex_digit((unsigned char)source[i + 3]);
-		    int next_lo = onibi_hex_digit((unsigned char)source[i + 4]);
-		    if (next_hi < 0 || next_lo < 0) break;
-		    unsigned char next_byte =
-			(unsigned char)((next_hi << 4) | next_lo);
-		    (void)onibi_token_vector_copy(tokens,
-						  (const char *)&next_byte, 1);
-		    decoded_length++;
-		    i += 4;
-		}
+	    while (onibi_token_decoded_char_needs_more(
+		tokens, decoded_offset, decoded_length, scan->encoding)) {
+		long next_cursor = i;
+		unsigned char next_byte = 0;
+		if (!onibi_token_next_encoded_byte(scan, i, &next_cursor,
+						   &next_byte))
+		    break;
+		(void)onibi_token_vector_copy(tokens, (const char *)&next_byte,
+					      1);
+		decoded_length++;
+		i = next_cursor;
 	    }
 	    if (decoded_length > 1)
 		recognition->literal_slice =
@@ -674,7 +735,7 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
     if (!recognition->has_capture_number && escaped >= '1' && escaped <= '7' &&
 	i + 2 < scan->length && source[i + 2] >= '0' && source[i + 2] <= '7') {
 	size_t decoded_offset = tokens->bytes_count;
-	size_t decoded_length = 0;
+	size_t decoded_length = 1;
 	int value = 0;
 	int digits = 0;
 	while (digits < 3 && i + 1 < scan->length && source[i + 1] >= '0' &&
@@ -686,22 +747,16 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 	}
 	unsigned char first_byte = (unsigned char)value;
 	(void)onibi_token_vector_copy(tokens, (const char *)&first_byte, 1);
-	decoded_length++;
-	while (i + 2 < scan->length && source[i + 1] == '\\' &&
-	       source[i + 2] >= '0' && source[i + 2] <= '7') {
-	    long next_cursor = i + 2;
-	    int next_value = 0;
-	    int next_digits = 0;
-	    while (next_digits < 3 && next_cursor < scan->length &&
-		   source[next_cursor] >= '0' && source[next_cursor] <= '7') {
-		next_value = (next_value << 3) | (source[next_cursor] - '0');
-		next_cursor++;
-		next_digits++;
-	    }
-	    unsigned char next_byte = (unsigned char)next_value;
+	while (onibi_token_decoded_char_needs_more(
+	    tokens, decoded_offset, decoded_length, scan->encoding)) {
+	    long next_cursor = i;
+	    unsigned char next_byte = 0;
+	    if (!onibi_token_next_encoded_byte(scan, i, &next_cursor,
+					       &next_byte))
+		break;
 	    (void)onibi_token_vector_copy(tokens, (const char *)&next_byte, 1);
 	    decoded_length++;
-	    i = next_cursor - 1;
+	    i = next_cursor;
 	}
 	recognition->byte = first_byte;
 	octal_literal = 1;
