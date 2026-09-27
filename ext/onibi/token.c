@@ -613,30 +613,37 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 	i += 2;
 	cursor_on_last_consumed = 1;
     }
-    if (escaped == 'x' && i + 3 < scan->length) {
+    if (escaped == 'x' && i + 2 < scan->length) {
 	int hi = onibi_hex_digit((unsigned char)source[i + 2]);
-	int lo = onibi_hex_digit((unsigned char)source[i + 3]);
-	if (hi >= 0 && lo >= 0) {
-	    unsigned char decoded_byte = (unsigned char)((hi << 4) | lo);
+	int lo = i + 3 < scan->length
+		     ? onibi_hex_digit((unsigned char)source[i + 3])
+		     : -1;
+	if (hi >= 0) {
+	    int two_digits = lo >= 0;
+	    unsigned char decoded_byte = two_digits
+					     ? (unsigned char)((hi << 4) | lo)
+					     : (unsigned char)hi;
 	    size_t decoded_offset = tokens->bytes_count;
 	    size_t decoded_length = 1;
 	    (void)onibi_token_vector_copy(tokens, (const char *)&decoded_byte,
 					  1);
 	    recognition->byte = decoded_byte;
-	    i += 3;
+	    i += two_digits ? 3 : 2;
 	    cursor_on_last_consumed = 1;
 	    hex_literal = 1;
-	    while (i + 4 < scan->length && source[i + 1] == '\\' &&
-		   source[i + 2] == 'x') {
-		int next_hi = onibi_hex_digit((unsigned char)source[i + 3]);
-		int next_lo = onibi_hex_digit((unsigned char)source[i + 4]);
-		if (next_hi < 0 || next_lo < 0) break;
-		unsigned char next_byte =
-		    (unsigned char)((next_hi << 4) | next_lo);
-		(void)onibi_token_vector_copy(tokens, (const char *)&next_byte,
-					      1);
-		decoded_length++;
-		i += 4;
+	    if (two_digits) {
+		while (i + 4 < scan->length && source[i + 1] == '\\' &&
+		       source[i + 2] == 'x') {
+		    int next_hi = onibi_hex_digit((unsigned char)source[i + 3]);
+		    int next_lo = onibi_hex_digit((unsigned char)source[i + 4]);
+		    if (next_hi < 0 || next_lo < 0) break;
+		    unsigned char next_byte =
+			(unsigned char)((next_hi << 4) | next_lo);
+		    (void)onibi_token_vector_copy(tokens,
+						  (const char *)&next_byte, 1);
+		    decoded_length++;
+		    i += 4;
+		}
 	    }
 	    if (decoded_length > 1)
 		recognition->literal_slice =

@@ -113,12 +113,14 @@ Do not weaken correct tests or silently change the accepted subset to make check
 
 `Ready` means the dependency is accepted. It does not mean a worker has started.
 `Waiting` means another task must finish first.
+`Assigned` means the root owns an active relay packet for that task.
+`Accepted` means root review passed; the ledger records commit and integration evidence.
 `Conditional` means an accepted audit must prove the need and fix the repair scope.
 
 | Order | Task | State | Dependency | Result |
 | --- | --- | --- | --- | --- |
-| 1 | TASK-42C22 | Ready | C21B | One-digit hex literals match MRI. |
-| 2 | TASK-42C23A | Waiting | C22 | A frozen decoded-run atom contract. |
+| 1 | TASK-42C22 | Accepted | C21B | One-digit hex literals match MRI. |
+| 2 | TASK-42C23A | Assigned | C22 | A frozen decoded-run atom contract. |
 | 3 | TASK-42C23B | Waiting | C23A | Quantifiers apply to the correct decoded character. |
 | 4 | TASK-API01 | Ready | C21B | A measured public method inventory. |
 | 5 | TASK-API02 | Waiting | API01 | Native MatchData `match` accessor. |
