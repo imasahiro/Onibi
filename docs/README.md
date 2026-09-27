@@ -5,3 +5,5 @@
 - [`../AGENTS.md`](../AGENTS.md) defines repository work rules.
 
 These documents control new implementation work.
+
+- [`remaining-work.md`](remaining-work.md) lists the remaining gem PoC tasks and their acceptance checks.
