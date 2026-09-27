@@ -20,6 +20,7 @@
 #include "unicode.c"
 #include "rseq_runtime.c"
 #include "exec_dynamic.c"
+#include "match_data.c"
 #include "match.c"
 #include "onibi_init.c"
 // clang-format on

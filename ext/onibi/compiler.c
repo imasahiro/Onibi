@@ -1,3 +1,8 @@
+#include "onibi_ast_internal.h"
+#include "onibi_compiler_internal.h"
+#include "onibi_gir_internal.h"
+#include "onibi_nfa_internal.h"
+
 static onibi_fragment_t onibi_compile_node(OnibiAstId node_id,
 					   onibi_gir_builder_t *builder);
 
@@ -24,7 +29,7 @@ typedef struct {
     OnibiGirStateVector states;
     OnibiGirEdgeVector edges;
     OnibiGirEdgeVector start_edges;
-    long accept;
+    OnibiGirStateId accept;
     long capture_count;
     long counter_count;
     int options;
@@ -40,7 +45,7 @@ typedef struct {
     OnibiGirEdgeVector start_edges;
     OnibiTaggedNfa nfa;
     onibi_fragment_t root_fragment;
-    OnibiIdVector accept_starts;
+    OnibiNfaStateIdVector accept_starts;
     OnibiGActionVector pending_actions;
     int nfa_active;
     int root_fragment_active;
@@ -99,8 +104,8 @@ typedef struct {
 typedef struct {
     onibi_gir_builder_t *builder;
     OnibiGirEdgeVector *start_edges;
-    long accept;
-    long root_entry;
+    OnibiGirStateId accept;
+    OnibiGirStateId root_entry;
 } OnibiLowerNfaOutput;
 typedef struct {
     onibi_gir_builder_t *builder;
@@ -600,11 +605,11 @@ onibi_compiler_owner_cleanup(OnibiCompilerOwner *owner)
 	onibi_nfa_free(&owner->nfa);
 	owner->nfa_active = 0;
     }
-    onibi_id_vector_free(&owner->accept_starts);
+    onibi_nfa_state_id_vector_free(&owner->accept_starts);
     onibi_g_action_vector_free(&owner->pending_actions);
     if (owner->root_fragment_active) {
-	onibi_id_vector_free(&owner->root_fragment.starts);
-	onibi_id_vector_free(&owner->root_fragment.exits);
+	onibi_nfa_state_id_vector_free(&owner->root_fragment.starts);
+	onibi_nfa_state_id_vector_free(&owner->root_fragment.exits);
 	onibi_g_action_vector_free(&owner->root_fragment.start_actions);
 	onibi_g_action_vector_free(&owner->root_fragment.pending_actions);
 	owner->root_fragment_active = 0;
@@ -707,37 +712,525 @@ onibi_compiled_get(VALUE value)
     return compiled;
 }
 
+#define ONIBI_NAME_KEY_PENDING_CAPACITY 16
+
+typedef struct {
+    const unsigned char *bytes;
+    size_t length;
+    size_t cursor;
+    rb_encoding *encoding;
+    unsigned char pending[ONIBI_NAME_KEY_PENDING_CAPACITY];
+    size_t pending_length;
+    size_t pending_cursor;
+    int unicode_brace;
+    int unicode_brace_has_value;
+} OnibiNameKeyIterator;
+
+static int
+onibi_name_hex_value(unsigned char byte)
+{
+    if (byte >= '0' && byte <= '9') return byte - '0';
+    if (byte >= 'a' && byte <= 'f') return byte - 'a' + 10;
+    if (byte >= 'A' && byte <= 'F') return byte - 'A' + 10;
+    return -1;
+}
+
+static int
+onibi_name_ascii_space(unsigned char byte)
+{
+    return byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r' ||
+	   byte == '\f' || byte == '\v';
+}
+
+static void
+onibi_name_key_iterator_init(OnibiNameKeyIterator *iterator,
+			     const OnibiAstArena *arena, OnibiTokenSlice name,
+			     rb_encoding *encoding)
+{
+    memset(iterator, 0, sizeof(*iterator));
+    if (!name.present || name.offset > arena->bytes_count ||
+	name.length > arena->bytes_count - name.offset)
+	rb_raise(eRegexpError, "invalid capture name range");
+    iterator->bytes = arena->bytes + name.offset;
+    iterator->length = name.length;
+    iterator->encoding = encoding;
+}
+
+static void
+onibi_name_key_set_byte(OnibiNameKeyIterator *iterator, unsigned char byte)
+{
+    iterator->pending[0] = byte;
+    iterator->pending_length = 1;
+    iterator->pending_cursor = 0;
+}
+
+static void
+onibi_name_key_set_ascii_escape(OnibiNameKeyIterator *iterator,
+				unsigned int codepoint)
+{
+    static const unsigned char digits[] = "0123456789ABCDEF";
+    if (codepoint > 0x7f)
+	rb_raise(eRegexpError, "invalid ASCII capture name escape");
+    iterator->pending[0] = '\\';
+    iterator->pending[1] = 'x';
+    iterator->pending[2] = digits[(codepoint >> 4) & 0x0f];
+    iterator->pending[3] = digits[codepoint & 0x0f];
+    iterator->pending_length = 4;
+    iterator->pending_cursor = 0;
+}
+
+static void
+onibi_name_key_set_unicode(OnibiNameKeyIterator *iterator,
+			   unsigned int codepoint)
+{
+    if (codepoint <= 0x7f) {
+	onibi_name_key_set_ascii_escape(iterator, codepoint);
+	return;
+    }
+    if (codepoint > 0x10ffff || (codepoint >= 0xd800 && codepoint <= 0xdfff))
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    rb_encoding *utf8 = rb_utf8_encoding();
+    int width = rb_enc_code_to_mbclen((int)codepoint, utf8);
+    if (width <= 0 || width > ONIBI_NAME_KEY_PENDING_CAPACITY)
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    int written = rb_enc_mbcput(codepoint, iterator->pending, utf8);
+    if (written != width)
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    iterator->pending_length = (size_t)written;
+    iterator->pending_cursor = 0;
+}
+
+static unsigned int onibi_name_key_read_hex(const unsigned char *bytes,
+					    size_t length, size_t *cursor,
+					    size_t limit);
+
+static unsigned int
+onibi_name_key_read_x_escape(const unsigned char *bytes, size_t length,
+			     size_t *cursor, rb_encoding *encoding)
+{
+    if (*cursor > length)
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    unsigned int value = 0;
+    size_t digits = 0;
+    while (digits < 2 && *cursor < length) {
+	int width = 0;
+	int ascii =
+	    rb_enc_ascget((const char *)(bytes + *cursor),
+			  (const char *)(bytes + length), &width, encoding);
+	int digit = ascii >= 0 && width == 1
+			? onibi_name_hex_value((unsigned char)ascii)
+			: -1;
+	if (digit < 0) break;
+	value = value * 16 + (unsigned int)digit;
+	(*cursor)++;
+	digits++;
+    }
+    if (digits == 0)
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    return value;
+}
+
+static int
+onibi_name_key_source_ascii(const unsigned char *bytes, size_t length,
+			    size_t cursor, rb_encoding *encoding)
+{
+    if (cursor >= length) return -1;
+    int width = 0;
+    int ascii = rb_enc_ascget((const char *)(bytes + cursor),
+			      (const char *)(bytes + length), &width, encoding);
+    return width == 1 ? ascii : -1;
+}
+
+static unsigned int
+onibi_name_key_read_modifier_operand(OnibiNameKeyIterator *iterator,
+				     size_t *cursor);
+
+static unsigned int
+onibi_name_key_read_control_meta_value(OnibiNameKeyIterator *iterator,
+				       size_t *cursor)
+{
+    int control = 0;
+    int meta = 0;
+    for (;;) {
+	if (onibi_name_key_source_ascii(iterator->bytes, iterator->length,
+					*cursor, iterator->encoding) != '\\')
+	    break;
+	int operation = onibi_name_key_source_ascii(
+	    iterator->bytes, iterator->length, *cursor + 1, iterator->encoding);
+	if (operation == 'c') {
+	    if (control)
+		rb_raise(eRegexpError, "duplicate control capture name escape");
+	    control = 1;
+	    *cursor += 2;
+	    continue;
+	}
+	int marker = onibi_name_key_source_ascii(
+	    iterator->bytes, iterator->length, *cursor + 2, iterator->encoding);
+	if (operation == 'C' && marker == '-') {
+	    if (control)
+		rb_raise(eRegexpError, "duplicate control capture name escape");
+	    control = 1;
+	    *cursor += 3;
+	    continue;
+	}
+	if (operation == 'M' && marker == '-') {
+	    if (meta)
+		rb_raise(eRegexpError, "duplicate meta capture name escape");
+	    meta = 1;
+	    *cursor += 3;
+	    continue;
+	}
+	break;
+    }
+
+    unsigned int value = onibi_name_key_read_modifier_operand(iterator, cursor);
+    if (control) value &= 0x1f;
+    if (meta) value |= 0x80;
+    return value;
+}
+
+/* Read one source spelling that contributes one byte to an encoded character.
+ */
+static int
+onibi_name_key_read_source_byte(OnibiNameKeyIterator *iterator,
+				unsigned char *byte)
+{
+    if (iterator->cursor >= iterator->length) return 0;
+    int first =
+	onibi_name_key_source_ascii(iterator->bytes, iterator->length,
+				    iterator->cursor, iterator->encoding);
+    if (first != '\\') return 0;
+    int operation =
+	onibi_name_key_source_ascii(iterator->bytes, iterator->length,
+				    iterator->cursor + 1, iterator->encoding);
+    if (operation == '\\') {
+	iterator->cursor += 2;
+	*byte = '\\';
+	return 1;
+    }
+    if (operation == 'x') {
+	size_t cursor = iterator->cursor + 2;
+	unsigned int value = onibi_name_key_read_x_escape(
+	    iterator->bytes, iterator->length, &cursor, iterator->encoding);
+	iterator->cursor = cursor;
+	*byte = (unsigned char)value;
+	return 1;
+    }
+    int marker =
+	onibi_name_key_source_ascii(iterator->bytes, iterator->length,
+				    iterator->cursor + 2, iterator->encoding);
+    if (operation == 'c' ||
+	((operation == 'C' || operation == 'M') && marker == '-')) {
+	size_t cursor = iterator->cursor;
+	unsigned int value =
+	    onibi_name_key_read_control_meta_value(iterator, &cursor);
+	if (value > 0xff)
+	    rb_raise(eRegexpError, "invalid encoded capture name");
+	iterator->cursor = cursor;
+	*byte = (unsigned char)value;
+	return 1;
+    }
+    return 0;
+}
+
+static void
+onibi_name_key_set_hex_escape(OnibiNameKeyIterator *iterator,
+			      unsigned int codepoint)
+{
+    if (codepoint <= 0x7f) {
+	onibi_name_key_set_ascii_escape(iterator, codepoint);
+	return;
+    }
+    onibi_name_key_set_byte(iterator, (unsigned char)codepoint);
+    int encoded_length = rb_enc_precise_mbclen((const char *)iterator->pending,
+					       (const char *)iterator->pending +
+						   iterator->pending_length,
+					       iterator->encoding);
+    if (ONIGENC_MBCLEN_NEEDMORE_P(encoded_length)) {
+	int width = (int)iterator->pending_length +
+		    ONIGENC_MBCLEN_NEEDMORE_LEN(encoded_length);
+	if (width <= 1 || width > ONIBI_NAME_KEY_PENDING_CAPACITY)
+	    rb_raise(eRegexpError, "invalid encoded capture name");
+	while (iterator->pending_length < (size_t)width) {
+	    unsigned char next_byte = 0;
+	    if (!onibi_name_key_read_source_byte(iterator, &next_byte)) {
+		if (iterator->cursor >= iterator->length)
+		    rb_raise(eRegexpError, "invalid encoded capture name");
+		next_byte = iterator->bytes[iterator->cursor++];
+	    }
+	    iterator->pending[iterator->pending_length++] = next_byte;
+	}
+	encoded_length = rb_enc_precise_mbclen((const char *)iterator->pending,
+					       (const char *)iterator->pending +
+						   iterator->pending_length,
+					       iterator->encoding);
+	if (!ONIGENC_MBCLEN_CHARFOUND_P(encoded_length) ||
+	    ONIGENC_MBCLEN_CHARFOUND_LEN(encoded_length) != width)
+	    rb_raise(eRegexpError, "invalid encoded capture name");
+    }
+    else if (!ONIGENC_MBCLEN_CHARFOUND_P(encoded_length) ||
+	     ONIGENC_MBCLEN_CHARFOUND_LEN(encoded_length) != 1) {
+	rb_raise(eRegexpError, "invalid encoded capture name");
+    }
+}
+
+static unsigned int
+onibi_name_key_read_modifier_operand(OnibiNameKeyIterator *iterator,
+				     size_t *cursor)
+{
+    int ascii = onibi_name_key_source_ascii(iterator->bytes, iterator->length,
+					    *cursor, iterator->encoding);
+    if (ascii == '\\') {
+	int escaped = onibi_name_key_source_ascii(
+	    iterator->bytes, iterator->length, *cursor + 1, iterator->encoding);
+	if (escaped < 0)
+	    rb_raise(eRegexpError, "invalid control/meta capture name escape");
+	*cursor += 2;
+	switch (escaped) {
+	case 'n': return '\n';
+	case 't': return '\t';
+	case 'r': return '\r';
+	case 'f': return '\f';
+	case 'v': return '\v';
+	case 'a': return '\a';
+	case 'e': return 0x1b;
+	case '0': return 0;
+	case 'x':
+	    return onibi_name_key_read_x_escape(
+		iterator->bytes, iterator->length, cursor, iterator->encoding);
+	case 'u':
+	    rb_raise(eRegexpError, "invalid control/meta capture name escape");
+	default: return (unsigned int)escaped;
+	}
+    }
+    if (ascii >= 0) {
+	(*cursor)++;
+	return (unsigned int)ascii;
+    }
+
+    if (*cursor >= iterator->length)
+	rb_raise(eRegexpError, "unterminated control/meta capture name escape");
+    int width = rb_enc_precise_mbclen(
+	(const char *)(iterator->bytes + *cursor),
+	(const char *)(iterator->bytes + iterator->length), iterator->encoding);
+    if (!ONIGENC_MBCLEN_CHARFOUND_P(width) ||
+	ONIGENC_MBCLEN_CHARFOUND_LEN(width) != 1)
+	rb_raise(eRegexpError, "too short control/meta capture name escape");
+    return iterator->bytes[(*cursor)++];
+}
+
+static void
+onibi_name_key_fill_control_meta(OnibiNameKeyIterator *iterator)
+{
+    size_t cursor = iterator->cursor;
+    unsigned int value =
+	onibi_name_key_read_control_meta_value(iterator, &cursor);
+    iterator->cursor = cursor;
+    if (value <= 0x7f)
+	onibi_name_key_set_ascii_escape(iterator, value);
+    else
+	onibi_name_key_set_hex_escape(iterator, value);
+}
+
+static unsigned int
+onibi_name_key_read_hex(const unsigned char *bytes, size_t length,
+			size_t *cursor, size_t limit)
+{
+    if (*cursor > length || limit > length - *cursor || limit == 0 || limit > 6)
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    unsigned int value = 0;
+    for (size_t i = 0; i < limit; i++) {
+	int digit = onibi_name_hex_value(bytes[*cursor + i]);
+	if (digit < 0)
+	    rb_raise(eRegexpError, "invalid Unicode capture name escape");
+	value = value * 16 + (unsigned int)digit;
+    }
+    *cursor += limit;
+    if (value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff))
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    return value;
+}
+
+static void
+onibi_name_key_fill_unicode_brace(OnibiNameKeyIterator *iterator)
+{
+    while (iterator->cursor < iterator->length &&
+	   onibi_name_ascii_space(iterator->bytes[iterator->cursor]))
+	iterator->cursor++;
+    if (iterator->cursor >= iterator->length)
+	rb_raise(eRegexpError, "unterminated Unicode capture name escape");
+    if (iterator->bytes[iterator->cursor] == '}') {
+	if (!iterator->unicode_brace_has_value)
+	    rb_raise(eRegexpError, "empty Unicode capture name escape");
+	iterator->cursor++;
+	iterator->unicode_brace = 0;
+	return;
+    }
+    size_t start = iterator->cursor;
+    while (iterator->cursor < iterator->length &&
+	   onibi_name_hex_value(iterator->bytes[iterator->cursor]) >= 0)
+	iterator->cursor++;
+    size_t digits = iterator->cursor - start;
+    if (digits == 0 || digits > 6)
+	rb_raise(eRegexpError, "invalid Unicode capture name escape");
+    size_t value_cursor = start;
+    unsigned int codepoint = onibi_name_key_read_hex(
+	iterator->bytes, iterator->length, &value_cursor, digits);
+    iterator->unicode_brace_has_value = 1;
+    onibi_name_key_set_unicode(iterator, codepoint);
+}
+
+static void
+onibi_name_key_fill(OnibiNameKeyIterator *iterator)
+{
+    while (iterator->pending_cursor == iterator->pending_length) {
+	iterator->pending_cursor = 0;
+	iterator->pending_length = 0;
+	if (iterator->unicode_brace) {
+	    onibi_name_key_fill_unicode_brace(iterator);
+	    if (iterator->pending_length != 0) return;
+	    continue;
+	}
+	if (iterator->cursor >= iterator->length) return;
+	const unsigned char *start = iterator->bytes + iterator->cursor;
+	const unsigned char *end = iterator->bytes + iterator->length;
+	int character_width = 0;
+	int ascii = rb_enc_ascget((const char *)start, (const char *)end,
+				  &character_width, iterator->encoding);
+	if (ascii >= 0 && character_width == 1 && ascii == '\\') {
+	    size_t next_cursor = iterator->cursor + 1;
+	    int next_width = 0;
+	    int next =
+		next_cursor < iterator->length
+		    ? rb_enc_ascget(
+			  (const char *)(iterator->bytes + next_cursor),
+			  (const char *)end, &next_width, iterator->encoding)
+		    : -1;
+	    int next_next = next_cursor + 1 < iterator->length
+				? onibi_name_key_source_ascii(
+				      iterator->bytes, iterator->length,
+				      next_cursor + 1, iterator->encoding)
+				: -1;
+	    if (next_width == 1 &&
+		(next == 'c' ||
+		 ((next == 'C' || next == 'M') && next_next == '-'))) {
+		onibi_name_key_fill_control_meta(iterator);
+		return;
+	    }
+	    if (next == '\\' && next_width == 1) {
+		iterator->pending[0] = '\\';
+		iterator->pending[1] = '\\';
+		iterator->pending_length = 2;
+		iterator->cursor += 2;
+		return;
+	    }
+	    if (next == 'u' && next_width == 1) {
+		size_t code_cursor = next_cursor + 1;
+		if (code_cursor < iterator->length &&
+		    iterator->bytes[code_cursor] == '{') {
+		    iterator->cursor = code_cursor + 1;
+		    iterator->unicode_brace = 1;
+		    iterator->unicode_brace_has_value = 0;
+		    continue;
+		}
+		unsigned int codepoint = onibi_name_key_read_hex(
+		    iterator->bytes, iterator->length, &code_cursor, 4);
+		iterator->cursor = code_cursor;
+		onibi_name_key_set_unicode(iterator, codepoint);
+		return;
+	    }
+	    if (next == 'x' && next_width == 1) {
+		size_t value_cursor = next_cursor + 1;
+		unsigned int codepoint = onibi_name_key_read_x_escape(
+		    iterator->bytes, iterator->length, &value_cursor,
+		    iterator->encoding);
+		iterator->cursor = value_cursor;
+		onibi_name_key_set_hex_escape(iterator, codepoint);
+		return;
+	    }
+	}
+	if (ascii >= 0) {
+	    if (character_width <= 0 ||
+		(size_t)character_width > ONIBI_NAME_KEY_PENDING_CAPACITY ||
+		iterator->cursor + (size_t)character_width > iterator->length)
+		rb_raise(eRegexpError, "invalid encoded capture name");
+	    memcpy(iterator->pending, start, (size_t)character_width);
+	    iterator->pending_length = (size_t)character_width;
+	    iterator->cursor += (size_t)character_width;
+	    return;
+	}
+	int encoded_length = rb_enc_precise_mbclen(
+	    (const char *)start, (const char *)end, iterator->encoding);
+	if (!ONIGENC_MBCLEN_CHARFOUND_P(encoded_length))
+	    rb_raise(eRegexpError, "invalid encoded capture name");
+	int width = ONIGENC_MBCLEN_CHARFOUND_LEN(encoded_length);
+	if (width <= 0 || width > ONIBI_NAME_KEY_PENDING_CAPACITY ||
+	    iterator->cursor + (size_t)width > iterator->length)
+	    rb_raise(eRegexpError, "invalid encoded capture name");
+	memcpy(iterator->pending, start, (size_t)width);
+	iterator->pending_length = (size_t)width;
+	iterator->cursor += (size_t)width;
+	return;
+    }
+}
+
+static int
+onibi_name_key_next(OnibiNameKeyIterator *iterator, unsigned char *byte)
+{
+    onibi_name_key_fill(iterator);
+    if (iterator->pending_cursor == iterator->pending_length) return 0;
+    *byte = iterator->pending[iterator->pending_cursor++];
+    return 1;
+}
+
 static int
 onibi_ast_slice_equal(const OnibiAstArena *arena, OnibiTokenSlice first,
-		      OnibiTokenSlice second)
+		      OnibiTokenSlice second, rb_encoding *encoding)
 {
-    return first.present && second.present && first.length == second.length &&
-	   memcmp(arena->bytes + first.offset, arena->bytes + second.offset,
-		  first.length) == 0;
+    if (!first.present || !second.present) return 0;
+    OnibiNameKeyIterator first_iterator;
+    OnibiNameKeyIterator second_iterator;
+    onibi_name_key_iterator_init(&first_iterator, arena, first, encoding);
+    onibi_name_key_iterator_init(&second_iterator, arena, second, encoding);
+    for (;;) {
+	unsigned char first_byte = 0;
+	unsigned char second_byte = 0;
+	int first_has_byte = onibi_name_key_next(&first_iterator, &first_byte);
+	int second_has_byte =
+	    onibi_name_key_next(&second_iterator, &second_byte);
+	if (first_has_byte != second_has_byte) return 0;
+	if (!first_has_byte) return 1;
+	if (first_byte != second_byte) return 0;
+    }
 }
 
 static uint64_t
-onibi_name_hash(const OnibiAstArena *arena, OnibiTokenSlice name)
+onibi_name_hash(const OnibiAstArena *arena, OnibiTokenSlice name,
+		rb_encoding *encoding)
 {
-    uint64_t h = UINT64_C(1469598103934665603);
-    for (size_t i = 0; i < name.length; i++) {
-	h ^= arena->bytes[name.offset + i];
-	h *= UINT64_C(1099511628211);
+    OnibiNameKeyIterator iterator;
+    onibi_name_key_iterator_init(&iterator, arena, name, encoding);
+    uint64_t hash = UINT64_C(1469598103934665603);
+    unsigned char byte;
+    while (onibi_name_key_next(&iterator, &byte)) {
+	hash ^= byte;
+	hash *= UINT64_C(1099511628211);
     }
-    return h;
+    return hash;
 }
 
 static OnibiNameIndexEntry *
 onibi_name_index_find(OnibiResolvedArena *semantics, const OnibiAstArena *arena,
-		      OnibiTokenSlice name)
+		      OnibiTokenSlice name, rb_encoding *encoding)
 {
     if (semantics->name_index_capacity == 0) return NULL;
     size_t mask = semantics->name_index_capacity - 1;
-    size_t slot = (size_t)onibi_name_hash(arena, name) & mask;
+    size_t slot = (size_t)onibi_name_hash(arena, name, encoding) & mask;
     for (;;) {
 	OnibiNameIndexEntry *entry = &semantics->name_entries[slot];
 	if (!entry->used) return entry;
-	if (onibi_ast_slice_equal(arena, entry->name, name)) return entry;
+	if (onibi_ast_slice_equal(arena, entry->name, name, encoding))
+	    return entry;
 	slot = (slot + 1) & mask;
     }
 }
@@ -759,7 +1252,8 @@ onibi_name_index_build(OnibiParsed *parsed)
 	    onibi_ast_node_const(&parsed->arena, (OnibiAstId)i);
 	if (node->kind != ONIBI_AST_CAPTURE || !node->name.present) continue;
 	OnibiNameIndexEntry *entry =
-	    onibi_name_index_find(semantics, &parsed->arena, node->name);
+	    onibi_name_index_find(semantics, &parsed->arena, node->name,
+				  rb_enc_from_index(parsed->encoding_index));
 	if (!entry->used) {
 	    entry->used = 1;
 	    entry->name = node->name;
@@ -796,10 +1290,10 @@ onibi_ast_slice_number(const OnibiAstArena *arena, OnibiTokenSlice slice,
 static OnibiAstId
 onibi_resolved_named_capture(const OnibiAstArena *arena,
 			     const OnibiResolvedArena *semantics,
-			     OnibiTokenSlice name)
+			     OnibiTokenSlice name, rb_encoding *encoding)
 {
-    OnibiNameIndexEntry *entry =
-	onibi_name_index_find((OnibiResolvedArena *)semantics, arena, name);
+    OnibiNameIndexEntry *entry = onibi_name_index_find(
+	(OnibiResolvedArena *)semantics, arena, name, encoding);
     if (entry != NULL && entry->used && entry->definition_count != 0)
 	return entry->definitions[0];
     return ONIBI_AST_NONE;
@@ -808,10 +1302,10 @@ onibi_resolved_named_capture(const OnibiAstArena *arena,
 static OnibiSubprogramId
 onibi_resolved_named_subprogram(const OnibiAstArena *arena,
 				const OnibiResolvedArena *semantics,
-				OnibiTokenSlice name)
+				OnibiTokenSlice name, rb_encoding *encoding)
 {
-    OnibiNameIndexEntry *entry =
-	onibi_name_index_find((OnibiResolvedArena *)semantics, arena, name);
+    OnibiNameIndexEntry *entry = onibi_name_index_find(
+	(OnibiResolvedArena *)semantics, arena, name, encoding);
     return entry != NULL && entry->used ? entry->subprogram_id : UINT32_MAX;
 }
 
@@ -825,9 +1319,9 @@ onibi_resolved_numbered_capture(const OnibiResolvedArena *semantics,
     return ONIBI_AST_NONE;
 }
 
-/* Build the immutable capture list used by one backreference.  Ruby resolves
- * duplicate names in reverse source order and tests each currently set
- * capture. */
+/* Build the immutable capture list used by one backreference.  The resolver
+ * records duplicate definitions in AST order; this descriptor stores them in
+ * reverse order so the native executor tests each currently set capture. */
 static uint32_t
 onibi_compile_backref_descriptor(const OnibiAstNode *node,
 				 const OnibiResolvedNode *resolved,
@@ -842,7 +1336,8 @@ onibi_compile_backref_descriptor(const OnibiAstNode *node,
 
     if (node->name.present) {
 	OnibiNameIndexEntry *entry = onibi_name_index_find(
-	    (OnibiResolvedArena *)builder->semantics, builder->ast, node->name);
+	    (OnibiResolvedArena *)builder->semantics, builder->ast, node->name,
+	    rb_enc_from_index(builder->encoding_index));
 	if (entry == NULL || !entry->used || entry->definition_count == 0 ||
 	    entry->definition_count > UINT16_MAX)
 	    rb_raise(eRegexpError, "invalid GIR backreference capture list");
@@ -942,8 +1437,9 @@ onibi_resolve_semantic_node(OnibiParsed *parsed, OnibiAstId id,
     if (node->kind == ONIBI_AST_BACKREF) {
 	OnibiAstId target = ONIBI_AST_NONE;
 	if (node->name.present)
-	    target = onibi_resolved_named_capture(arena, &parsed->semantics,
-						  node->name);
+	    target = onibi_resolved_named_capture(
+		arena, &parsed->semantics, node->name,
+		rb_enc_from_index(parsed->encoding_index));
 	else
 	    target = onibi_resolved_numbered_capture(&parsed->semantics,
 						     node->capture);
@@ -957,15 +1453,17 @@ onibi_resolve_semantic_node(OnibiParsed *parsed, OnibiAstId id,
 	OnibiAstId target =
 	    onibi_ast_slice_number(arena, node->name, &number)
 		? onibi_resolved_numbered_capture(&parsed->semantics, number)
-		: onibi_resolved_named_capture(arena, &parsed->semantics,
-					       node->name);
+		: onibi_resolved_named_capture(
+		      arena, &parsed->semantics, node->name,
+		      rb_enc_from_index(parsed->encoding_index));
 	if (target == ONIBI_AST_NONE)
 	    rb_raise(eRegexpError, "undefined subroutine call");
 	semantic->reference_target = target;
 	semantic->capture_id = parsed->semantics.nodes[target].capture_id;
 	if (number == 0) {
 	    OnibiSubprogramId indexed = onibi_resolved_named_subprogram(
-		arena, &parsed->semantics, node->name);
+		arena, &parsed->semantics, node->name,
+		rb_enc_from_index(parsed->encoding_index));
 	    if (indexed != UINT32_MAX) semantic->subprogram_id = indexed;
 	}
 	if (semantic->subprogram_id == UINT32_MAX) {
@@ -976,7 +1474,8 @@ onibi_resolve_semantic_node(OnibiParsed *parsed, OnibiAstId id,
 		parsed->semantics.nodes[target].subprogram_id;
 	    if (number == 0) {
 		OnibiNameIndexEntry *entry = onibi_name_index_find(
-		    &parsed->semantics, arena, node->name);
+		    &parsed->semantics, arena, node->name,
+		    rb_enc_from_index(parsed->encoding_index));
 		if (entry != NULL)
 		    entry->subprogram_id = semantic->subprogram_id;
 	    }
@@ -998,8 +1497,9 @@ onibi_resolve_semantic_node(OnibiParsed *parsed, OnibiAstId id,
 	OnibiAstId target =
 	    onibi_ast_slice_number(arena, condition, &number)
 		? onibi_resolved_numbered_capture(&parsed->semantics, number)
-		: onibi_resolved_named_capture(arena, &parsed->semantics,
-					       condition);
+		: onibi_resolved_named_capture(
+		      arena, &parsed->semantics, condition,
+		      rb_enc_from_index(parsed->encoding_index));
 	if (target == ONIBI_AST_NONE)
 	    rb_raise(eRegexpError, "conditional capture is undefined");
 	semantic->reference_target = target;
@@ -1328,15 +1828,16 @@ onibi_analyze_semantic_node(OnibiParsed *parsed, OnibiAstId id)
 static void
 onibi_subprogram_entry_push(onibi_gir_builder_t *builder,
 			    OnibiSubprogramId subprogram_id,
-			    OnibiStateId destination,
+			    OnibiNfaStateId destination,
 			    const OnibiGActionVector *actions)
 {
-    OnibiGActionVector composed =
-	onibi_nfa_compose_edge_actions(builder, -1, (long)destination, actions);
-    onibi_gir_edge_vector_push(&builder->subprogram_entries,
-			       (OnibiGirEdgeEntry){(long)subprogram_id,
-						   (long)destination, 0,
-						   composed});
+    OnibiGActionVector composed = onibi_nfa_compose_edge_actions(
+	builder, ONIBI_NFA_STATE_NONE, destination, actions);
+    onibi_gir_edge_vector_push(
+	&builder->subprogram_entries,
+	(OnibiGirEdgeEntry){(OnibiGirStateId)subprogram_id,
+			    onibi_nfa_state_id_to_gir_id(destination), 0,
+			    composed});
 }
 
 static long
@@ -1347,11 +1848,12 @@ onibi_store_subprogram_fragment(onibi_fragment_t *fragment,
 				OnibiOptionEnv option_env, uint32_t width_base,
 				uint16_t width_count)
 {
-    long accept = builder->next_id++;
+    OnibiNfaStateId accept = onibi_nfa_state_id_next(builder);
     onibi_nfa_state(builder, accept, ONIBI_G_ACCEPT, 0, 0);
-    OnibiIdVector accept_starts;
-    onibi_id_vector_single(&accept_starts, (OnibiStateId)accept,
-			   builder->allocation_owner);
+    OnibiNfaStateIdVector accept_starts;
+    onibi_nfa_state_id_vector_init(&accept_starts);
+    onibi_nfa_state_id_vector_bind(&accept_starts, builder->allocation_owner);
+    onibi_nfa_state_id_vector_push(&accept_starts, accept);
     onibi_connect_fragment_actions(builder, &fragment->exits, &accept_starts,
 				   &fragment->pending_actions, 0);
     size_t entry_base = builder->subprogram_entries.count;
@@ -1360,16 +1862,16 @@ onibi_store_subprogram_fragment(onibi_fragment_t *fragment,
 	builder->allocation_owner);
     if (fragment->nullable &&
 	(fragment->lazy & ONIBI_FRAGMENT_NULLABLE_LAZY) != 0)
-	onibi_subprogram_entry_push(builder, subprogram_id,
-				    (OnibiStateId)accept, &nullable_actions);
+	onibi_subprogram_entry_push(builder, subprogram_id, accept,
+				    &nullable_actions);
     for (size_t i = 0; i < fragment->starts.count; i++)
 	onibi_subprogram_entry_push(builder, subprogram_id,
 				    fragment->starts.entries[i],
 				    &fragment->start_actions);
     if (fragment->nullable &&
 	(fragment->lazy & ONIBI_FRAGMENT_NULLABLE_LAZY) == 0)
-	onibi_subprogram_entry_push(builder, subprogram_id,
-				    (OnibiStateId)accept, &nullable_actions);
+	onibi_subprogram_entry_push(builder, subprogram_id, accept,
+				    &nullable_actions);
     onibi_g_action_vector_free(&nullable_actions);
     size_t entry_count = builder->subprogram_entries.count - entry_base;
     if (entry_count == 0 || entry_count > UINT16_MAX || entry_base > UINT32_MAX)
@@ -1378,9 +1880,8 @@ onibi_store_subprogram_fragment(onibi_fragment_t *fragment,
 	rb_raise(eRegexpError, "subprogram entry set exceeds the RSeq limit");
     OnibiRSeqSubprogramEntry descriptor;
     memset(&descriptor, 0, sizeof(descriptor));
-    descriptor.entry =
-	(OnibiStateId)builder->subprogram_entries.entries[entry_base].to;
-    descriptor.accept = (OnibiStateId)accept;
+    descriptor.entry = builder->subprogram_entries.entries[entry_base].to;
+    descriptor.accept = onibi_nfa_state_id_to_gir_id(accept);
     descriptor.flags = flags;
     descriptor.option_env = option_env;
     descriptor.entry_edge_base = (uint32_t)entry_base;
@@ -1391,9 +1892,9 @@ onibi_store_subprogram_fragment(onibi_fragment_t *fragment,
     descriptor.effects = effects;
     onibi_rseq_subprogram_vector_store(&builder->subprograms,
 				       (size_t)subprogram_id, descriptor);
-    onibi_id_vector_free(&fragment->starts);
-    onibi_id_vector_free(&fragment->exits);
-    onibi_id_vector_free(&accept_starts);
+    onibi_nfa_state_id_vector_free(&fragment->starts);
+    onibi_nfa_state_id_vector_free(&fragment->exits);
+    onibi_nfa_state_id_vector_free(&accept_starts);
     onibi_g_action_vector_free(&fragment->start_actions);
     onibi_g_action_vector_free(&fragment->pending_actions);
     return (long)subprogram_id;
@@ -1582,8 +2083,8 @@ onibi_compile_resolved_subprogram(OnibiAstId capture_id,
 static onibi_fragment_t
 onibi_fragment_explicit(onibi_fragment_t part, onibi_gir_builder_t *builder)
 {
-    long entry = onibi_nfa_epsilon_state(builder);
-    long exit = onibi_nfa_epsilon_state(builder);
+    OnibiNfaStateId entry = onibi_nfa_epsilon_state(builder);
+    OnibiNfaStateId exit = onibi_nfa_epsilon_state(builder);
     OnibiGActionVector empty = onibi_g_action_vector_concat(
 	&part.start_actions, &part.pending_actions, builder->allocation_owner);
     if (part.nullable && (part.lazy & ONIBI_FRAGMENT_NULLABLE_LAZY))
@@ -1597,15 +2098,13 @@ onibi_fragment_explicit(onibi_fragment_t part, onibi_gir_builder_t *builder)
     if (part.nullable && !(part.lazy & ONIBI_FRAGMENT_NULLABLE_LAZY))
 	onibi_nfa_add_connection(builder, entry, exit, &empty, 0);
     onibi_g_action_vector_free(&empty);
-    onibi_id_vector_free(&part.starts);
-    onibi_id_vector_free(&part.exits);
+    onibi_nfa_state_id_vector_free(&part.starts);
+    onibi_nfa_state_id_vector_free(&part.exits);
     onibi_g_action_vector_free(&part.start_actions);
     onibi_g_action_vector_free(&part.pending_actions);
     part = onibi_fragment_empty(builder);
-    onibi_id_vector_single(&part.starts, (OnibiStateId)entry,
-			   builder->allocation_owner);
-    onibi_id_vector_single(&part.exits, (OnibiStateId)exit,
-			   builder->allocation_owner);
+    onibi_nfa_state_id_vector_push(&part.starts, entry);
+    onibi_nfa_state_id_vector_push(&part.exits, exit);
     part.nullable = 0;
     return part;
 }
@@ -1617,9 +2116,9 @@ onibi_fragment_join(onibi_fragment_t *left, onibi_fragment_t right,
     onibi_nfa_add_connection(builder, left->exits.entries[0],
 			     right.starts.entries[0], &(OnibiGActionVector){0},
 			     0);
-    onibi_id_vector_free(&left->exits);
+    onibi_nfa_state_id_vector_free(&left->exits);
     left->exits = right.exits;
-    onibi_id_vector_free(&right.starts);
+    onibi_nfa_state_id_vector_free(&right.starts);
     onibi_g_action_vector_free(&right.start_actions);
     onibi_g_action_vector_free(&right.pending_actions);
 }
@@ -1643,13 +2142,11 @@ static onibi_fragment_t
 onibi_compile_literal_bytes(const unsigned char *bytes, size_t length,
 			    int ignorecase, onibi_gir_builder_t *builder)
 {
-    long id = builder->next_id++;
+    OnibiNfaStateId id = onibi_nfa_state_id_next(builder);
     onibi_nfa_state_literal(builder, id, bytes, length, ignorecase);
     onibi_fragment_t result = onibi_fragment_empty(builder);
-    onibi_id_vector_single(&result.starts, (OnibiStateId)id,
-			   builder->allocation_owner);
-    onibi_id_vector_single(&result.exits, (OnibiStateId)id,
-			   builder->allocation_owner);
+    onibi_nfa_state_id_vector_push(&result.starts, id);
+    onibi_nfa_state_id_vector_push(&result.exits, id);
     result.nullable = 0;
     return result;
 }
@@ -1658,15 +2155,13 @@ static onibi_fragment_t
 onibi_compile_character_class(OnibiAstId node_id, int ignorecase,
 			      onibi_gir_builder_t *builder)
 {
-    long id = builder->next_id++;
+    OnibiNfaStateId id = onibi_nfa_state_id_next(builder);
     uint32_t class_index =
 	onibi_compiler_normalize_class(builder, node_id, ignorecase);
     onibi_nfa_state_class(builder, id, class_index);
     onibi_fragment_t result = onibi_fragment_empty(builder);
-    onibi_id_vector_single(&result.starts, (OnibiStateId)id,
-			   builder->allocation_owner);
-    onibi_id_vector_single(&result.exits, (OnibiStateId)id,
-			   builder->allocation_owner);
+    onibi_nfa_state_id_vector_push(&result.starts, id);
+    onibi_nfa_state_id_vector_push(&result.exits, id);
     result.nullable = 0;
     return result;
 }
@@ -1937,8 +2432,8 @@ onibi_repeat_capture_count(OnibiAstId id, const onibi_gir_builder_t *builder)
 }
 
 static void
-onibi_repeat_link(onibi_gir_builder_t *builder, long from, long to,
-		  OnibiGAction action)
+onibi_repeat_link(onibi_gir_builder_t *builder, OnibiNfaStateId from,
+		  OnibiNfaStateId to, OnibiGAction action)
 {
     OnibiGActionVector actions = {0};
     onibi_g_action_vector_bind(&actions, builder->allocation_owner);
@@ -1948,8 +2443,9 @@ onibi_repeat_link(onibi_gir_builder_t *builder, long from, long to,
 }
 
 static void
-onibi_repeat_choice(onibi_gir_builder_t *builder, long choice, long body,
-		    long exit, long counter, long min, long max, int greedy)
+onibi_repeat_choice(onibi_gir_builder_t *builder, OnibiNfaStateId choice,
+		    OnibiNfaStateId body, OnibiNfaStateId exit, long counter,
+		    long min, long max, int greedy)
 {
     if (!greedy)
 	onibi_repeat_link(
@@ -1991,16 +2487,17 @@ onibi_compile_compact_repeat(OnibiAstId atom, long min, long max, int greedy,
     if (nullable) builder->nullable_scope_count--;
     size_t state_end = builder->nfa->states.count;
     size_t edge_end = builder->nfa->edges.count;
-    long body_entry = body.starts.entries[0], body_exit = body.exits.entries[0];
-    long entry = onibi_nfa_epsilon_state(builder);
-    long exit = onibi_nfa_epsilon_state(builder);
+    OnibiNfaStateId body_entry = body.starts.entries[0];
+    OnibiNfaStateId body_exit = body.exits.entries[0];
+    OnibiNfaStateId entry = onibi_nfa_epsilon_state(builder);
+    OnibiNfaStateId exit = onibi_nfa_epsilon_state(builder);
     size_t phases =
 	nullable ? onibi_repeat_capture_count(atom, builder) + 1U : 1U;
-    OnibiIdVector choices = {0};
-    onibi_id_vector_bind(&choices, builder->allocation_owner);
+    OnibiNfaStateIdVector choices = {0};
+    onibi_nfa_state_id_vector_bind(&choices, builder->allocation_owner);
     for (size_t phase = 0; phase < phases; phase++)
-	onibi_id_vector_push(&choices,
-			     (OnibiStateId)onibi_nfa_epsilon_state(builder));
+	onibi_nfa_state_id_vector_push(&choices,
+				       onibi_nfa_epsilon_state(builder));
     OnibiGAction initialize =
 	onibi_counter_action(ONIBI_GA_COUNTER_INIT, counter, 0, 0);
     initialize.arg32 = 0;
@@ -2010,7 +2507,7 @@ onibi_compile_compact_repeat(OnibiAstId atom, long min, long max, int greedy,
 	 * decision before it restarts the repeat.  Without this guard, a
 	 * dynamic body can bypass NULL_CONTINUE/NULL_STOP after it consumes
 	 * through a shared RSeq state. */
-	long increment = onibi_nfa_epsilon_state(builder);
+	OnibiNfaStateId increment = onibi_nfa_epsilon_state(builder);
 	onibi_repeat_link(
 	    builder, body_exit, increment,
 	    onibi_counter_action(ONIBI_GA_NULL_CONTINUE, guard, 0, 0));
@@ -2029,41 +2526,46 @@ onibi_compile_compact_repeat(OnibiAstId atom, long min, long max, int greedy,
 	    onibi_counter_action(ONIBI_GA_COUNTER_INCREMENT, counter, 0, 0));
     }
     for (size_t phase = 0; phase < phases; phase++) {
-	long projected_entry = body_entry, projected_exit = body_exit;
+	OnibiNfaStateId projected_entry = body_entry;
+	OnibiNfaStateId projected_exit = body_exit;
 	{
-	    OnibiIdVector map = {0};
-	    onibi_id_vector_bind(&map, builder->allocation_owner);
+	    OnibiNfaStateIdVector map = {0};
+	    onibi_nfa_state_id_vector_bind(&map, builder->allocation_owner);
 	    for (size_t i = state_base; i < state_end; i++) {
-		long target = (long)i;
+		OnibiNfaStateId target = builder->nfa->states.entries[i].id;
 		if (builder->nfa->states.entries[i].kind ==
 		    ONIBI_NFA_STATE_EPSILON)
 		    target = onibi_nfa_epsilon_state(builder);
-		onibi_id_vector_push(&map, (OnibiStateId)target);
+		onibi_nfa_state_id_vector_push(&map, target);
 	    }
 	    for (size_t i = edge_base; i < edge_end; i++) {
 		OnibiNfaEdge edge = builder->nfa->edges.entries[i];
-		if (edge.from < (long)state_base ||
-		    edge.from >= (long)state_end ||
-		    edge.to < (long)state_base || edge.to >= (long)state_end ||
+		if (edge.from == ONIBI_NFA_STATE_NONE ||
+		    edge.to == ONIBI_NFA_STATE_NONE ||
+		    (size_t)edge.from < state_base ||
+		    (size_t)edge.from >= state_end ||
+		    (size_t)edge.to < state_base ||
+		    (size_t)edge.to >= state_end ||
 		    builder->nfa->states.entries[edge.from].kind !=
 			ONIBI_NFA_STATE_EPSILON)
 		    continue;
 		onibi_nfa_add_connection(
-		    builder, map.entries[edge.from - (long)state_base],
-		    map.entries[edge.to - (long)state_base], &edge.actions, 0);
+		    builder, map.entries[(size_t)edge.from - state_base],
+		    map.entries[(size_t)edge.to - state_base], &edge.actions,
+		    0);
 	    }
-	    projected_entry = map.entries[body_entry - (long)state_base];
-	    projected_exit = map.entries[body_exit - (long)state_base];
-	    onibi_id_vector_free(&map);
+	    projected_entry = map.entries[(size_t)body_entry - state_base];
+	    projected_exit = map.entries[(size_t)body_exit - state_base];
+	    onibi_nfa_state_id_vector_free(&map);
 	}
 	if (nullable) {
-	    long enter_guard = onibi_nfa_epsilon_state(builder);
+	    OnibiNfaStateId enter_guard = onibi_nfa_epsilon_state(builder);
 	    onibi_repeat_link(
 		builder, enter_guard, projected_entry,
 		onibi_counter_action(ONIBI_GA_NULL_ENTER, guard, 0, 0));
 	    projected_entry = enter_guard;
 	    if (phase + 1U < phases) {
-		long increment = onibi_nfa_epsilon_state(builder);
+		OnibiNfaStateId increment = onibi_nfa_epsilon_state(builder);
 		onibi_repeat_link(
 		    builder, projected_exit, increment,
 		    onibi_counter_action(ONIBI_GA_NULL_CONTINUE, guard, 0, 0));
@@ -2079,16 +2581,14 @@ onibi_compile_compact_repeat(OnibiAstId atom, long min, long max, int greedy,
 	onibi_repeat_choice(builder, choices.entries[phase], projected_entry,
 			    exit, counter, min, max, greedy);
     }
-    onibi_id_vector_free(&choices);
-    onibi_id_vector_free(&body.starts);
-    onibi_id_vector_free(&body.exits);
+    onibi_nfa_state_id_vector_free(&choices);
+    onibi_nfa_state_id_vector_free(&body.starts);
+    onibi_nfa_state_id_vector_free(&body.exits);
     onibi_g_action_vector_free(&body.start_actions);
     onibi_g_action_vector_free(&body.pending_actions);
     onibi_fragment_t result = onibi_fragment_empty(builder);
-    onibi_id_vector_single(&result.starts, (OnibiStateId)entry,
-			   builder->allocation_owner);
-    onibi_id_vector_single(&result.exits, (OnibiStateId)exit,
-			   builder->allocation_owner);
+    onibi_nfa_state_id_vector_push(&result.starts, entry);
+    onibi_nfa_state_id_vector_push(&result.exits, exit);
     result.nullable = 0;
     return result;
 }
@@ -2142,13 +2642,15 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	(resolved_node->lexical_options & ONIBI_OPT_IGNORECASE) != 0;
     int multiline = (resolved_node->lexical_options & ONIBI_OPT_MULTILINE) != 0;
     if (type_code == ONIBI_AST_CHARACTER_CLASS ||
-	type_code == ONIBI_AST_CLASS_INTERSECTION)
+	type_code == ONIBI_AST_CLASS_INTERSECTION) {
 	return onibi_compile_character_class(node_id, ignorecase, builder);
-    if (type_code == ONIBI_AST_SEQUENCE)
+    }
+    if (type_code == ONIBI_AST_SEQUENCE) {
 	return onibi_compile_sequence(c_node, builder);
+    }
     if (type_code == ONIBI_AST_ALTERNATIVE) {
-	long entry = onibi_nfa_epsilon_state(builder),
-	     exit = onibi_nfa_epsilon_state(builder);
+	OnibiNfaStateId entry = onibi_nfa_epsilon_state(builder),
+			exit = onibi_nfa_epsilon_state(builder);
 	for (size_t i = 0; i < c_node->child_count; i++) {
 	    builder->ordered_choice_depth++;
 	    onibi_fragment_t branch = onibi_fragment_explicit(
@@ -2158,16 +2660,14 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 				     &(OnibiGActionVector){0}, 0);
 	    onibi_nfa_add_connection(builder, branch.exits.entries[0], exit,
 				     &(OnibiGActionVector){0}, 0);
-	    onibi_id_vector_free(&branch.starts);
-	    onibi_id_vector_free(&branch.exits);
+	    onibi_nfa_state_id_vector_free(&branch.starts);
+	    onibi_nfa_state_id_vector_free(&branch.exits);
 	    onibi_g_action_vector_free(&branch.start_actions);
 	    onibi_g_action_vector_free(&branch.pending_actions);
 	}
 	onibi_fragment_t result = onibi_fragment_empty(builder);
-	onibi_id_vector_single(&result.starts, (OnibiStateId)entry,
-			       builder->allocation_owner);
-	onibi_id_vector_single(&result.exits, (OnibiStateId)exit,
-			       builder->allocation_owner);
+	onibi_nfa_state_id_vector_push(&result.starts, entry);
+	onibi_nfa_state_id_vector_push(&result.exits, exit);
 	result.nullable = 0;
 	return result;
     }
@@ -2197,27 +2697,23 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    rb_raise(eRegexpError,
 		     "grapheme matching is not available in this PoC");
 	}
-	long id = builder->next_id++;
+	OnibiNfaStateId id = onibi_nfa_state_id_next(builder);
 	uint32_t class_index =
 	    onibi_compiler_normalize_class(builder, node_id, ignorecase);
 	onibi_nfa_state_class(builder, id, class_index);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
-	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
-			       builder->allocation_owner);
-	onibi_id_vector_single(&result.exits, (OnibiStateId)id,
-			       builder->allocation_owner);
+	onibi_nfa_state_id_vector_push(&result.starts, id);
+	onibi_nfa_state_id_vector_push(&result.exits, id);
 	result.nullable = 0;
 	return result;
     }
     if (type_code == ONIBI_AST_ANY) {
-	long id = builder->next_id++;
+	OnibiNfaStateId id = onibi_nfa_state_id_next(builder);
 	onibi_nfa_state(builder, id, ONIBI_G_ANY, 0,
 			multiline ? ONIBI_RSEQ_STATE_FLAG_NEGATED : 0);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
-	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
-			       builder->allocation_owner);
-	onibi_id_vector_single(&result.exits, (OnibiStateId)id,
-			       builder->allocation_owner);
+	onibi_nfa_state_id_vector_push(&result.starts, id);
+	onibi_nfa_state_id_vector_push(&result.exits, id);
 	result.nullable = 0;
 	return result;
     }
@@ -2226,14 +2722,12 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    rb_raise(eRegexpError, "invalid GIR backreference capture");
 	uint32_t descriptor =
 	    onibi_compile_backref_descriptor(c_node, resolved_node, builder);
-	long id = builder->next_id++;
+	OnibiNfaStateId id = onibi_nfa_state_id_next(builder);
 	onibi_nfa_state(builder, id, ONIBI_G_BACKREF, descriptor,
 			ignorecase ? ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE : 0);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
-	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
-			       builder->allocation_owner);
-	onibi_id_vector_single(&result.exits, (OnibiStateId)id,
-			       builder->allocation_owner);
+	onibi_nfa_state_id_vector_push(&result.starts, id);
+	onibi_nfa_state_id_vector_push(&result.exits, id);
 	result.nullable = 0;
 	return result;
     }
@@ -2245,7 +2739,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	long subprogram_id = onibi_compile_resolved_subprogram(
 	    resolved_node->reference_target, resolved_node->subprogram_id,
 	    builder);
-	long id = builder->next_id++;
+	OnibiNfaStateId id = onibi_nfa_state_id_next(builder);
 	onibi_nfa_state(builder, id, ONIBI_G_CALL, (uint32_t)subprogram_id, 0);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
 	for (size_t i = 0; i < builder->nullable_scope_count; i++)
@@ -2254,10 +2748,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 		onibi_counter_action(ONIBI_GA_NULL_CAPTURE,
 				     builder->nullable_scopes[i], 1,
 				     (uint32_t)resolved_node->capture_id));
-	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
-			       builder->allocation_owner);
-	onibi_id_vector_single(&result.exits, (OnibiStateId)id,
-			       builder->allocation_owner);
+	onibi_nfa_state_id_vector_push(&result.starts, id);
+	onibi_nfa_state_id_vector_push(&result.exits, id);
 	result.nullable = 0;
 	return result;
     }
@@ -2322,14 +2814,14 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 				      &yes.pending_actions);
 	onibi_add_exit_guard_fragment(builder, &no.exits, &no.pending_actions);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
-	onibi_id_vector_append(&result.starts, &yes.starts);
-	onibi_id_vector_append(&result.starts, &no.starts);
-	onibi_id_vector_append(&result.exits, &yes.exits);
-	onibi_id_vector_append(&result.exits, &no.exits);
-	onibi_id_vector_free(&yes.starts);
-	onibi_id_vector_free(&yes.exits);
-	onibi_id_vector_free(&no.starts);
-	onibi_id_vector_free(&no.exits);
+	onibi_nfa_state_id_vector_append(&result.starts, &yes.starts);
+	onibi_nfa_state_id_vector_append(&result.starts, &no.starts);
+	onibi_nfa_state_id_vector_append(&result.exits, &yes.exits);
+	onibi_nfa_state_id_vector_append(&result.exits, &no.exits);
+	onibi_nfa_state_id_vector_free(&yes.starts);
+	onibi_nfa_state_id_vector_free(&yes.exits);
+	onibi_nfa_state_id_vector_free(&no.starts);
+	onibi_nfa_state_id_vector_free(&no.exits);
 	onibi_g_action_vector_free(&yes.start_actions);
 	onibi_g_action_vector_free(&yes.pending_actions);
 	onibi_g_action_vector_free(&no.start_actions);
@@ -2348,14 +2840,12 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    (OnibiOptionEnv){resolved_node->lexical_options,
 			     resolved_node->encoding_index},
 	    0, 0);
-	long id = builder->next_id++;
+	OnibiNfaStateId id = onibi_nfa_state_id_next(builder);
 	onibi_nfa_state(builder, id, ONIBI_G_ATOMIC, (uint32_t)subprogram_id,
 			0);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
-	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
-			       builder->allocation_owner);
-	onibi_id_vector_single(&result.exits, (OnibiStateId)id,
-			       builder->allocation_owner);
+	onibi_nfa_state_id_vector_push(&result.starts, id);
+	onibi_nfa_state_id_vector_push(&result.exits, id);
 	result.nullable = 0;
 	return result;
     }
@@ -2368,14 +2858,12 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    (OnibiOptionEnv){resolved_node->lexical_options,
 			     resolved_node->encoding_index},
 	    0, 0);
-	long id = builder->next_id++;
+	OnibiNfaStateId id = onibi_nfa_state_id_next(builder);
 	onibi_nfa_state(builder, id, ONIBI_G_ABSENT, (uint32_t)subprogram_id,
 			0);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
-	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
-			       builder->allocation_owner);
-	onibi_id_vector_single(&result.exits, (OnibiStateId)id,
-			       builder->allocation_owner);
+	onibi_nfa_state_id_vector_push(&result.starts, id);
+	onibi_nfa_state_id_vector_push(&result.exits, id);
 	result.nullable = 0;
 	return result;
     }
@@ -2501,8 +2989,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	if (max < 0) {
 	    onibi_fragment_t part = onibi_fragment_explicit(
 		onibi_compile_repeat_atom(atom, builder, 1, 1), builder);
-	    long choice = result.exits.entries[0],
-		 exit = onibi_nfa_epsilon_state(builder);
+	    OnibiNfaStateId choice = result.exits.entries[0];
+	    OnibiNfaStateId exit = onibi_nfa_epsilon_state(builder);
 	    if (!greedy)
 		onibi_nfa_add_connection(builder, choice, exit,
 					 &(OnibiGActionVector){0}, 0);
@@ -2513,19 +3001,19 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 					 &(OnibiGActionVector){0}, 0);
 	    onibi_nfa_add_connection(builder, part.exits.entries[0], choice,
 				     &(OnibiGActionVector){0}, 0);
-	    result.exits.entries[0] = (OnibiStateId)exit;
-	    onibi_id_vector_free(&part.starts);
-	    onibi_id_vector_free(&part.exits);
+	    result.exits.entries[0] = exit;
+	    onibi_nfa_state_id_vector_free(&part.starts);
+	    onibi_nfa_state_id_vector_free(&part.exits);
 	    onibi_g_action_vector_free(&part.start_actions);
 	    onibi_g_action_vector_free(&part.pending_actions);
 	}
 	else if (max > min) {
-	    long exit = onibi_nfa_epsilon_state(builder);
+	    OnibiNfaStateId exit = onibi_nfa_epsilon_state(builder);
 	    for (long i = min; i < max; i++) {
 		onibi_fragment_t part = onibi_fragment_explicit(
 		    onibi_compile_repeat_atom(atom, builder, max > 1, 1),
 		    builder);
-		long choice = result.exits.entries[0];
+		OnibiNfaStateId choice = result.exits.entries[0];
 		if (!greedy)
 		    onibi_nfa_add_connection(builder, choice, exit,
 					     &(OnibiGActionVector){0}, 0);
@@ -2536,7 +3024,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    }
 	    onibi_nfa_add_connection(builder, result.exits.entries[0], exit,
 				     &(OnibiGActionVector){0}, 0);
-	    result.exits.entries[0] = (OnibiStateId)exit;
+	    result.exits.entries[0] = exit;
 	}
 	return result;
     }
@@ -2600,11 +3088,14 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
 					 builder->allocation_owner);
 }
 
-/* Lower NFA pass, followed by the explicit epsilon-elimination boundary. */
+/* Lower a tagged NFA, then eliminate its epsilon edges before publishing GIR.
+ * The published GIR edge vectors do not retain the NFA epsilon edges. */
 static void
 onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
-			  OnibiGirEdgeVector *start_edges, long *accept_out,
-			  long *root_entry_out, VALUE *nfa_diagnostics_out)
+			  OnibiGirEdgeVector *start_edges,
+			  OnibiGirStateId *accept_out,
+			  OnibiGirStateId *root_entry_out,
+			  VALUE *nfa_diagnostics_out)
 {
     onibi_gir_builder_t *builder = &owner->builder;
     OnibiTaggedNfa *nfa = &owner->nfa;
@@ -2615,18 +3106,20 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
     nfa->capture_order_required = builder->capture_order_required;
     owner->root_fragment_active = 1;
     onibi_fragment_t *fragment = &owner->root_fragment;
-    long accept = builder->next_id++;
+    OnibiNfaStateId accept = onibi_nfa_state_id_next(builder);
     onibi_nfa_state(builder, accept, ONIBI_G_ACCEPT, 0, 0);
-    onibi_id_vector_single(&owner->accept_starts, (OnibiStateId)accept,
-			   builder->allocation_owner);
-    OnibiIdVector exit_ids = fragment->exits;
+    onibi_nfa_state_id_vector_init(&owner->accept_starts);
+    onibi_nfa_state_id_vector_bind(&owner->accept_starts,
+				   builder->allocation_owner);
+    onibi_nfa_state_id_vector_push(&owner->accept_starts, accept);
+    OnibiNfaStateIdVector exit_ids = fragment->exits;
     onibi_connect_fragment_actions(
 	builder, &exit_ids, &owner->accept_starts, &fragment->pending_actions,
 	(fragment->lazy & ONIBI_FRAGMENT_EXIT_LAZY) != 0);
-    onibi_id_vector_free(&owner->accept_starts);
-    onibi_id_vector_init(&fragment->exits);
-    long root_entry =
-	fragment->starts.count > 0 ? (long)fragment->starts.entries[0] : accept;
+    onibi_nfa_state_id_vector_free(&owner->accept_starts);
+    onibi_nfa_state_id_vector_init(&fragment->exits);
+    OnibiNfaStateId root_entry =
+	fragment->starts.count > 0 ? fragment->starts.entries[0] : accept;
     if (fragment->nullable &&
 	(fragment->lazy & ONIBI_FRAGMENT_NULLABLE_LAZY) != 0) {
 	owner->pending_actions = onibi_g_action_vector_concat(
@@ -2636,18 +3129,18 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
 	onibi_g_action_vector_free(&owner->pending_actions);
 	onibi_g_action_vector_init(&owner->pending_actions);
     }
-    OnibiIdVector start_ids = fragment->starts;
+    OnibiNfaStateIdVector start_ids = fragment->starts;
     for (size_t i = 0; i < start_ids.count; i++) {
-	long destination = (long)start_ids.entries[i];
+	OnibiNfaStateId destination = start_ids.entries[i];
 	owner->pending_actions = onibi_g_action_vector_copy(
 	    &fragment->start_actions, builder->allocation_owner);
 	onibi_nfa_add_start(builder, destination, &owner->pending_actions);
 	onibi_g_action_vector_free(&owner->pending_actions);
 	onibi_g_action_vector_init(&owner->pending_actions);
     }
-    onibi_id_vector_free(&start_ids);
-    onibi_id_vector_free(&exit_ids);
-    onibi_id_vector_init(&fragment->starts);
+    onibi_nfa_state_id_vector_free(&start_ids);
+    onibi_nfa_state_id_vector_free(&exit_ids);
+    onibi_nfa_state_id_vector_init(&fragment->starts);
     if (fragment->nullable &&
 	(fragment->lazy & ONIBI_FRAGMENT_NULLABLE_LAZY) == 0) {
 	owner->pending_actions = onibi_g_action_vector_concat(
@@ -2665,21 +3158,25 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
     owner->root_fragment_active = 0;
     nfa->accept = accept;
     if (nfa_diagnostics_out) *nfa_diagnostics_out = onibi_nfa_diagnostics(nfa);
-    onibi_epsilon_eliminate(nfa, builder, start_edges, &accept, &root_entry);
+    OnibiGirStateId gir_accept;
+    OnibiGirStateId gir_root_entry;
+    onibi_epsilon_eliminate(nfa, builder, start_edges, root_entry, &gir_accept,
+			    &gir_root_entry);
     if (nfa_diagnostics_out)
 	onibi_nfa_add_elimination_diagnostics(*nfa_diagnostics_out, builder,
 					      start_edges);
     onibi_nfa_free(nfa);
     owner->nfa_active = 0;
     builder->nfa = NULL;
-    *accept_out = accept;
-    *root_entry_out = root_entry;
+    *accept_out = gir_accept;
+    *root_entry_out = gir_root_entry;
 }
 
 static void
 onibi_compiler_pass_verify_gir(const onibi_gir_builder_t *builder,
 			       const OnibiGirEdgeVector *start_edges,
-			       long accept, long root_entry, int options,
+			       OnibiGirStateId accept,
+			       OnibiGirStateId root_entry, int options,
 			       OnibiCompilerOwner *owner)
 {
     OnibiGIRView view = {&builder->states,
@@ -2883,9 +3380,10 @@ onibi_compiler_pass_analyze(OnibiNormalizeOutput normalize,
 /* Publish pass: transfer verified immutable GIR records to the result. */
 static VALUE
 onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
-			    OnibiGirEdgeVector *start_edges, long accept,
-			    long root_entry, long counter_count,
-			    int parsed_options, VerifiedGIRAnalysis analysis,
+			    OnibiGirEdgeVector *start_edges,
+			    OnibiGirStateId accept, OnibiGirStateId root_entry,
+			    long counter_count, int parsed_options,
+			    VerifiedGIRAnalysis analysis,
 			    OnibiCompilerOwner *owner)
 {
     onibi_compiler_fail_if(owner, 8);
@@ -3038,8 +3536,8 @@ onibi_compiler_compile_body(VALUE opaque)
     OnibiAnalyzeOutput analyze =
 	onibi_compiler_pass_analyze(normalize, &owner->builder, owner);
     owner->builder.capture_count = analyze.capture_count;
-    long accept;
-    long root_entry;
+    OnibiGirStateId accept;
+    OnibiGirStateId root_entry;
     VALUE nfa_diagnostics = Qnil;
 
     onibi_allocation_owner_set_phase(&owner->allocations, 4);
@@ -3051,15 +3549,15 @@ onibi_compiler_compile_body(VALUE opaque)
 
     OnibiLowerNfaOutput lower_nfa = {&owner->builder, &owner->start_edges,
 				     accept, root_entry};
-    /* onibi_compiler_pass_lower owns the tagged-NFA and epsilon-elimination
-     * boundary.  Keep the result contract explicit for later split passes. */
+    /* onibi_compiler_pass_lower owns the tagged-NFA and epsilon elimination.
+     * Its result is the epsilon-free GIR input for the later split passes. */
     (void)lower_nfa;
     OnibiGirOutput gir = {&owner->builder};
     (void)gir;
     OnibiRSeqSubprogramEntry root_descriptor;
     memset(&root_descriptor, 0, sizeof(root_descriptor));
-    root_descriptor.entry = (OnibiStateId)root_entry;
-    root_descriptor.accept = (OnibiStateId)accept;
+    root_descriptor.entry = root_entry;
+    root_descriptor.accept = accept;
     root_descriptor.option_env =
 	(OnibiOptionEnv){(uint32_t)parsed_options, parsed_data->encoding_index};
     root_descriptor.kind = ONIBI_SUBPROGRAM_ROOT;

@@ -1,3 +1,5 @@
+#include "onibi_encoding_internal.h"
+
 /* Use MRI's Onigmo grapheme implementation as the Unicode source of truth. */
 static long
 onibi_grapheme_width(VALUE str, OnibiBytePos pos)

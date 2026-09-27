@@ -1,3 +1,5 @@
+#include "onibi_ruby_api_internal.h"
+
 Init_onibi(void)
 {
     id_initialize = rb_intern("initialize");
@@ -139,6 +141,44 @@ Init_onibi(void)
     cRegexp = rb_define_class_under(mOnibi, "Regexp", rb_cObject);
     eTimeoutError =
 	rb_define_class_under(cRegexp, "TimeoutError", eRegexpError);
+    cMatchData = rb_define_class_under(mOnibi, "MatchData", rb_cObject);
+    rb_define_alloc_func(cMatchData, onibi_matchdata_alloc);
+    rb_define_private_method(cMatchData, "__onibi_match_data_diagnostics__",
+			     onibi_matchdata_summary, 0);
+    rb_define_method(cMatchData, "[]", onibi_matchdata_aref, -1);
+    rb_define_method(cMatchData, "captures", onibi_matchdata_captures, 0);
+    rb_define_method(cMatchData, "names", onibi_matchdata_names, 0);
+    rb_define_method(cMatchData, "named_captures",
+		     onibi_matchdata_named_captures, -1);
+    rb_define_method(cMatchData, "to_a", onibi_matchdata_to_a, 0);
+    rb_define_method(cMatchData, "size", onibi_matchdata_size, 0);
+    rb_define_method(cMatchData, "length", onibi_matchdata_size, 0);
+    rb_define_method(cMatchData, "to_s", onibi_matchdata_to_s, 0);
+    rb_define_method(cMatchData, "string", onibi_matchdata_string, 0);
+    rb_define_method(cMatchData, "pre_match", onibi_matchdata_pre_match, 0);
+    rb_define_method(cMatchData, "post_match", onibi_matchdata_post_match, 0);
+    rb_define_method(cMatchData, "regexp", onibi_matchdata_regexp, 0);
+    rb_define_method(cMatchData, "bytebegin", onibi_matchdata_bytebegin, 1);
+    rb_define_method(cMatchData, "byteend", onibi_matchdata_byteend, 1);
+    rb_define_method(cMatchData, "byteoffset", onibi_matchdata_byteoffset, 1);
+    rb_define_method(cMatchData, "begin", onibi_matchdata_begin, 1);
+    rb_define_method(cMatchData, "end", onibi_matchdata_end, 1);
+    rb_define_method(cMatchData, "offset", onibi_matchdata_offset, 1);
+    rb_define_method(cMatchData, "match_length", onibi_matchdata_match_length,
+		     1);
+    rb_define_method(cMatchData, "inspect", onibi_matchdata_inspect, 0);
+    rb_define_method(cMatchData, "==", onibi_matchdata_equal, 1);
+    rb_define_method(cMatchData, "eql?", onibi_matchdata_eql, 1);
+    rb_define_method(cMatchData, "hash", onibi_matchdata_hash, 0);
+    rb_define_method(cMatchData, "dup", onibi_matchdata_dup, 0);
+    rb_define_method(cMatchData, "clone", onibi_matchdata_clone, 0);
+    rb_define_private_method(cMatchData, "initialize_copy",
+			     onibi_matchdata_initialize_copy, 1);
+    rb_define_method(cMatchData, "deconstruct", onibi_matchdata_deconstruct, 0);
+    rb_define_method(cMatchData, "deconstruct_keys",
+		     onibi_matchdata_deconstruct_keys, 1);
+    rb_define_private_method(rb_singleton_class(cMatchData), "__onibi_new__",
+			     onibi_matchdata_factory, -1);
     rb_define_singleton_method(cRegexp, "timeout=", onibi_timeout_set, 1);
     rb_define_singleton_method(cRegexp, "timeout", onibi_timeout_default, 0);
     rb_define_singleton_method(cRegexp, "escape", onibi_regexp_escape, 1);
@@ -153,6 +193,7 @@ Init_onibi(void)
     rb_define_method(cRegexp, "initialize", onibi_initialize, -1);
     rb_define_method(cRegexp, "match", onibi_match, -1);
     rb_define_method(cRegexp, "===", onibi_case_equal, 1);
+    rb_define_method(cRegexp, "=~", onibi_match_operator, 1);
     rb_define_method(cRegexp, "~", onibi_tilde, 0);
     rb_define_method(cRegexp, "match?", onibi_match_p, -1);
     rb_define_method(cRegexp, "source", onibi_source, 0);
@@ -173,6 +214,13 @@ Init_onibi(void)
     rb_define_method(cRegexp, "gsub", onibi_gsub, -1);
     rb_define_private_method(cRegexp, "__onibi_diagnostics__",
 			     onibi_diagnostics_for, 1);
+    rb_define_private_method(cRegexp, "__onibi_match_data_diagnostics__",
+			     onibi_matchdata_payload_diagnostics, -1);
+    rb_define_private_method(cRegexp, "__onibi_match_data_payload__",
+			     onibi_matchdata_payload_new, -1);
+    rb_define_private_method(cRegexp,
+			     "__onibi_match_data_failure_diagnostics__",
+			     onibi_matchdata_failure_diagnostics, -1);
     rb_define_private_method(cRegexp, "__onibi_match_p_diagnostics__",
 			     onibi_match_p_diagnostics, 1);
     rb_define_private_method(cRegexp, "__onibi_internal_error_diagnostics__",

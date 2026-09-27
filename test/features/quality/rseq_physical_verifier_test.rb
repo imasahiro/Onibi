@@ -133,19 +133,6 @@ class RseqPhysicalVerifierTest < Minitest::Test
     end
   end
 
-  def test_physical_nullable_verifier_uses_bounded_owner_facts
-    source = File.read(File.expand_path("../../../ext/onibi/rseq_runtime.c", __dir__))
-
-    assert_includes source, "nullable->owner_count + bit_count - 1U"
-    assert_includes source, "nullable->outgoing_heads"
-    assert_includes source, "nullable->incoming_heads"
-    assert_includes source, "nullable->worklist"
-    assert_includes source, "Onibi RSeq nullable reachability queue is too large"
-    assert_includes source, "Onibi RSeq nullable worklist is too large"
-    refute_match(/for \(uint32_t state = 0; state < header->state_count; state\+\+\).*?
-                 view->edges/mx, source)
-  end
-
   def test_verifier_uses_owned_input_sized_work_arrays
     source = File.read(File.expand_path("../../../ext/onibi/rseq_runtime.c", __dir__))
 

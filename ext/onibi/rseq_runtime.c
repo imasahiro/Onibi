@@ -1,3 +1,7 @@
+#include "onibi_encoding_internal.h"
+#include "onibi_exec_internal.h"
+#include "onibi_rseq_internal.h"
+
 typedef struct {
     uint32_t state;
     OnibiBytePos pos;

@@ -1,3 +1,10 @@
+#include "onibi_ast_internal.h"
+#include "onibi_compiler_internal.h"
+#include "onibi_gir_internal.h"
+#include "onibi_matchdata_internal.h"
+#include "onibi_rseq_internal.h"
+#include "onibi_ruby_api_internal.h"
+
 static uint8_t
 onibi_g_action_flags(const OnibiGAction *action)
 {
@@ -47,8 +54,8 @@ onibi_rseq_serialize_action(const OnibiGAction *action,
 /* These records exist only while lowering.  They keep semantic GIR action
  * storage immutable and put physical action offsets in the RSeq records. */
 typedef struct {
-    long from;
-    long to;
+    OnibiGirStateId from;
+    OnibiGirStateId to;
     uint32_t action_offset;
     uint32_t action_count;
 } OnibiRSeqEdgeEntry;
@@ -369,7 +376,7 @@ onibi_rseq_edge_group_body(VALUE opaque)
 			    vector->count * sizeof(*owner->ordered));
     memset(owner->counts, 0, owner->state_count * sizeof(*owner->counts));
     for (size_t i = 0; i < vector->count; i++) {
-	if (vector->entries[i].from < 0 ||
+	if (vector->entries[i].from == ONIBI_GIR_STATE_NONE ||
 	    (size_t)vector->entries[i].from >= owner->state_count)
 	    rb_raise(rb_eArgError, "RSeq edge source is out of range");
 	owner->counts[vector->entries[i].from]++;
@@ -510,6 +517,8 @@ onibi_rseq_lower_body(VALUE opaque)
 	rb_raise(rb_eArgError, "RSeq capture count is out of range");
     uint32_t capture_count = (uint32_t)gir_capture_count;
     size_t state_count = compiled_data->states.count;
+    if (state_count >= (size_t)ONIBI_GIR_STATE_NONE)
+	rb_raise(rb_eArgError, "RSeq lowering received too many GIR states");
     onibi_allocation_owner_set_phase(&owner->allocations, 1);
     onibi_gir_state_vector_init(&state_records);
     onibi_gir_state_vector_bind(&state_records, &owner->allocations);
@@ -535,19 +544,21 @@ onibi_rseq_lower_body(VALUE opaque)
     onibi_id_vector_append(&lookbehind_width_records,
 			   &compiled_data->lookbehind_widths);
     onibi_rseq_lower_fail_if(owner, 2);
-    long accept_state = compiled_data->accept;
-    if (accept_state < 0 || (size_t)accept_state >= state_count)
+    OnibiGirStateId accept_state = compiled_data->accept;
+    if (accept_state == ONIBI_GIR_STATE_NONE ||
+	(size_t)accept_state >= state_count)
 	rb_raise(rb_eArgError,
 		 "RSeq lowering received an invalid accept state");
     for (size_t i = 0; i < compiled_data->edges.count; i++) {
 	const OnibiGirEdgeEntry *edge = &compiled_data->edges.entries[i];
-	if (edge->from < 0 || (size_t)edge->from >= state_count ||
-	    edge->to < 0 || (size_t)edge->to >= state_count)
+	if (edge->from == ONIBI_GIR_STATE_NONE ||
+	    (size_t)edge->from >= state_count ||
+	    edge->to == ONIBI_GIR_STATE_NONE || (size_t)edge->to >= state_count)
 	    rb_raise(rb_eArgError, "RSeq lowering received an invalid edge");
     }
     for (size_t i = 0; i < compiled_data->start_edges.count; i++) {
-	long to = compiled_data->start_edges.entries[i].to;
-	if (to < 0 || (size_t)to >= state_count)
+	OnibiGirStateId to = compiled_data->start_edges.entries[i].to;
+	if (to == ONIBI_GIR_STATE_NONE || (size_t)to >= state_count)
 	    rb_raise(rb_eArgError,
 		     "RSeq lowering received an invalid start edge");
     }
@@ -611,7 +622,7 @@ onibi_rseq_lower_body(VALUE opaque)
 	    &owner->lowering_work, edge_actions);
 	onibi_rseq_edge_vector_push(
 	    &r_start_edge_records,
-	    (OnibiRSeqEdgeEntry){-1, edge->to, action_offset,
+	    (OnibiRSeqEdgeEntry){ONIBI_GIR_STATE_NONE, edge->to, action_offset,
 				 (uint32_t)edge_actions->count});
     }
     onibi_rseq_lower_fail_if(owner, 5);
@@ -733,7 +744,8 @@ onibi_rseq_lower_body(VALUE opaque)
     memset(physical.first_bitmap, 0, sizeof(physical.first_bitmap));
     for (size_t i = 0; i < r_start_edge_records.count; i++) {
 	OnibiRSeqEdgeEntry *edge = &r_start_edge_records.entries[i];
-	if (edge->to < 0 || (size_t)edge->to >= state_records.count) {
+	if (edge->to == ONIBI_GIR_STATE_NONE ||
+	    (size_t)edge->to >= state_records.count) {
 	    bitmap_valid = 0;
 	    continue;
 	}
@@ -786,7 +798,8 @@ onibi_rseq_lower_body(VALUE opaque)
 						   : 0xff);
 	size_t edge_base = physical_edge_index;
 	while (physical_edge_index < r_edge_records.count &&
-	       r_edge_records.entries[physical_edge_index].from == (long)i)
+	       r_edge_records.entries[physical_edge_index].from ==
+		   (OnibiGirStateId)i)
 	    physical_edge_index++;
 	size_t edge_count = physical_edge_index - edge_base;
 	if (edge_count > UINT16_MAX)
@@ -807,8 +820,9 @@ onibi_rseq_lower_body(VALUE opaque)
     OnibiRSeqHeader *physical_header = (OnibiRSeqHeader *)RSTRING_PTR(blob);
     if (!ignorecase && r_start_edge_records.count == 1 &&
 	r_start_edge_records.entries[0].action_count == 0) {
-	long current = r_start_edge_records.entries[0].to;
-	while (current >= 0 && (size_t)current < state_records.count &&
+	OnibiGirStateId current = r_start_edge_records.entries[0].to;
+	while (current != ONIBI_GIR_STATE_NONE &&
+	       (size_t)current < state_records.count &&
 	       physical_header->prefix_length <
 		   sizeof(physical_header->prefix)) {
 	    OnibiGirStateEntry *state = &state_records.entries[current];
@@ -826,7 +840,7 @@ onibi_rseq_lower_body(VALUE opaque)
 	    OnibiRSeqEdgeEntry *next =
 		&r_edge_records.entries[physical_state->edge_base];
 	    owner->lowering_work.prefix_edges++;
-	    if (next->action_count != 0 || next->to < 0 ||
+	    if (next->action_count != 0 || next->to == ONIBI_GIR_STATE_NONE ||
 		(size_t)next->to >= state_records.count)
 		break;
 	    current = next->to;
@@ -836,8 +850,9 @@ onibi_rseq_lower_body(VALUE opaque)
 	(OnibiREdge *)(RSTRING_PTR(blob) + physical.edges_offset);
     for (size_t i = 0; i < r_edge_records.count; i++) {
 	OnibiRSeqEdgeEntry *record = &r_edge_records.entries[i];
-	uint32_t destination = (uint32_t)record->to;
-	if (destination == (uint32_t)(state_records.count - 1))
+	OnibiStateId destination =
+	    onibi_gir_state_id_to_rseq_state_id(record->to);
+	if (destination == (OnibiStateId)(state_records.count - 1))
 	    destination = ONIBI_ACCEPT_STATE;
 	physical_edges[i].destination = destination;
 	physical_edges[i].action_offset =
@@ -849,7 +864,8 @@ onibi_rseq_lower_body(VALUE opaque)
     for (size_t i = 0; i < subprogram_entry_records.count; i++) {
 	OnibiRSeqEdgeEntry *record = &subprogram_entry_records.entries[i];
 	size_t index = r_edge_records.count + r_start_edge_records.count + i;
-	physical_edges[index].destination = (uint32_t)record->to;
+	physical_edges[index].destination =
+	    onibi_gir_state_id_to_rseq_state_id(record->to);
 	physical_edges[index].action_offset =
 	    record->action_count == 0
 		? 0
@@ -859,7 +875,8 @@ onibi_rseq_lower_body(VALUE opaque)
     for (size_t i = 0; i < r_start_edge_records.count; i++) {
 	OnibiRSeqEdgeEntry *record = &r_start_edge_records.entries[i];
 	size_t index = r_edge_records.count + i;
-	physical_edges[index].destination = (uint32_t)record->to;
+	physical_edges[index].destination =
+	    onibi_gir_state_id_to_rseq_state_id(record->to);
 	physical_edges[index].action_offset =
 	    record->action_count == 0
 		? 0
@@ -930,8 +947,10 @@ onibi_rseq_lower_body(VALUE opaque)
 				physical.subprograms_offset);
     for (size_t i = 0; i < subprogram_records.count; i++) {
 	OnibiRSeqSubprogramEntry *record = &subprogram_records.entries[i];
-	physical_subprograms[i].entry = record->entry;
-	physical_subprograms[i].accept = record->accept;
+	physical_subprograms[i].entry =
+	    onibi_gir_state_id_to_rseq_state_id(record->entry);
+	physical_subprograms[i].accept =
+	    onibi_gir_state_id_to_rseq_state_id(record->accept);
 	physical_subprograms[i].flags = record->flags;
 	physical_subprograms[i].option_env = record->option_env;
 	physical_subprograms[i].entry_edge_base =
@@ -1126,6 +1145,28 @@ onibi_make_mri_regexp(VALUE argument)
     VALUE source = args->source;
     VALUE options = args->options;
     return rb_funcall(rb_cRegexp, id_new, 2, source, options);
+}
+
+static int
+onibi_freeze_named_capture(VALUE key, VALUE value, VALUE unused)
+{
+    (void)unused;
+    rb_obj_freeze(key);
+    rb_obj_freeze(value);
+    return ST_CONTINUE;
+}
+
+/* Keep the metadata retained by the typed object immutable.  Getters copy the
+ * mutable containers and strings below, while frozen hash keys are safe to
+ * share with MRI and across getter calls. */
+static void
+onibi_freeze_metadata(onibi_regexp_t *obj)
+{
+    for (long i = 0; i < RARRAY_LEN(obj->names); i++)
+	rb_obj_freeze(rb_ary_entry(obj->names, i));
+    rb_obj_freeze(obj->names);
+    rb_hash_foreach(obj->named_captures, onibi_freeze_named_capture, Qnil);
+    rb_obj_freeze(obj->named_captures);
 }
 
 /* Compute token diagnostics and initialization metadata in one pass over the
@@ -1501,8 +1542,7 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     }
     obj->names = rb_funcall(obj->regexp, id_names, 0);
     obj->named_captures = rb_funcall(obj->regexp, id_named_captures, 0);
-    rb_obj_freeze(obj->names);
-    rb_obj_freeze(obj->named_captures);
+    onibi_freeze_metadata(obj);
     VALUE compilation_source = rb_str_dup(source);
     rb_enc_associate(compilation_source, rb_enc_get(obj->regexp));
     memset(&obj->lowering_work, 0, sizeof(obj->lowering_work));
@@ -1608,6 +1648,55 @@ onibi_ruby_character_position(VALUE str, OnibiBytePos byte_position)
     return rb_str_sublen(str, byte_position);
 }
 
+typedef struct {
+    VALUE self;
+    VALUE str;
+    VALUE position;
+    VALUE source_regexp;
+    OnibiRubyPosition origin;
+    OnibiRawMatch raw_match;
+    OnibiBytePos *ranges;
+} OnibiMatchCall;
+
+static VALUE
+onibi_match_body(VALUE opaque)
+{
+    OnibiMatchCall *call = (OnibiMatchCall *)(uintptr_t)opaque;
+    OnibiExecStatus search_status = onibi_vm_search(
+	call->self, call->str, call->origin.byte, &call->raw_match);
+    if (search_status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
+	rb_raise(eRegexpError, "Onibi execution failed");
+    if (search_status == ONIBI_EXEC_STATUS_NO_MATCH) {
+	rb_backref_set(Qnil);
+	return Qnil;
+    }
+    if (search_status == ONIBI_EXEC_STATUS_FALLBACK) {
+	VALUE match =
+	    NIL_P(call->position)
+		? rb_funcall(call->source_regexp, id_match, 1, call->str)
+		: rb_funcall(call->source_regexp, id_match, 2, call->str,
+			     LONG2NUM(call->origin.character));
+	if (NIL_P(match)) return Qnil;
+	return rb_block_given_p() ? rb_yield(match) : match;
+    }
+    if (search_status != ONIBI_EXEC_STATUS_MATCH)
+	rb_raise(eRegexpError, "Onibi execution returned an invalid status");
+    /* The VM selects the match and owns its priority.  Copy the exact raw
+     * ranges into the private Onibi::MatchData payload without rerunning MRI.
+     */
+    VALUE match = onibi_matchdata_new(call->self, call->str, &call->raw_match);
+    return rb_block_given_p() ? rb_yield(match) : match;
+}
+
+static VALUE
+onibi_match_ensure(VALUE opaque)
+{
+    OnibiMatchCall *call = (OnibiMatchCall *)(uintptr_t)opaque;
+    ruby_xfree(call->ranges);
+    call->ranges = NULL;
+    return Qnil;
+}
+
 static VALUE
 onibi_match(int argc, VALUE *argv, VALUE self)
 {
@@ -1634,24 +1723,33 @@ onibi_match(int argc, VALUE *argv, VALUE self)
 	    return Qnil;
 	}
     }
-    OnibiRawMatch raw_match = {.begin_byte = -1, .end_byte = -1};
-    OnibiExecStatus search_status =
-	onibi_vm_search(self, str, origin.byte, &raw_match);
-    if (search_status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
-	rb_raise(eRegexpError, "Onibi execution failed");
-    if (search_status == ONIBI_EXEC_STATUS_NO_MATCH) {
-	rb_backref_set(Qnil);
-	return Qnil;
-    }
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    /* VM execution selects the match.  MRI materializes MatchData and
-     * capture offsets from the same source regexp for API compatibility. */
-    VALUE match = NIL_P(pos) ? rb_funcall(obj->regexp, id_match, 1, str)
-			     : rb_funcall(obj->regexp, id_match, 2, str,
-					  LONG2NUM(origin.character));
-    if (NIL_P(match)) return Qnil;
-    return rb_block_given_p() ? rb_yield(match) : match;
+    uint32_t capture_count = !NIL_P(obj->rseq) && obj->rseq_view_valid &&
+				     obj->rseq_view.header != NULL
+				 ? obj->rseq_view.header->capture_count
+				 : 0;
+    if (capture_count == UINT32_MAX)
+	rb_raise(rb_eRangeError, "Onibi capture count is out of range");
+    uint32_t num_regs = capture_count + 1U;
+    if ((size_t)num_regs > SIZE_MAX / sizeof(OnibiBytePos) / 2U)
+	rb_raise(rb_eRangeError, "Onibi capture ranges are too large");
+    OnibiMatchCall call = {.self = self,
+			   .str = str,
+			   .position = pos,
+			   .source_regexp = obj->regexp,
+			   .origin = origin,
+			   .ranges = NULL};
+    call.ranges = ruby_xmalloc((size_t)num_regs * sizeof(OnibiBytePos) * 2U);
+    OnibiBytePos *beg = call.ranges;
+    OnibiBytePos *end = beg + num_regs;
+    call.raw_match = (OnibiRawMatch){.begin_byte = -1,
+				     .end_byte = -1,
+				     .num_regs = num_regs,
+				     .beg = beg,
+				     .end = end};
+    return rb_ensure(onibi_match_body, (VALUE)(uintptr_t)&call,
+		     onibi_match_ensure, (VALUE)(uintptr_t)&call);
 }
 
 static VALUE
@@ -1712,14 +1810,33 @@ onibi_names(VALUE self)
 {
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    return obj->names;
+    VALUE names = rb_ary_new_capa(RARRAY_LEN(obj->names));
+    for (long i = 0; i < RARRAY_LEN(obj->names); i++)
+	rb_ary_push(names, rb_str_dup(rb_ary_entry(obj->names, i)));
+    return names;
 }
+
+typedef struct {
+    VALUE target;
+} OnibiNamedCapturesCopy;
+
+static int
+onibi_copy_named_capture(VALUE key, VALUE value, VALUE opaque)
+{
+    OnibiNamedCapturesCopy *copy = (OnibiNamedCapturesCopy *)(uintptr_t)opaque;
+    rb_hash_aset(copy->target, key, rb_ary_dup(value));
+    return ST_CONTINUE;
+}
+
 static VALUE
 onibi_named_captures(VALUE self)
 {
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    return obj->named_captures;
+    OnibiNamedCapturesCopy copy = {rb_hash_new()};
+    rb_hash_foreach(obj->named_captures, onibi_copy_named_capture,
+		    (VALUE)(uintptr_t)&copy);
+    return copy.target;
 }
 static VALUE
 onibi_casefold_p(VALUE self)

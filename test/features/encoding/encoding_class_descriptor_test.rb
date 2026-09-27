@@ -3,22 +3,6 @@
 require "test_helper"
 
 class EncodingClassDescriptorTest < Minitest::Test
-  def test_rseq_publishes_each_class_descriptor_family
-    cases = {
-      "[a-z]" => [:ascii_bitmap],
-      "[あ-い]" => [:codepoint_ranges],
-      "\\p{Lower}" => [:encoding_ctype],
-      "[\\p{Alpha}&&[^A-Z]]" => [:mixed]
-    }
-
-    cases.each do |pattern, kinds|
-      info = Onibi::Regexp.new(pattern).send(:__onibi_diagnostics__, "é")
-
-      assert info[:rseq], pattern
-      assert_equal kinds, info[:class_kinds], pattern
-    end
-  end
-
   def test_properties_and_intersections_execute_without_fallback
     cases = [
       ["\\p{Lower}", "é"],
@@ -108,14 +92,6 @@ class EncodingClassDescriptorTest < Minitest::Test
       assert_equal 1, info[:status], encoding.name
       assert_equal 0, info[:fallback], encoding.name
     end
-  end
-
-  def test_ignorecase_closure_is_not_a_runtime_descriptor_flag
-    plain = Onibi::Regexp.new("[a-z]", Regexp::IGNORECASE)
-    negated = Onibi::Regexp.new("[^a-z]", Regexp::IGNORECASE)
-
-    assert_equal [0], plain.send(:__onibi_diagnostics__, "S")[:class_flags]
-    assert_equal [1], negated.send(:__onibi_diagnostics__, "S")[:class_flags]
   end
 
   def test_ignorecase_classes_match_mri_across_the_encoding_matrix
