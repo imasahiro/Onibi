@@ -540,7 +540,9 @@ onibi_token_scan_group(OnibiTokenScanState *scan, long *cursor,
 /* Recognize one complete escape token.  This includes named and numeric
  * references, byte decoding, meta/control forms, properties, and anchors.
  * The helper owns the cursor advance so no escape prefix is re-scanned by
- * the outer tokenizer. */
+ * the outer tokenizer.  On success, *cursor is the final source byte
+ * consumed.  The caller records an exclusive end and advances the loop once.
+ */
 static int
 onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 			OnibiTokenVector *tokens,
@@ -548,6 +550,7 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 {
     const char *source = scan->bytes;
     long i = *cursor;
+    int cursor_on_last_consumed = 0;
     if (i >= scan->length || source[i] != '\\') return 0;
 
     memset(recognition, 0, sizeof(*recognition));
@@ -608,6 +611,7 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
     if (escaped == 'c' && i + 2 < scan->length) {
 	recognition->byte = (unsigned char)source[i + 2] & 0x1f;
 	i += 2;
+	cursor_on_last_consumed = 1;
     }
     if (escaped == 'x' && i + 3 < scan->length) {
 	int hi = onibi_hex_digit((unsigned char)source[i + 2]);
@@ -620,6 +624,7 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 					  1);
 	    recognition->byte = decoded_byte;
 	    i += 3;
+	    cursor_on_last_consumed = 1;
 	    hex_literal = 1;
 	    while (i + 4 < scan->length && source[i + 1] == '\\' &&
 		   source[i + 2] == 'x') {
@@ -653,6 +658,7 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 	    number = onibi_checked_decimal_append(
 		number, (unsigned char)(source[digit] - '0'));
 	    i = digit++;
+	    cursor_on_last_consumed = 1;
 	}
 	recognition->kind = ONIBI_TOKEN_BACKREF;
 	recognition->capture_number = number;
@@ -668,6 +674,7 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 	       source[i + 1] <= '7') {
 	    value = (value << 3) | (source[i + 1] - '0');
 	    i++;
+	    cursor_on_last_consumed = 1;
 	    digits++;
 	}
 	unsigned char first_byte = (unsigned char)value;
@@ -702,6 +709,7 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 	       source[i + 1] <= '7') {
 	    value = (value << 3) | (source[i + 1] - '0');
 	    i++;
+	    cursor_on_last_consumed = 1;
 	    digits++;
 	}
 	recognition->byte = (unsigned char)value;
@@ -731,7 +739,7 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 	recognition->kind = ONIBI_TOKEN_BACKREF;
     else if (onibi_class_escape_p(escaped))
 	recognition->kind = ONIBI_TOKEN_ESCAPE;
-    i++;
+    if (!cursor_on_last_consumed) i++;
     if ((escaped == 'p' || escaped == 'P') && i + 1 < scan->length &&
 	source[i + 1] == '{') {
 	long close = i + 2;
@@ -1005,6 +1013,8 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 		? 0
 		: onibi_known_property_id(RSTRING_PTR(src) + name_start,
 					  (size_t)name_length);
+	/* Escape scanning leaves i on the final consumed byte.  Store an
+	   exclusive end; the for-loop advances to the next source byte. */
 	OnibiTokenRecord record = {
 	    kind,
 	    byte,
