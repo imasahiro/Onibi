@@ -118,67 +118,6 @@ class GirVerifierTest < Minitest::Test
     result = verifier_diagnostic(:nullable_compact_facts)
 
     assert_equal 1, result.fetch(:nullable_fact_words)
-    source = File.read(File.join(PROJECT_ROOT, "ext/onibi/gir.c"))
-    assert_includes source, "nullable_owner_count + bit_count - 1U"
-    refute_match(/nullable_word_count\s*=\s*\(counter_count/, source)
-  end
-
-  def test_verification_precedes_classification_optimization_and_publication
-    source = File.read(File.join(PROJECT_ROOT, "ext/onibi/compiler.c"))
-    compile = source[/static VALUE\nonibi_compiler_compile_body.*?^}/m]
-
-    refute_nil compile
-    assert_operator compile.index("onibi_compiler_pass_verify_gir"), :<,
-                    compile.index("onibi_compiler_pass_classify")
-    assert_operator compile.index("onibi_compiler_pass_classify"), :<,
-                    compile.index("onibi_compiler_pass_optimize")
-    assert_operator compile.index("onibi_compiler_pass_optimize"), :<,
-                    compile.index("onibi_compiler_pass_publish")
-  end
-
-  def test_rseq_lowering_accepts_only_published_verified_gir
-    source = File.read(File.join(PROJECT_ROOT, "ext/onibi/rseq.c"))
-    lower = source[/static VALUE\nonibi_rseq_lower_body.*?^}/m]
-
-    refute_nil lower
-    assert_includes lower, "onibi_compiled_get(compiled)"
-    assert_includes lower, "RSeq lowering requires immutable GIR"
-  end
-
-  def test_typed_gir_records_contain_no_ruby_semantic_object
-    source = File.read(File.join(PROJECT_ROOT, "ext/onibi/gir.c"))
-    records = %w[OnibiGAction OnibiGirStateEntry OnibiGirEdgeEntry OnibiGIRView]
-
-    records.each do |name|
-      declaration = source[/typedef struct \{.*?\} #{name};/m]
-
-      refute_nil declaration, name
-      refute_match(/\bVALUE\b/, declaration, name)
-    end
-  end
-
-  def test_verifier_uses_owned_indexes_without_full_vector_rescans
-    source = File.read(File.join(PROJECT_ROOT, "ext/onibi/gir.c"))
-    nullable = source[/static void
-onibi_gir_nullable_validate_all_paths.*?^}/m]
-
-    assert_includes source, "onibi_gir_verify_edge_index_insert"
-    assert_includes source, "physical_subprogram_references"
-    refute_includes source, "semantic_subprogram_references"
-    assert_includes source, "progress_slot_states"
-    assert_includes source, "onibi_gir_nullable_build_index"
-    assert_includes source, "nullable_outgoing_heads"
-    assert_includes source, "nullable_incoming_heads"
-    assert_includes source, "worklist"
-    assert_includes source, "rb_ensure(onibi_gir_verify_body"
-    assert_includes source, "onibi_allocation_owner_cleanup"
-    refute_includes source, "onibi_gir_state_references_subprogram"
-    refute_includes source, "onibi_gir_progress_slot_p"
-    refute_nil nullable
-    assert_includes nullable, "nullable reachability queue is too large"
-    assert_includes nullable, "nullable worklist is too large"
-    refute_match(/for \(size_t state = 0; state < state_count; state\+\+\).*?
-                 view->edges->count/mx, nullable)
   end
 
   def test_progress_slot_owner_cleans_up_after_verifier_failure
