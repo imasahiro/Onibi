@@ -16,7 +16,9 @@ class ResolvedSemanticAstTest < Minitest::Test
     assert_includes node, "OnibiSubprogramId subprogram_id"
     assert_includes node, "int encoding_index"
     assert_includes node, "int32_t assertion_kind"
-    assert_includes node, "long repeat_min"
+    assert_includes node, "OnibiRepeatCount repeat_min"
+    repeat_count_type = File.read(File.join(ROOT, "ext/onibi/onibi_ir.h"))
+    assert_includes repeat_count_type, "typedef long OnibiRepeatCount;"
     assert_includes node, "long source_start"
   end
 

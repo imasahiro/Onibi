@@ -197,21 +197,25 @@ onibi_c_parse_atom(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	    const OnibiAstNode *body_node = onibi_ast_node_const(arena, body);
 	    if (body_node->kind == ONIBI_AST_ALTERNATIVE &&
 		body_node->child_count == 2) {
+		OnibiAstId yes = body_node->children[0];
+		OnibiAstId no = body_node->children[1];
 		node = onibi_ast_node_at(arena, id);
-		node->yes = body_node->children[0];
-		node->no = body_node->children[1];
+		node->yes = yes;
+		node->no = no;
 	    }
 	    else {
+		OnibiAstId no =
+		    onibi_c_parse_range(tokens, arena, encoding, close, close);
 		node = onibi_ast_node_at(arena, id);
 		node->yes = body;
-		node->no =
-		    onibi_c_parse_range(tokens, arena, encoding, close, close);
+		node->no = no;
 	    }
 	}
 	else {
-	    node->body =
+	    OnibiAstId body =
 		onibi_c_parse_range(tokens, arena, encoding, *index + 1, close);
 	    node = onibi_ast_node_at(arena, id);
+	    node->body = body;
 	}
 	if (group_kind == ONIBI_AST_LOOKAHEAD ||
 	    group_kind == ONIBI_AST_LOOKBEHIND) {
