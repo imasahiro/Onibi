@@ -121,7 +121,7 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | --- | --- | --- | --- | --- |
 | 1 | TASK-42C22 | Accepted | C21B | One-digit hex literals match MRI. |
 | 2 | TASK-42C23A | Accepted | C22 | A frozen decoded-run atom contract. |
-| 3 | TASK-42C23B | Assigned | C23A | Quantifiers apply to the correct decoded character. |
+| 3 | TASK-42C23B | Ready | C23A | Quantifiers apply to the correct decoded character. |
 | 4 | TASK-API01 | Ready | C21B | A measured public method inventory. |
 | 5 | TASK-API02 | Waiting | API01 | Native MatchData `match` accessor. |
 | 6 | TASK-API03 | Waiting | API01 | Native MatchData `values_at` accessor. |
