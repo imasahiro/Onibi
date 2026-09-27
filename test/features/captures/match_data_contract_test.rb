@@ -37,16 +37,6 @@ class MatchDataContractTest < Minitest::Test
     end
   end
 
-  def test_scan_source_materializes_capture_values_from_raw_ranges
-    source = File.read(File.join(PROJECT_ROOT, "ext/onibi/match.c"))
-    scan = source[/static VALUE\nonibi_scan_body\(.*?\n}\n/m]
-
-    refute_nil scan
-    refute_match(/obj->regexp.*id_match/m, scan)
-    assert_match(/ONIBI_EXEC_STATUS_FALLBACK.*id_scan/m, scan)
-    assert_includes scan, "onibi_byte_slice(str, beg[i], end[i])"
-  end
-
   def test_nested_repeated_unmatched_and_multibyte_captures_match_mri
     source = "(?<outer>(?<inner>é))(?<repeat>a)+(?<missing>b)?"
     input = "ééaa"

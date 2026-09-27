@@ -396,3 +396,9 @@ TASK-42C22 ACCEPT (2026-09-27): one-digit hex decoding at `0a3250e3`, worker `01
 TASK-42C23A ACCEPT (2026-09-27): decoded-run atom audit at `6dbddb58`, worker `01a0e065-c2ed-7880-a5f9-1c2878a8a501`, Luna/Max. Root verified source/log/artifact hashes, the 64-case probe and token-to-NFA control flow. The matrix has 45 native matches, 11 native differences, six MRI-valid construction failures, and two matching rejection controls. One token per complete encoded character preserves quantifier binding and the existing literal width limit. Keep stable slice offsets across allocation; preserve exclusive source ends and current ownership. Root added 24 MRI rows: unbroken runs under five quantifiers, valid mixed hex/octal characters, and rejected raw continuation controls. Native behavior for the added mixed forms still needs exact-source measurement before implementation. Warning build and four suites pass: 17 runs, 876 assertions. No tracked audit changes. Evidence: `/Users/masa/.codex/relay/01a0e063-df14-7243-a0a6-56dc68a1d838/task-42c23a-01/worker/acceptance-manifest.json`; root supplement: sibling `root-review/mri_boundaries.json`. Next: TASK-42C23B, bounded tokenization repair, with the root supplement included in acceptance.
 
 Dispatch reserve (2026-09-27): five-hour usage is 79%; weekly usage is 28%. Preserve capacity under the near-80% review reserve rule. C23B is ready but not dispatched. The next exact action is its bounded tokenization repair from the accepted C23A contract and root MRI supplement. No automatic restart is configured.
+
+Test cleanup (2026-09-27): removed 398 obsolete or redundant tests. No production code changed.
+Focused checks pass: 55 runs and 1363 assertions.
+The full suite reports 42 failures and 18 errors; all also occur at the base commit.
+See `docs/test-pruning-evidence.md` for retained coverage and repeatable commands.
+This cleanup does not change the implementation queue.

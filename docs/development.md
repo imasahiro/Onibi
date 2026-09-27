@@ -94,7 +94,7 @@ The DYNAMIC interpreter keeps semantic state in each explicit C stack frame.
 - Load the extension through `lib/onibi.rb`.
 - Define `Onibi::Regexp`.
 - Replace cross-runtime CI with an MRI-only extension build.
-- Add unit tests for loading, allocation, initialization, and errors.
+- Verify loading, allocation, initialization, and errors through the public API.
 
 ### 2. Regular compiler and interpreter
 
@@ -133,12 +133,15 @@ The DYNAMIC interpreter keeps semantic state in each explicit C stack frame.
 
 ## Test policy
 
-Test-driven development is not required.
-Developers can write tests before or after the first implementation.
+Prefer tests that run the public API through the C compiler and native engine.
+Use existing E2E and MRI differential coverage before adding another test.
+Do not write unit tests after implementation.
+If an isolated test is necessary, first list its failure cases, then write code.
 
-Every completed behavior needs a focused test before review.
-Start with unit tests that isolate one C API or one compiler operation.
-Add exact G-IR and RSeq tests when these formats become stable.
+Keep isolated tests when they catch failures that E2E tests cannot reach.
+Examples include malformed RSeq, allocation failure, integer limits, and state collisions.
+Do not test source spelling, file placement, or obsolete Ruby compiler objects.
+Record repeatable commands and results with each test review.
 
 Use MRI differential tests for public behavior.
 Compare success, errors, byte offsets, captures, encodings, and option handling.
@@ -171,7 +174,7 @@ Add ASAN and UBSAN jobs when the extension scaffold can run them.
 ## Legacy prototype
 
 Git history retains the previous Pure Ruby implementation.
-The legacy tests remain useful for historical comparison.
+Git history also retains the legacy tests for historical comparison.
 Git history retains the old documents.
 Neither source defines the new production architecture.
 
