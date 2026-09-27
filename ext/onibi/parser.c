@@ -42,6 +42,63 @@ onibi_capture_name_invalid(const unsigned char *name, size_t length,
 			  encoding);
 }
 
+static long
+onibi_c_repeat_close(const OnibiTokenVector *tokens, long open, long end)
+{
+    for (long i = open + 1; i < end; i++) {
+	const OnibiTokenRecord *token = onibi_token_at(tokens, i);
+	if (token->kind == ONIBI_TOKEN_QUANTIFIER && token->byte == '}')
+	    return i;
+    }
+    return -1;
+}
+
+static int
+onibi_c_repeat_shape_p(const OnibiTokenVector *tokens, long open, long close)
+{
+    if (close <= open + 1) return 0;
+
+    const OnibiTokenRecord *previous = onibi_token_at(tokens, open);
+    if (previous->end != previous->start + 1) return 0;
+    long comma = -1;
+    size_t lower_digits = 0;
+    size_t upper_digits = 0;
+    for (long i = open + 1; i < close; i++) {
+	const OnibiTokenRecord *token = onibi_token_at(tokens, i);
+	if (previous->end != token->start || token->end != token->start + 1 ||
+	    token->kind != ONIBI_TOKEN_LITERAL)
+	    return 0;
+	if (token->byte == ',') {
+	    if (comma >= 0) return 0;
+	    comma = i;
+	}
+	else if (token->byte >= '0' && token->byte <= '9') {
+	    if (comma < 0)
+		lower_digits++;
+	    else
+		upper_digits++;
+	}
+	else {
+	    return 0;
+	}
+	previous = token;
+    }
+    const OnibiTokenRecord *close_token = onibi_token_at(tokens, close);
+    if (previous->end != close_token->start ||
+	close_token->end != close_token->start + 1)
+	return 0;
+
+    if (comma < 0) return lower_digits > 0;
+    return lower_digits > 0 || upper_digits > 0;
+}
+
+static int
+onibi_c_repeat_interval_p(const OnibiTokenVector *tokens, long open, long end)
+{
+    long close = onibi_c_repeat_close(tokens, open, end);
+    return close >= 0 && onibi_c_repeat_shape_p(tokens, open, close);
+}
+
 static OnibiAstId
 onibi_c_parse_class_part(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 			 const OnibiTokenRecord *anchor, long begin, long end)
@@ -166,6 +223,11 @@ onibi_c_parse_atom(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 {
     const OnibiTokenRecord *token = onibi_token_at(tokens, *index);
     OnibiTokenKind token_kind = token->kind;
+    if (token_kind == ONIBI_TOKEN_QUANTIFIER &&
+	(token->byte == '}' ||
+	 (token->byte == '{' &&
+	  !onibi_c_repeat_interval_p(tokens, *index, end))))
+	token_kind = ONIBI_TOKEN_LITERAL;
     OnibiAstKind group_kind = ONIBI_AST_UNKNOWN;
     if (token_kind == ONIBI_TOKEN_LOOKAHEAD_START)
 	group_kind = ONIBI_AST_LOOKAHEAD;
@@ -326,6 +388,7 @@ onibi_c_parse_range(const OnibiTokenVector *tokens, OnibiAstArena *arena,
     OnibiAstId sequence = onibi_ast_arena_add(arena, ONIBI_AST_SEQUENCE, NULL);
     for (long i = begin; i < end;) {
 	OnibiAstId atom = onibi_c_parse_atom(tokens, arena, encoding, &i, end);
+    parse_atom_modifiers:
 	if (i < end &&
 	    onibi_token_at(tokens, i)->kind == ONIBI_TOKEN_QUANTIFIER) {
 	    const OnibiTokenRecord *modifier = onibi_token_at(tokens, i);
@@ -333,7 +396,6 @@ onibi_c_parse_range(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	    long min = 0, max = 0;
 	    int has_max = 0;
 	    int fixed_interval = 0;
-	    int valid = 1;
 	    long close = i;
 	    if (marker == '*' || marker == '+' || marker == '?') {
 		min = marker == '+' ? 1 : 0;
@@ -344,12 +406,14 @@ onibi_c_parse_range(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 		i++;
 	    }
 	    else if (marker == '{') {
-		close = i + 1;
-		while (close < end &&
-		       onibi_token_at(tokens, close)->byte != '}')
-		    close++;
-		if (close >= end)
-		    rb_raise(eRegexpError, "unterminated quantifier");
+		close = onibi_c_repeat_close(tokens, i, end);
+		if (close < 0 || !onibi_c_repeat_shape_p(tokens, i, close)) {
+		    onibi_ast_add_child(arena, sequence, atom);
+		    atom =
+			onibi_ast_arena_add(arena, ONIBI_AST_LITERAL, modifier);
+		    i++;
+		    goto parse_atom_modifiers;
+		}
 		char spec[128];
 		size_t length = 0;
 		for (long j = i + 1; j < close; j++) {
@@ -360,44 +424,31 @@ onibi_c_parse_range(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 		spec[length] = '\0';
 		char *comma = memchr(spec, ',', length);
 		char *endptr = NULL;
-		if (length == 0 ||
-		    (comma != NULL &&
-		     memchr(comma + 1, ',',
-			    length - (size_t)(comma + 1 - spec)) != NULL))
-		    valid = 0;
-		if (valid && comma != NULL) {
+		if (comma != NULL) {
 		    if (comma == spec)
 			min = 0;
 		    else {
 			min = onibi_parse_count(spec, &endptr);
-			if (endptr != comma) valid = 0;
+			if (endptr != comma)
+			    rb_raise(eRegexpError, "invalid repeat range");
 		    }
 		    if (comma + 1 < spec + length) {
 			max = onibi_parse_count(comma + 1, &endptr);
-			if (endptr != spec + length) valid = 0;
+			if (endptr != spec + length)
+			    rb_raise(eRegexpError, "invalid repeat range");
 			has_max = 1;
 		    }
 		}
-		else if (valid) {
+		else {
 		    min = onibi_parse_count(spec, &endptr);
-		    if (endptr != spec + length) valid = 0;
+		    if (endptr != spec + length)
+			rb_raise(eRegexpError, "invalid repeat range");
 		    max = min;
 		    has_max = 1;
 		    fixed_interval = 1;
 		}
-		if (valid && has_max && max < min)
+		if (has_max && max < min)
 		    rb_raise(eRegexpError, "invalid quantifier range");
-		if (!valid) {
-		    onibi_ast_add_child(arena, sequence, atom);
-		    for (long j = i; j <= close; j++) {
-			OnibiAstId literal =
-			    onibi_ast_arena_add(arena, ONIBI_AST_LITERAL,
-						onibi_token_at(tokens, j));
-			onibi_ast_add_child(arena, sequence, literal);
-		    }
-		    i = close + 1;
-		    continue;
-		}
 		i = close + 1;
 	    }
 	    else {

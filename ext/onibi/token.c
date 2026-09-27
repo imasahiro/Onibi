@@ -54,7 +54,7 @@ onibi_simple_escape_p(unsigned char c)
 static int
 onibi_quantifier_byte_p(unsigned char c)
 {
-    return c == '*' || c == '+' || c == '?' || c == '{' || c == '}';
+    return c == '*' || c == '+' || c == '?';
 }
 
 /* Return an ID only for the bounded set of built-in property names.  User
@@ -273,9 +273,50 @@ typedef struct {
     long class_depth;
     long class_body_start;
     long class_body_starts[256];
+    long repeat_close;
     int extended_stack[256];
     long extended_depth;
 } OnibiTokenScanState;
+
+/* Treat braces as interval syntax only when their complete body has the
+ * exact numeric shape that MRI accepts. Keep all other braces as literals. */
+static long
+onibi_token_repeat_close(const OnibiTokenScanState *scan, long open)
+{
+    const unsigned char *source = (const unsigned char *)scan->bytes;
+    long i = open + 1;
+    long close = -1;
+    int comma = 0;
+    size_t lower_digits = 0;
+    size_t upper_digits = 0;
+
+    while (i < scan->length) {
+	unsigned char byte = source[i];
+	if (byte == '}') {
+	    close = i;
+	    break;
+	}
+	if (byte == ',') {
+	    if (comma) return -1;
+	    comma = 1;
+	}
+	else if (byte >= '0' && byte <= '9') {
+	    if (comma)
+		upper_digits++;
+	    else
+		lower_digits++;
+	}
+	else {
+	    return -1;
+	}
+	i++;
+    }
+
+    if (close < 0) return -1;
+    if (comma ? (lower_digits == 0 && upper_digits == 0) : lower_digits == 0)
+	return -1;
+    return close;
+}
 
 typedef struct {
     OnibiTokenKind kind;
@@ -839,6 +880,7 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 				.class_depth = 0,
 				.class_body_start = -1,
 				.class_body_starts = {0},
+				.repeat_close = -1,
 				.extended_stack = {0},
 				.extended_depth = 0};
     for (long i = 0; i < scan.length; i++) {
@@ -897,7 +939,17 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 	    kind = ONIBI_TOKEN_GROUP_START;
 	else if (kind == ONIBI_TOKEN_LITERAL && byte == ')')
 	    kind = ONIBI_TOKEN_GROUP_END;
-	else if (kind == ONIBI_TOKEN_LITERAL && onibi_quantifier_byte_p(byte))
+	else if (kind == ONIBI_TOKEN_LITERAL && !scan.in_class && byte == '{' &&
+		 (scan.repeat_close = onibi_token_repeat_close(&scan, start)) >=
+		     0)
+	    kind = ONIBI_TOKEN_QUANTIFIER;
+	else if (kind == ONIBI_TOKEN_LITERAL && !scan.in_class && byte == '}' &&
+		 scan.repeat_close == start) {
+	    kind = ONIBI_TOKEN_QUANTIFIER;
+	    scan.repeat_close = -1;
+	}
+	else if (kind == ONIBI_TOKEN_LITERAL && !scan.in_class &&
+		 onibi_quantifier_byte_p(byte))
 	    kind = ONIBI_TOKEN_QUANTIFIER;
 	else if (kind == ONIBI_TOKEN_LITERAL && byte == '.')
 	    kind = ONIBI_TOKEN_WILDCARD;
