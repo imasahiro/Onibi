@@ -122,9 +122,9 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 1 | TASK-42C22 | Accepted | C21B | One-digit hex literals match MRI. |
 | 2 | TASK-42C23A | Accepted | C22 | A frozen decoded-run atom contract. |
 | 3 | TASK-42C23B | Accepted | C23A | Quantifiers apply to the correct decoded character. |
-| 4 | TASK-API01 | Ready | C21B | A measured public method inventory. |
-| 5 | TASK-API02 | Waiting | API01 | Native MatchData `match` accessor. |
-| 6 | TASK-API03 | Waiting | API01 | Native MatchData `values_at` accessor. |
+| 4 | TASK-API01 | Accepted | C21B | A measured public method inventory. |
+| 5 | TASK-API02 | Ready | API01 | Native MatchData `match` accessor. |
+| 6 | TASK-API03 | Ready | API01 | Native MatchData `values_at` accessor. |
 | 7 | TASK-API04 | Waiting | API02, API03 | RBS agrees with the accepted API. |
 | 8 | TASK-42C24 | Ready | C23B | Four escape fallback cases have exact support classifications. |
 | 9 | TASK-42C25A | Ready | C21B | Current match-reset failure and MRI matrix. |
@@ -416,3 +416,9 @@ The current relay root is:
 C21A contains the frozen escape audit. C21B contains the cursor repair evidence.
 Packets and checkpoints remain outside the repository. Repository task cards must remain readable without those local paths.
 A new worker receives exact artifact paths and an immutable packet when dispatched.
+
+## API01 follow-up findings (2026-09-28)
+
+Track binary `MatchData#names` string encoding and `named_captures(symbolize_names: true)` as separate bounded gem repairs.
+The current accepted design has no exclusion for these differences. API04 must include the keyword in its signature review.
+API02 and API03 use the corrected method-specific selector rules in `docs/task-42b1-matchdata-design.md`.
