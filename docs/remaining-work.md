@@ -128,7 +128,7 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 7 | TASK-API04 | Accepted | API02, API03 | RBS agrees with the accepted API. |
 | 8 | TASK-42C24 | Accepted | C23B | Four escape fallback cases have exact support classifications. |
 | 9 | TASK-42C25A | Accepted | C21B | Current match-reset failure and MRI matrix. |
-| 10 | TASK-42C25B | Ready | C25A | The measured native match-reset gap is repaired. |
+| 10 | TASK-42C25B | Accepted | C25A | The measured native match-reset gap is repaired. |
 | 11 | TASK-42C26A | Ready | C18B | Current named-group error encoding matrix. |
 | 12 | TASK-42C26B | Conditional | C26A | The measured named-group error encoding gap is repaired. |
 | 13 | TASK-DOC01 | Waiting | API04, C24, C25A, C26A | Current docs and parent statuses agree with accepted evidence. |
@@ -422,3 +422,5 @@ A new worker receives exact artifact paths and an immutable packet when dispatch
 Track binary `MatchData#names` string encoding as a bounded gem follow-up.
 The accepted design has no exclusion for this difference. API04 corrected the symbol-key report: API01 serialization converted keys to strings. Native keyword behavior matches MRI for both checked ASCII fixtures.
 API02 and API03 use the corrected method-specific selector rules in `docs/task-42b1-matchdata-design.md`.
+
+C25B follow-up: audit fallback `~` with `\K`; its unchanged path reads group-zero start. Native repair does not establish fallback parity.

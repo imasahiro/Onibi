@@ -180,7 +180,7 @@ onibi_public_capture_count(const onibi_regexp_t *obj)
 
 static OnibiExecStatus
 onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
-		     OnibiRawMatch *raw_match)
+		     OnibiRawMatch *raw_match, OnibiBytePos *attempt_start_out)
 {
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
@@ -292,6 +292,7 @@ onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
 	    onibi_check_deadline();
 	    OnibiExecStatus result = onibi_execute(&exec_ctx);
 	    if (result == ONIBI_EXEC_STATUS_MATCH) {
+		if (attempt_start_out != NULL) *attempt_start_out = start;
 		onibi_exec_ctx_release(&exec_ctx);
 		onibi_deadline_ns = 0;
 		onibi_active_exec_ctx = NULL;
@@ -315,6 +316,7 @@ typedef struct {
     VALUE self, subject;
     OnibiBytePos origin;
     OnibiRawMatch *raw_match;
+    OnibiBytePos *attempt_start_out;
     OnibiExecCtx *previous_ctx;
     uint64_t previous_deadline;
 } OnibiSearchEnsure;
@@ -324,7 +326,8 @@ onibi_vm_search_ensure_call(VALUE opaque)
 {
     OnibiSearchEnsure *call = (OnibiSearchEnsure *)(uintptr_t)opaque;
     return INT2NUM(onibi_vm_search_body(call->self, call->subject, call->origin,
-					call->raw_match));
+					call->raw_match,
+					call->attempt_start_out));
 }
 
 static VALUE
@@ -339,19 +342,33 @@ onibi_vm_search_ensure_cleanup(VALUE opaque)
 }
 
 static OnibiExecStatus
-onibi_vm_search(VALUE self, VALUE str, OnibiBytePos search_origin,
-		OnibiRawMatch *raw_match)
+onibi_vm_search_with_attempt_start(VALUE self, VALUE str,
+				   OnibiBytePos search_origin,
+				   OnibiRawMatch *raw_match,
+				   OnibiBytePos *attempt_start_out)
 {
-    OnibiSearchEnsure call = {self,
-			      str,
-			      search_origin,
-			      raw_match,
-			      onibi_active_exec_ctx,
-			      onibi_deadline_ns};
+    if (attempt_start_out != NULL) *attempt_start_out = -1;
+    OnibiSearchEnsure call = {
+	.self = self,
+	.subject = str,
+	.origin = search_origin,
+	.raw_match = raw_match,
+	.attempt_start_out = attempt_start_out,
+	.previous_ctx = onibi_active_exec_ctx,
+	.previous_deadline = onibi_deadline_ns,
+    };
     VALUE result =
 	rb_ensure(onibi_vm_search_ensure_call, (VALUE)(uintptr_t)&call,
 		  onibi_vm_search_ensure_cleanup, (VALUE)(uintptr_t)&call);
     return NUM2INT(result);
+}
+
+static OnibiExecStatus
+onibi_vm_search(VALUE self, VALUE str, OnibiBytePos search_origin,
+		OnibiRawMatch *raw_match)
+{
+    return onibi_vm_search_with_attempt_start(self, str, search_origin,
+					      raw_match, NULL);
 }
 
 typedef struct {
@@ -540,7 +557,9 @@ onibi_match_operator(VALUE self, VALUE input)
     if (SYMBOL_P(input)) input = rb_sym2str(input);
     StringValue(input);
     OnibiRawMatch raw_match = {.begin_byte = -1, .end_byte = -1};
-    OnibiExecStatus status = onibi_vm_search(self, input, 0, &raw_match);
+    OnibiBytePos attempt_start = -1;
+    OnibiExecStatus status = onibi_vm_search_with_attempt_start(
+	self, input, 0, &raw_match, &attempt_start);
     if (status == ONIBI_EXEC_STATUS_NO_MATCH) {
 	rb_backref_set(Qnil);
 	return Qnil;
@@ -552,7 +571,9 @@ onibi_match_operator(VALUE self, VALUE input)
 	TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
 	return rb_reg_match(obj->regexp, input);
     }
-    return LONG2NUM(onibi_ruby_character_position(input, raw_match.begin_byte));
+    if (attempt_start < 0 || attempt_start > RSTRING_LEN(input))
+	rb_raise(eRegexpError, "Onibi match attempt start is unavailable");
+    return LONG2NUM(onibi_ruby_character_position(input, attempt_start));
 }
 static VALUE
 onibi_tilde(VALUE self)
@@ -560,7 +581,9 @@ onibi_tilde(VALUE self)
     VALUE input = rb_gv_get("$_");
     if (!RB_TYPE_P(input, T_STRING)) return Qnil;
     OnibiRawMatch raw_match = {.begin_byte = -1, .end_byte = -1};
-    OnibiExecStatus status = onibi_vm_search(self, input, 0, &raw_match);
+    OnibiBytePos attempt_start = -1;
+    OnibiExecStatus status = onibi_vm_search_with_attempt_start(
+	self, input, 0, &raw_match, &attempt_start);
     if (status == ONIBI_EXEC_STATUS_NO_MATCH) {
 	rb_backref_set(Qnil);
 	return Qnil;
@@ -577,7 +600,9 @@ onibi_tilde(VALUE self)
 			 input, NUM2LONG(rb_funcall(match, id_bytebegin, 1,
 						    INT2NUM(0)))));
     }
-    return LONG2NUM(onibi_ruby_character_position(input, raw_match.begin_byte));
+    if (attempt_start < 0 || attempt_start > RSTRING_LEN(input))
+	rb_raise(eRegexpError, "Onibi match attempt start is unavailable");
+    return LONG2NUM(onibi_ruby_character_position(input, attempt_start));
 }
 
 typedef enum {
