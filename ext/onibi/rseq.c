@@ -1536,9 +1536,11 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     if (regexp_state) {
 	VALUE error = rb_errinfo();
 	VALUE message = rb_funcall(error, id_message, 0);
+	VALUE wrapped_error;
 	rb_set_errinfo(Qnil);
 	onibi_token_vector_free(&tokens);
-	rb_raise(eRegexpError, "%s", StringValueCStr(message));
+	wrapped_error = rb_exc_new_str(eRegexpError, message);
+	rb_exc_raise(wrapped_error);
     }
     obj->names = rb_funcall(obj->regexp, id_names, 0);
     obj->named_captures = rb_funcall(obj->regexp, id_named_captures, 0);
