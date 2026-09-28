@@ -127,8 +127,8 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 6 | TASK-API03 | Accepted | API01 | Native MatchData `values_at` accessor. |
 | 7 | TASK-API04 | Accepted | API02, API03 | RBS agrees with the accepted API. |
 | 8 | TASK-42C24 | Accepted | C23B | Four escape fallback cases have exact support classifications. |
-| 9 | TASK-42C25A | Ready | C21B | Current match-reset failure and MRI matrix. |
-| 10 | TASK-42C25B | Conditional | C25A | The measured native match-reset gap is repaired. |
+| 9 | TASK-42C25A | Accepted | C21B | Current match-reset failure and MRI matrix. |
+| 10 | TASK-42C25B | Ready | C25A | The measured native match-reset gap is repaired. |
 | 11 | TASK-42C26A | Ready | C18B | Current named-group error encoding matrix. |
 | 12 | TASK-42C26B | Conditional | C26A | The measured named-group error encoding gap is repaired. |
 | 13 | TASK-DOC01 | Waiting | API04, C24, C25A, C26A | Current docs and parent statuses agree with accepted evidence. |
