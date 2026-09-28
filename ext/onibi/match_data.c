@@ -611,6 +611,108 @@ onibi_matchdata_match(VALUE self, VALUE selector)
     return onibi_matchdata_capture(self, selected);
 }
 
+NORETURN(static void onibi_matchdata_raise_range_error(VALUE range));
+static void
+onibi_matchdata_raise_range_error(VALUE range)
+{
+    VALUE message =
+	rb_str_plus(rb_inspect(range), rb_str_new_cstr(" out of range"));
+    rb_enc_associate(message, rb_ascii8bit_encoding());
+    rb_exc_raise(rb_exc_new_str(rb_eRangeError, message));
+}
+
+static long
+onibi_matchdata_range_length(VALUE range, long count, long *start_out)
+{
+    VALUE begin_value;
+    VALUE end_value;
+    int exclude_end;
+    if (!rb_range_values(range, &begin_value, &end_value, &exclude_end))
+	rb_raise(rb_eTypeError, "expected Range");
+
+    long start = NIL_P(begin_value) ? 0 : NUM2LONG(begin_value);
+    int endless = NIL_P(end_value);
+    long end = endless ? count - 1 : NUM2LONG(end_value);
+
+    if (start < 0 && start < -count) onibi_matchdata_raise_range_error(range);
+    if (start < 0) start += count;
+    if (end < 0) end += count;
+    if (start > end) return 0;
+    if (exclude_end && !endless) {
+	if (start == end) return 0;
+	end--;
+    }
+
+    if (start < 0 && end > LONG_MAX + start)
+	onibi_matchdata_raise_range_error(range);
+    long distance = end - start;
+    if (distance == LONG_MAX) onibi_matchdata_raise_range_error(range);
+    *start_out = start;
+    return distance + 1;
+}
+
+static VALUE
+onibi_matchdata_values_at_index(VALUE self, long index, long count)
+{
+    if (index < 0) index += count;
+    if (index < 0 || (uint64_t)index >= (uint64_t)count) return Qnil;
+    return onibi_matchdata_capture(self, index);
+}
+
+static VALUE
+onibi_matchdata_values_at(int argc, VALUE *argv, VALUE self)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    long count = (long)data->num_regs;
+    VALUE result = rb_ary_new_capa(argc);
+
+    for (int i = 0; i < argc; i++) {
+	VALUE selector = argv[i];
+	if (rb_obj_is_kind_of(selector, rb_cRange)) {
+	    long start = 0;
+	    long length = onibi_matchdata_range_length(selector, count, &start);
+	    long current_length = RARRAY_LEN(result);
+	    if (length > LONG_MAX - current_length)
+		onibi_matchdata_raise_range_error(selector);
+	    long target_length = current_length + length;
+	    rb_ary_resize(result, target_length);
+	    for (long offset = 0; offset < length; offset++)
+		rb_ary_store(result, current_length + offset,
+			     onibi_matchdata_values_at_index(
+				 self, start + offset, count));
+	    RB_GC_GUARD(selector);
+	    continue;
+	}
+
+	if (RB_TYPE_P(selector, T_STRING) || SYMBOL_P(selector)) {
+	    long selected = onibi_matchdata_named_capture_index(
+		onibi_matchdata_get(self), selector);
+	    VALUE capture =
+		selected < 0 ? Qnil : onibi_matchdata_capture(self, selected);
+	    rb_ary_push(result, capture);
+	    RB_GC_GUARD(selector);
+	    continue;
+	}
+
+	long selected = NUM2LONG(selector);
+	if (selected < 0) {
+	    selected += count;
+	    if (selected <= 0) {
+		rb_ary_push(result, Qnil);
+		RB_GC_GUARD(selector);
+		continue;
+	    }
+	}
+	rb_ary_push(result,
+		    onibi_matchdata_values_at_index(self, selected, count));
+	RB_GC_GUARD(selector);
+    }
+
+    RB_GC_GUARD(self);
+    RB_GC_GUARD(result);
+    return result;
+}
+
 static VALUE
 onibi_matchdata_captures(VALUE self)
 {
