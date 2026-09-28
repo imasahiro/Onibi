@@ -16,11 +16,15 @@ The PoC must not depend on ZJIT or MRI source-tree changes.
 
 The current C pipeline includes tokenization, parsing, a tagged epsilon-NFA,
 epsilon elimination, ordered G-IR states and edges, RSeq lowering, and three VM
-entry points. The native path handles literals, alternation, character classes,
-wildcards, graphemes, assertions, captures, bounded repeats, backreferences,
-conditions, calls, atomic and absence groups, lookarounds, and match reset when
-the compiler marks a pattern supported. Unsupported patterns or input use the
-documented MRI compatibility path.
+entry points. The compiler and runtime checks select which patterns and inputs
+can use native execution. Do not read a feature name as proof that every form is
+supported.
+
+The wrapper uses the retained MRI regexp only for an explicit fallback. The
+compiler records unsupported features. Runtime checks can also reject an input.
+These compile and input checks run before the native executor starts.
+`gsub` can also use MRI when its replacement parser rejects a form.
+A malformed RSeq or native executor error raises an error; it does not select fallback.
 
 The C source is split into pipeline modules. `onibi.c` is an amalgamated entry
 unit. It includes the current implementation files in dependency order.
@@ -41,28 +45,55 @@ Each class has one C interpreter.
 | `DYNAMIC` | Backreferences, calls, conditions, and other runtime semantic state |
 
 All interpreters execute RSeq and return one common raw match result.
-`scan` builds Ruby strings or capture arrays from those native byte ranges.
-`match` still asks the source MRI regexp to materialize `MatchData` after the
-native VM selects the match.
+Native `match` builds `Onibi::MatchData` from the raw byte ranges.
+Native `scan` builds strings or capture arrays from those ranges.
+Native `gsub` builds its result from native ranges and replacement rules.
+An explicit fallback uses the retained MRI regexp.
 
-### MatchData migration debt
+### Public API subset
 
-The accepted gem design will replace the supported-path adapter with native
-`Onibi::MatchData`. Implementation is pending. The custom object will preserve
-method behavior, but not MRI type identity or caller-local VM backreferences.
-It must never enter MRI backreference storage. See
-[`task-42b1-matchdata-design.md`](task-42b1-matchdata-design.md).
-The paragraphs below describe the current implementation until routing changes.
+The declared public method subset is in [`../sig/onibi.rbs`](../sig/onibi.rbs).
+It includes the current `Onibi::Regexp` and `Onibi::MatchData` signatures.
+The accepted MatchData subset contains 27 public methods.
 
-The native matcher produces raw byte ranges before any Ruby `MatchData`
-materialization. MRI 4.0.6 does not provide a supported extension API to create
-an `RMatch` from external `re_registers`; its public header also prohibits
-manual construction. `match` therefore uses MRI as a temporary `MatchData`
-adapter after native execution selects the match. Native `scan` materializes
-its Ruby strings and capture arrays directly from the same raw ranges; it uses
-MRI only when the native path reports an explicit fallback. Native diagnostics
-and capture tests compare raw Onibi ranges with MRI. The adapter must not decide
-match existence or match priority.
+For a supported native result, `Onibi::Regexp#match` returns
+`Onibi::MatchData`. An explicit fallback can return MRI `::MatchData`.
+The custom object is C typed data. It is not an MRI `MatchData` object.
+It does not pass MRI type checks for `RUBY_T_MATCH` or `RMATCH_REGS`.
+Its `regexp` method returns the owning `Onibi::Regexp`.
+
+RBS 4.1.2 checked syntax, names, and type arity.
+Steep was not installed, so no static source type check is claimed.
+Source review maps all 27 accepted MatchData methods to C registrations.
+
+### MRI caller and backreference limits
+
+MRI `String#=~` delegates to `Onibi::Regexp#=~`.
+The tested `String#match`, `match?`, `scan`, `split`, `[]`, `sub`, and `gsub`
+methods reject `Onibi::Regexp`. Onibi does not patch these String methods.
+StringScanner and other MRI C callers remain outside this gem boundary.
+
+A native match result does not enter MRI backreference storage.
+Native `Onibi::Regexp#match` success leaves the prior MRI `$~` unchanged.
+`Onibi::Regexp.last_match` reads MRI backreference state.
+Explicit MRI fallbacks can use MRI's own state.
+Onibi does not promise full caller-local backreference behavior.
+
+### Ractor limit
+
+The current contract is main-Ractor only.
+Onibi objects are not shareable. Calls to the extension from child Ractors
+fail because the methods are Ractor-unsafe. MRI 4.0.6 reports
+`Ractor::UnsafeError` as the cause.
+The extension does not enable the Ractor-safe boundary.
+
+### Open acceptance work
+
+Binary `MatchData#names` encoding remains open.
+The explicit fallback path for `~` with `\K` and match reset remains untested.
+Public caller, GC, timeout, interrupt, Ractor, CI, and package gates remain open.
+See [`remaining-work.md`](remaining-work.md) for the current task order.
+The gem has not passed all eight PoC conditions in GIR section 133.1.
 
 Compilation is an initialization-time operation. The tokenizer reads the
 source once. The parser, GIR compiler, and RSeq lowerer consume that token
@@ -182,8 +213,8 @@ Do not restore the Ruby matcher as production code.
 
 ## Current architecture audit
 
-Only `Onibi::Regexp` is public. Tokenizer, parser, compiler, GIR, RSeq, and
-VM types stay inside the C extension.
+`Onibi::Regexp` and `Onibi::MatchData` are public. Tokenizer, parser, compiler,
+GIR, RSeq, and VM types stay inside the C extension.
 
 The active ownership rules are:
 

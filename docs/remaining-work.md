@@ -131,8 +131,8 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 10 | TASK-42C25B | Accepted | C25A | The measured native match-reset gap is repaired. |
 | 11 | TASK-42C26A | Accepted | C18B | Current named-group error encoding matrix. |
 | 12 | TASK-42C26B | Accepted | C26A | The measured named-group error encoding gap is repaired. |
-| 13 | TASK-DOC01 | Ready | API04, C24, C25A, C26A | Current docs and parent statuses agree with accepted evidence. |
-| 14 | TASK-API05 | Waiting | API04, DOC01 | Public routing and caller boundaries pass a final audit. |
+| 13 | TASK-DOC01 | Accepted | API04, C24, C25A, C26A | Current docs and parent statuses agree with accepted evidence. |
+| 14 | TASK-API05 | Ready | API04, DOC01 | Public routing and caller boundaries pass a final audit. |
 | 15 | TASK-SAFE01 | Ready | C21B | Unicode helper exception ownership is measured. |
 | 16 | TASK-SAFE02 | Conditional | SAFE01 | The measured helper cleanup defect is repaired. |
 | 17 | TASK-SAFE03 | Ready | C21B | Native nested-call and invocation-state checks. |
