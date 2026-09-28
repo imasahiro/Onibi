@@ -125,7 +125,7 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 4 | TASK-API01 | Accepted | C21B | A measured public method inventory. |
 | 5 | TASK-API02 | Accepted | API01 | Native MatchData `match` accessor. |
 | 6 | TASK-API03 | Accepted | API01 | Native MatchData `values_at` accessor. |
-| 7 | TASK-API04 | Ready | API02, API03 | RBS agrees with the accepted API. |
+| 7 | TASK-API04 | Accepted | API02, API03 | RBS agrees with the accepted API. |
 | 8 | TASK-42C24 | Ready | C23B | Four escape fallback cases have exact support classifications. |
 | 9 | TASK-42C25A | Ready | C21B | Current match-reset failure and MRI matrix. |
 | 10 | TASK-42C25B | Conditional | C25A | The measured native match-reset gap is repaired. |
@@ -419,6 +419,6 @@ A new worker receives exact artifact paths and an immutable packet when dispatch
 
 ## API01 follow-up findings (2026-09-28)
 
-Track binary `MatchData#names` string encoding and `named_captures(symbolize_names: true)` as separate bounded gem repairs.
-The current accepted design has no exclusion for these differences. API04 must include the keyword in its signature review.
+Track binary `MatchData#names` string encoding as a bounded gem follow-up.
+The accepted design has no exclusion for this difference. API04 corrected the symbol-key report: API01 serialization converted keys to strings. Native keyword behavior matches MRI for both checked ASCII fixtures.
 API02 and API03 use the corrected method-specific selector rules in `docs/task-42b1-matchdata-design.md`.

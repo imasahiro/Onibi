@@ -347,4 +347,6 @@ Selectors are evaluated from left to right. Repeated objects undergo conversion 
 These rules are required gem behavior, not deferred MRI integration.
 The accepted API01 matrices define exact values, encodings, errors, and conversion events for subsequent E2E checks.
 The corrected coercion matrix supersedes the original overlapping-method descriptors.
-Binary capture-name encoding and `named_captures(symbolize_names: true)` require separate gem repairs.
+Binary capture-name encoding requires a separate gem follow-up.
+API04 disproved the symbol-key defect: the API01 serializer changed keys to strings.
+Both checked ASCII fixtures return Symbol keys with `symbolize_names: true`.
