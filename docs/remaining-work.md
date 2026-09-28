@@ -123,7 +123,7 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 2 | TASK-42C23A | Accepted | C22 | A frozen decoded-run atom contract. |
 | 3 | TASK-42C23B | Accepted | C23A | Quantifiers apply to the correct decoded character. |
 | 4 | TASK-API01 | Accepted | C21B | A measured public method inventory. |
-| 5 | TASK-API02 | Ready | API01 | Native MatchData `match` accessor. |
+| 5 | TASK-API02 | Accepted | API01 | Native MatchData `match` accessor. |
 | 6 | TASK-API03 | Ready | API01 | Native MatchData `values_at` accessor. |
 | 7 | TASK-API04 | Waiting | API02, API03 | RBS agrees with the accepted API. |
 | 8 | TASK-42C24 | Ready | C23B | Four escape fallback cases have exact support classifications. |

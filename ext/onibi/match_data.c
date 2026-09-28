@@ -596,6 +596,22 @@ onibi_matchdata_aref(int argc, VALUE *argv, VALUE self)
 }
 
 static VALUE
+onibi_matchdata_match(VALUE self, VALUE selector)
+{
+    if (RB_TYPE_P(selector, T_STRING) || SYMBOL_P(selector)) {
+	OnibiMatchData *data = onibi_matchdata_get(self);
+	long selected = onibi_matchdata_named_capture_index(data, selector);
+	return selected < 0 ? Qnil : onibi_matchdata_capture(self, selected);
+    }
+
+    long selected = NUM2LONG(selector);
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    if (selected < 0 || (uint64_t)selected >= data->num_regs)
+	rb_raise(rb_eIndexError, "index %ld out of matches", selected);
+    return onibi_matchdata_capture(self, selected);
+}
+
+static VALUE
 onibi_matchdata_captures(VALUE self)
 {
     OnibiMatchData *data = onibi_matchdata_get(self);
