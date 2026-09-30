@@ -139,8 +139,8 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 18 | TASK-SAFE04 | Accepted | API05, SAFE03 | Final GC and abandoned-call lifetime evidence. |
 | 19 | TASK-SAFE05 | Accepted | SAFE03 | Final timeout and interrupt evidence. |
 | 20 | TASK-RAC01 | Accepted | API05, SAFE04, SAFE05 | Final Ractor audit with explicit support limits. |
-| 21 | TASK-BASE01 | Ready | All earlier repairs resolved | One current failure census. |
-| 22 | TASK-BASE02 | Waiting | BASE01 | Every remaining in-scope failure has a bounded task. |
+| 21 | TASK-BASE01 | Accepted | All earlier repairs resolved | One current failure census. |
+| 22 | TASK-BASE02 | Ready | BASE01 | Every remaining in-scope failure has a bounded task. |
 | 23 | TASK-CI01 | Waiting | BASE02 and its blocking repairs | Reproducible gem acceptance checks in CI. |
 | 24 | TASK-PKG01 | Waiting | CI01 | A clean installed gem passes smoke checks. |
 | 25 | TASK-POC01 | Waiting | RAC01, CI01, PKG01 | Evidence for all eight PoC conditions. |
