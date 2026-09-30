@@ -137,8 +137,8 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 16 | TASK-SAFE02 | Accepted | SAFE01 | The measured helper cleanup defect is repaired. |
 | 17 | TASK-SAFE03 | Accepted | C21B | Native nested-call and invocation-state checks. |
 | 18 | TASK-SAFE04 | Accepted | API05, SAFE03 | Final GC and abandoned-call lifetime evidence. |
-| 19 | TASK-SAFE05 | Ready | SAFE03 | Final timeout and interrupt evidence. |
-| 20 | TASK-RAC01 | Waiting | API05, SAFE04, SAFE05 | Final Ractor audit with explicit support limits. |
+| 19 | TASK-SAFE05 | Accepted | SAFE03 | Final timeout and interrupt evidence. |
+| 20 | TASK-RAC01 | Ready | API05, SAFE04, SAFE05 | Final Ractor audit with explicit support limits. |
 | 21 | TASK-BASE01 | Waiting | All earlier repairs resolved | One current failure census. |
 | 22 | TASK-BASE02 | Waiting | BASE01 | Every remaining in-scope failure has a bounded task. |
 | 23 | TASK-CI01 | Waiting | BASE02 and its blocking repairs | Reproducible gem acceptance checks in CI. |
