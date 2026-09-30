@@ -1373,23 +1373,31 @@ onibi_compile_backref_descriptor(const OnibiAstNode *node,
 
 static void
 onibi_resolve_capture_numbers(OnibiParsed *parsed, OnibiAstId id,
-			      long *next_capture)
+			      long *next_capture, int named_captures_present)
 {
     const OnibiAstNode *node = onibi_ast_node_const(&parsed->arena, id);
     OnibiResolvedNode *semantic = &parsed->semantics.nodes[id];
-    if (node->kind == ONIBI_AST_CAPTURE) {
+
+    /* MRI hides unnamed captures when the pattern has named captures. */
+    if (node->kind == ONIBI_AST_CAPTURE &&
+	(!named_captures_present || node->name.present)) {
 	semantic->capture_id = (int32_t)(*next_capture)++;
     }
     if (node->body != ONIBI_AST_NONE)
-	onibi_resolve_capture_numbers(parsed, node->body, next_capture);
+	onibi_resolve_capture_numbers(parsed, node->body, next_capture,
+				      named_captures_present);
     if (node->atom != ONIBI_AST_NONE)
-	onibi_resolve_capture_numbers(parsed, node->atom, next_capture);
+	onibi_resolve_capture_numbers(parsed, node->atom, next_capture,
+				      named_captures_present);
     if (node->yes != ONIBI_AST_NONE)
-	onibi_resolve_capture_numbers(parsed, node->yes, next_capture);
+	onibi_resolve_capture_numbers(parsed, node->yes, next_capture,
+				      named_captures_present);
     if (node->no != ONIBI_AST_NONE)
-	onibi_resolve_capture_numbers(parsed, node->no, next_capture);
+	onibi_resolve_capture_numbers(parsed, node->no, next_capture,
+				      named_captures_present);
     for (size_t i = 0; i < node->child_count; i++)
-	onibi_resolve_capture_numbers(parsed, node->children[i], next_capture);
+	onibi_resolve_capture_numbers(parsed, node->children[i], next_capture,
+				      named_captures_present);
 }
 
 static uint32_t
@@ -1573,6 +1581,7 @@ onibi_compiler_pass_resolve(OnibiParseOutput parse, OnibiCompilerOwner *owner)
     parsed->semantics.count = parsed->arena.count;
     parsed->semantics.nodes =
 	ALLOC_N(OnibiResolvedNode, parsed->semantics.count);
+    int named_captures_present = 0;
     for (size_t i = 0; i < parsed->semantics.count; i++) {
 	const OnibiAstNode *source =
 	    onibi_ast_node_const(&parsed->arena, (OnibiAstId)i);
@@ -1588,9 +1597,12 @@ onibi_compiler_pass_resolve(OnibiParseOutput parse, OnibiCompilerOwner *owner)
 	node->max_width = -1;
 	node->source_start = source->start;
 	node->source_end = source->end;
+	if (source->kind == ONIBI_AST_CAPTURE && source->name.present)
+	    named_captures_present = 1;
     }
     long captures = 0;
-    onibi_resolve_capture_numbers(parsed, parsed->arena.root, &captures);
+    onibi_resolve_capture_numbers(parsed, parsed->arena.root, &captures,
+				  named_captures_present);
     if ((uint64_t)captures > ONIBI_GIR_MAX_CAPTURE_COUNT)
 	rb_raise(eRegexpError,
 		 "capture count exceeds the GIR action operand limit");
@@ -2320,10 +2332,15 @@ onibi_repeat_reference_size(OnibiAstId id, const onibi_gir_builder_t *builder)
 	size = ONIBI_MRI_REPEAT_EXPAND_LIMIT + 1L;
 	break;
     case ONIBI_AST_CAPTURE:
-	size = onibi_repeat_reference_add(
-	    ONIBI_MRI_SIZE_MEMORY_START,
-	    onibi_repeat_reference_size(node->body, builder));
-	size = onibi_repeat_reference_add(size, ONIBI_MRI_SIZE_MEMORY_END);
+	if (sem->capture_id >= 0) {
+	    size = onibi_repeat_reference_add(
+		ONIBI_MRI_SIZE_MEMORY_START,
+		onibi_repeat_reference_size(node->body, builder));
+	    size = onibi_repeat_reference_add(size, ONIBI_MRI_SIZE_MEMORY_END);
+	}
+	else {
+	    size = onibi_repeat_reference_size(node->body, builder);
+	}
 	break;
     case ONIBI_AST_GROUP:
     case ONIBI_AST_OPTION_SCOPE:
@@ -2400,7 +2417,10 @@ onibi_repeat_capture_count_visit(OnibiAstId id,
 	if (visited->entries[i] == id) return 0;
     onibi_id_vector_push(visited, (OnibiStateId)id);
     const OnibiAstNode *node = onibi_ast_node_const(builder->ast, id);
-    size_t count = node->kind == ONIBI_AST_CAPTURE ? 1U : 0U;
+    size_t count = node->kind == ONIBI_AST_CAPTURE &&
+			   builder->semantics->nodes[id].capture_id >= 0
+		       ? 1U
+		       : 0U;
     if (node->kind == ONIBI_AST_SUBROUTINE) {
 	const OnibiResolvedNode *resolved = &builder->semantics->nodes[id];
 	if (resolved->reference_target != ONIBI_AST_NONE)
@@ -2913,6 +2933,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
     }
     if (type_code == ONIBI_AST_CAPTURE) {
 	long capture_id = resolved_node->capture_id;
+	if (capture_id < 0) return onibi_compile_node(c_node->body, builder);
 	onibi_fragment_t result = onibi_fragment_explicit(
 	    onibi_compile_node(c_node->body, builder), builder);
 	if (builder->ordered_choice_depth != 0) {

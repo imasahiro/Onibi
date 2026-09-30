@@ -18,7 +18,7 @@ RAC01 confirms the main-Ractor-only boundary. Child-Ractor support remains exclu
 
 The accepted BASE01 census has 52 failure rows: 43 supported defects, one explicit limit,
 one obsolete expectation, and seven open scope rows.
-Cases 2, 13, and 46 need separate capture tasks. Cases 21–45 need an audit before repair.
+Cases 2, 13, and 46 share an accepted capture-numbering repair. Cases 21–45 need an audit before repair.
 Case 17 has an explicit 256-level limit. Its exact error text remains a decision.
 Case 49 expects native MRI backreference state. GIR 58 excludes it; keep the failure visible.
 BASE01 also records 70 lint findings across seven test files. TASK-BASE02 maps them separately.
@@ -145,10 +145,10 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 20 | TASK-RAC01 | Accepted | API05, SAFE04, SAFE05 | Final Ractor audit with explicit support limits. |
 | 21 | TASK-BASE01 | Accepted | All earlier repairs resolved | One current failure census. |
 | 22 | TASK-BASE02 | Accepted | BASE01 | Every remaining in-scope failure has a bounded task. |
-| 23 | TASK-BASE02-CALL-CAPTURE-COUNT | Ready | BASE02 | Nullable calls return the MRI-visible capture count. |
-| 24 | TASK-BASE02-NAMED-CAPTURE-PROJECTION | Waiting | BASE02 | Numbered captures follow the named-capture view. |
-| 25 | TASK-BASE02-MATCHDATA-SLICE | Waiting | BASE02 | MatchData slices use MRI selector rules. |
-| 26 | TASK-BASE02-BACKREF-FOLD | Waiting | BASE02 | Case-folded backreferences follow MRI. |
+| 23 | TASK-BASE02-CALL-CAPTURE-COUNT | Accepted | BASE02 | Nullable calls return the MRI-visible capture count. |
+| 24 | TASK-BASE02-NAMED-CAPTURE-PROJECTION | Accepted | BASE02 | Numbered captures follow the named-capture view. |
+| 25 | TASK-BASE02-MATCHDATA-SLICE | Accepted | BASE02 | MatchData slices use MRI selector rules. |
+| 26 | TASK-BASE02-BACKREF-FOLD | Ready | BASE02 | Case-folded backreferences follow MRI. |
 | 27 | TASK-BASE02-ASSERTION-GREEDY | Waiting | BASE02 | A greedy dot respects terminal assertion priority. |
 | 28 | TASK-BASE02-CLASS-RANGE | Waiting | BASE02 | The access-log class compiles and matches MRI. |
 | 29 | TASK-BASE02-REVERSE-FOLD | Waiting | BASE02 | Reverse Unicode folds preserve native and fallback routes. |
