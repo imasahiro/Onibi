@@ -693,10 +693,18 @@ onibi_rseq_lower_body(VALUE opaque)
 	subprogram_records.count > UINT32_MAX ||
 	lookbehind_width_records.count > UINT32_MAX ||
 	physical_size > UINT32_MAX) {
-	rb_raise(eRegexpError, "RSeq program exceeds the v1 size limit");
+	rb_raise(eRegexpError, "RSeq program exceeds the v2 size limit");
     }
     VerifiedGIRAnalysis analysis = compiled_data->analysis;
     uint32_t features = analysis.rseq_features;
+    if (compiled_data->has_end_search_bound) {
+	if (compiled_data->end_search_bound_bytes == 0)
+	    rb_raise(eRegexpError, "invalid compiled RSeq end search bound");
+	features |= ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND;
+    }
+    else if (compiled_data->end_search_bound_bytes != 0) {
+	rb_raise(eRegexpError, "invalid compiled RSeq end search bound");
+    }
     uint32_t counter_count = analysis.counter_count;
     OnibiRSeqHeader physical;
     memset(&physical, 0, sizeof(physical));
@@ -772,6 +780,7 @@ onibi_rseq_lower_body(VALUE opaque)
     physical.features = features;
     physical.prefix_length = 0;
     memset(physical.prefix, 0, sizeof(physical.prefix));
+    physical.end_search_bound_bytes = compiled_data->end_search_bound_bytes;
     if ((physical.features & ONIBI_RSEQ_FEATURE_FIRST_BITMAP) == 0)
 	memset(physical.first_bitmap, 0, sizeof(physical.first_bitmap));
     onibi_allocation_owner_set_phase(&owner->allocations, 7);

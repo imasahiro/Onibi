@@ -1013,7 +1013,29 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
     OnibiSubprogramDesc *subprograms =
 	(OnibiSubprogramDesc *)(RSTRING_PTR(blob) + header->subprograms_offset);
     ID scenario = rb_to_id(scenario_value);
-    if (scenario == rb_intern("section_order"))
+    if (scenario == rb_intern("end_bound_old_version"))
+	header->version = 1;
+    else if (scenario == rb_intern("end_bound_unknown_feature"))
+	header->features |= UINT32_C(1) << 31;
+    else if (scenario == rb_intern("end_bound_noncanonical_unknown")) {
+	header->features &= ~ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND;
+	header->end_search_bound_bytes = 1;
+    }
+    else if (scenario == rb_intern("end_bound_missing_assertion")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++) {
+	    if (actions[i].op == ONIBI_RA_ASSERT_POSITION &&
+		actions[i].arg16 == ONIBI_RAP_END_BUFFER) {
+		actions[i].arg16 = ONIBI_RAP_BEGIN_BUFFER;
+		changed = 1;
+		break;
+	    }
+	}
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "end-bound diagnostic requires an absolute-end assertion");
+    }
+    else if (scenario == rb_intern("section_order"))
 	header->edges_offset = header->states_offset;
     else if (scenario == rb_intern("section_alignment"))
 	header->states_offset += 2;

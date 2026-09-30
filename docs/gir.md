@@ -1178,8 +1178,8 @@ struct OnibiRAction {
 };
 ```
 
-RSeq v1 uses checked 16-bit capture and counter/progress slots.
-The physical record and blob layout MUST NOT change for nullable owner verification.
+RSeq uses checked 16-bit capture and counter/progress slots.
+The eight-byte action record remains unchanged in version 2.
 
 ```text
 capture count                    0..32768
@@ -2034,6 +2034,7 @@ BEGIN_POSITION anchored
 first-character bitmap
 required exact literal
 exact prefix
+absolute-end source-byte bound for a narrow backreference form
 ```
 
 A prefilter can reject candidate positions.
@@ -2047,6 +2048,23 @@ A prefilter must use byte operations only when the encoding permits them.
 For ASCII-compatible strings with seven-bit content, byte search is permitted.
 
 For other strings, candidate positions must remain valid character boundaries.
+
+The compiler sets this bound only for a UTF-8 or US-ASCII pattern with
+`IGNORECASE`. Its root sequence must contain one capture, one reference to
+that capture, and a final `\z`. The capture must contain one direct literal.
+The compiler leaves all other forms unbounded. It does not use `\A`, `\G`,
+`\Z`, `$`, or branch-local anchors for this bound.
+
+The header field `end_search_bound_bytes` is a byte distance from the subject
+end. The matcher starts at the larger of `search_origin` and
+`max(0, subject_byte_length - end_search_bound_bytes)`. It then moves that
+position to a valid character boundary. This field is not a match width.
+The compiler derives this bound by adding the source byte width of the direct
+literal in the capture twice. The reference must be numeric or uniquely named.
+The 17-row MRI differential
+matrix checks selected public results and byte offsets. It does not inspect
+this field. The verifier checks canonical field form and an absolute-end
+action. It does not prove the value for arbitrary metadata or every path.
 
 ---
 
@@ -2063,14 +2081,12 @@ RSeq must not contain a raw subject pointer.
 Example header:
 
 ```c
-struct OnibiRSeqHeader {
+typedef struct {
     uint32_t magic;
     uint16_t version;
     uint8_t exec_kind;
     uint8_t flags;
-
     uint32_t features;
-
     uint32_t state_count;
     uint32_t edge_count;
     uint32_t action_count;
@@ -2080,28 +2096,36 @@ struct OnibiRSeqHeader {
     uint32_t capture_count;
     uint32_t semantic_capture_count;
     uint32_t counter_count;
-
     uint32_t start_edge_base;
     uint32_t start_edge_count;
-
     uint32_t states_offset;
     uint32_t edges_offset;
     uint32_t actions_offset;
     uint32_t classes_offset;
     uint32_t literals_offset;
     uint32_t descriptors_offset;
+    uint32_t backref_count;
+    uint32_t backrefs_offset;
+    uint32_t backref_lists_offset;
     uint32_t subprograms_offset;
     uint32_t lookbehind_widths_offset;
-
     uint32_t blob_size;
-};
+    uint8_t first_bitmap[32];
+    uint8_t prefix_length;
+    uint8_t prefix[31];
+    uint32_t end_search_bound_bytes;
+} OnibiRSeqHeader;
 ```
 
-The initial RSeq version is:
+The current RSeq version is:
 
 ```text
-1
+2
 ```
+
+Version 2 adds `end_search_bound_bytes` to the physical header. The matching
+feature bit requires a positive bound and an absolute-end action. A clear
+feature bit requires a zero field.
 
 All sections must have four-byte alignment.
 
@@ -2109,7 +2133,7 @@ The blob must be smaller than 4 GiB.
 
 The compiler must raise `RegexpError` if representation limits are exceeded.
 
-RSeq v1 also uses the action limits in section 22.
+RSeq v2 also uses the action limits in section 22.
 
 The first invalid capture count is `32769`.
 
@@ -2166,7 +2190,7 @@ A reserved destination value represents ACCEPT:
 
 # 50. RSeq State ISA
 
-RSeq v1 defines these state operations.
+The current RSeq format defines these state operations.
 
 ```c
 enum OnibiRStateOp {

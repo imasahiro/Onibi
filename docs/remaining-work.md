@@ -150,8 +150,9 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 25 | TASK-BASE02-MATCHDATA-SLICE | Accepted | BASE02 | MatchData slices use MRI selector rules. |
 | 26 | TASK-BASE02-BACKREF-FOLD | Split | BASE02 | Case-folded backreferences follow MRI. |
 | 26a | TASK-BASE02-FOLD-END-AUDIT | Accepted | BACKREF-FOLD case 3 | Audit the remaining case 5 end-anchor mismatch. |
-| 26b | TASK-BASE02-FOLD-END-REPAIR | Ready | FOLD-END-AUDIT | Preserve MRI absolute-end candidate-start bounds. |
-| 27 | TASK-BASE02-ASSERTION-GREEDY | Waiting | BASE02 | A greedy dot respects terminal assertion priority. |
+| 26b | TASK-BASE02-FOLD-END-REPAIR | Accepted | FOLD-END-AUDIT | Preserve MRI absolute-end candidate-start bounds. |
+| 26c | TASK-BASE02-FOLD-END-WRAPPER | Waiting | FOLD-END-REPAIR | Resolve the retained scoped-wrapper mismatch. |
+| 27 | TASK-BASE02-ASSERTION-GREEDY | Ready | BASE02 | A greedy dot respects terminal assertion priority. |
 | 28 | TASK-BASE02-CLASS-RANGE | Waiting | BASE02 | The access-log class compiles and matches MRI. |
 | 29 | TASK-BASE02-REVERSE-FOLD | Waiting | BASE02 | Reverse Unicode folds preserve native and fallback routes. |
 | 30 | TASK-BASE02-UNICODE-CLASS-FOLD | Waiting | BASE02 | Ignore-case range closure follows MRI encoding folds. |
@@ -170,7 +171,7 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 43 | TASK-POC01 | Waiting | RAC01, CI01, PKG01 | Evidence for all eight PoC conditions. |
 | 44 | TASK-REL01 | Waiting | POC01 | Reviewed PR, passing required checks, and integration record. |
 
-The queue has 46 tasks. BASE02 adds 18 bounded cards before CI01.
+The queue has 47 tasks. BASE02 adds 18 bounded cards before CI01.
 The absence audit may add repair cards before CI01.
 Follow this order by default. Close an unnecessary repair with evidence and no code change.
 Do not dispatch an absence repair before its audit defines the cause.
@@ -497,6 +498,15 @@ Own only the required compiler, RSeq header/serialization/validation and search 
 Use MRI differential E2E for fold direction, wrappers, branches, finite/unbounded repeats and nonzero starts.
 Preserve explicit fallback controls. Do not apply a guessed finite bound to unknown widths.
 Done: case 5 and the frozen supported controls agree with MRI without native fallback substitution.
+
+### TASK-BASE02-FOLD-END-WRAPPER — Scoped end-bound form
+
+The narrow numeric and named case 5 forms are accepted. The matrix row `scoped_wrapper` still fails.
+Reuse the immutable 17-row matrix and exact MRI/native results from FOLD-END-REPAIR.
+Inspect effective option scope and wrapper transparency before extending compiler eligibility.
+Candidate owner: `ext/onibi/compiler.c` source-byte analysis. Do not change executor end assertions.
+Freeze tests before C edits. Preserve disabled options, nested scope restoration and anchor precedence.
+Done: the scoped form and bounded controls match MRI on native routes; unrelated unknown forms stay explicit.
 
 ### TASK-BASE02-ASSERTION-GREEDY — Greedy repeat after terminal assertion
 

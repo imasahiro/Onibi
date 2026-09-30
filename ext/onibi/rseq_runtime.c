@@ -739,7 +739,8 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	ONIBI_RSEQ_FEATURE_FIRST_BITMAP |
 	ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD |
 	ONIBI_RSEQ_FEATURE_LITERAL_CASEFOLD |
-	ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY;
+	ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY |
+	ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND;
     uint64_t states_end = (uint64_t)header->states_offset +
 			  (uint64_t)header->state_count * sizeof(OnibiRState);
     uint64_t edges_end = (uint64_t)header->edges_offset +
@@ -768,6 +769,10 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 			   ONIBI_RSEQ_HEADER_FLAG_MULTILINE)) != 0 ||
 	(header->features & ~feature_mask) != 0 ||
 	header->prefix_length > sizeof(header->prefix) ||
+	(((header->features & ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND) == 0) &&
+	 header->end_search_bound_bytes != 0) ||
+	(((header->features & ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND) != 0) &&
+	 header->end_search_bound_bytes == 0) ||
 	(header->states_offset | header->edges_offset | header->actions_offset |
 	 header->classes_offset | header->literals_offset |
 	 header->descriptors_offset | header->backrefs_offset |
@@ -933,6 +938,7 @@ onibi_rseq_blob_validate_body(VALUE opaque)
     int counter_action_seen = 0;
     uint32_t highest_counter_slot = 0;
     uint32_t action_index = 0;
+    int end_buffer_assertion_seen = 0;
     while (action_index < header->action_count) {
 	uint32_t program_begin = action_index;
 	action_boundaries[program_begin] = 1;
@@ -969,6 +975,8 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 		    rb_raise(rb_eArgError,
 			     "invalid Onibi RSeq position assertion");
 		action_features |= ONIBI_RSEQ_FEATURE_ASSERTION;
+		if (action->arg16 == ONIBI_RAP_END_BUFFER)
+		    end_buffer_assertion_seen = 1;
 		break;
 	    case ONIBI_RA_ASSERT_SUBPROGRAM: {
 		int positive = action->flags == 1 || action->flags == 5;
@@ -1072,6 +1080,10 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	if (action_index == program_begin)
 	    rb_raise(rb_eArgError, "invalid Onibi RSeq action program");
     }
+
+    if ((header->features & ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND) != 0 &&
+	!end_buffer_assertion_seen)
+	rb_raise(rb_eArgError, "inconsistent Onibi RSeq execution contract");
 
     for (uint32_t i = 0; i < header->edge_count; i++) {
 	const OnibiREdge *edge = &view.edges[i];
@@ -1323,13 +1335,16 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	    execution_requirements |= ONIBI_EXEC_REQUIRE_TAGGED;
     if (!root_consuming)
 	expected_features |= ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY;
+    if (header->end_search_bound_bytes != 0 && end_buffer_assertion_seen)
+	expected_features |= ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND;
     uint32_t semantic_feature_mask =
 	ONIBI_RSEQ_FEATURE_BACKREF | ONIBI_RSEQ_FEATURE_CAPTURE |
 	ONIBI_RSEQ_FEATURE_COUNTER | ONIBI_RSEQ_FEATURE_MATCH_RESET |
 	ONIBI_RSEQ_FEATURE_ASSERTION | ONIBI_RSEQ_FEATURE_LOOKAROUND |
 	ONIBI_RSEQ_FEATURE_LITERAL_CASEFOLD |
 	ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD |
-	ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY;
+	ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY |
+	ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND;
     unsigned char expected_bitmap[sizeof(header->first_bitmap)];
     int bitmap_valid = 1, bitmap_have = 0;
     memset(expected_bitmap, 0, sizeof(expected_bitmap));

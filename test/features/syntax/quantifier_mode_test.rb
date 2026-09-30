@@ -136,6 +136,130 @@ class QuantifierModeTest < Minitest::Test
     assert_nil actual
   end
 
+  def test_absolute_end_numeric_casefold_backreference_skips_mri_end_lower_bound
+    source = "(s)\\1\\z"
+    input = "ſſ"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
+    regexp = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE)
+    diagnostics = regexp.send(:__onibi_diagnostics__, input)
+
+    assert_nil expected
+    assert diagnostics.fetch(:rseq)
+    assert_equal 2, diagnostics.fetch(:exec_kind)
+    assert_equal 0, diagnostics.fetch(:fallback)
+    assert_nil regexp.match(input)
+  end
+
+  def test_absolute_end_named_casefold_backreference_skips_mri_end_lower_bound
+    source = "(?<s>s)\\k<s>\\z"
+    input = "ſſ"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
+    regexp = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE)
+    diagnostics = regexp.send(:__onibi_diagnostics__, input)
+
+    assert_nil expected
+    assert diagnostics.fetch(:rseq)
+    assert_equal 2, diagnostics.fetch(:exec_kind)
+    assert_equal 0, diagnostics.fetch(:fallback)
+    assert_nil regexp.match(input)
+  end
+
+  def test_absolute_end_source_bound_preserves_fold_directions_and_offsets
+    [
+      ["(s)\\1\\z", "ss", 0],
+      ["(ſ)\\1\\z", "ss", 0],
+      ["(s)\\1\\z", "Xss", 1],
+      ["(s)\\1\\z", "Xss", 2]
+    ].each do |source, input, offset|
+      expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input, offset)
+      actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match(input, offset)
+
+      if expected.nil?
+        assert_nil actual, [source, input, offset]
+        next
+      end
+
+      assert_equal expected&.to_a, actual&.to_a, [source, input, offset]
+      assert_equal expected&.offset(0), actual&.offset(0), [source, input, offset]
+      assert_equal expected&.offset(1), actual&.offset(1), [source, input, offset]
+    end
+  end
+
+  def test_absolute_end_source_bound_advances_past_an_interior_utf8_byte
+    source = "(k)\\1\\z"
+    input = "xKK"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
+    regexp = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE)
+    diagnostics = regexp.send(:__onibi_diagnostics__, input)
+
+    assert_nil expected
+    assert diagnostics.fetch(:rseq)
+    assert_equal 2, diagnostics.fetch(:exec_kind)
+    assert_equal 0, diagnostics.fetch(:fallback)
+    assert_nil regexp.match(input)
+  end
+
+  def test_absolute_end_bound_keeps_branch_and_begin_anchor_precedence
+    [
+      ["(?i:(?:s\\z|x))", "xq", 0, 0, ["x"]],
+      ["\\A(s)\\1\\z", "ſſ", 0, ::Regexp::IGNORECASE, %w[ſſ ſ]],
+      ["\\G(s)\\1\\z", "Xſſ", 1, ::Regexp::IGNORECASE, %w[ſſ ſ]]
+    ].each do |source, input, offset, options, expected_values|
+      expected = ::Regexp.new(source, options).match(input, offset)
+      regexp = options.zero? ? Onibi::Regexp.new(source) : Onibi::Regexp.new(source, options)
+      actual = regexp.match(input, offset)
+
+      assert_equal expected_values, expected&.to_a, [source, input, offset]
+      assert_equal expected_values, actual&.to_a, [source, input, offset]
+      assert_equal expected&.offset(0), actual&.offset(0), [source, input, offset]
+      next if expected_values.length == 1
+
+      assert_equal expected.offset(1), actual.offset(1), [source, input, offset]
+    end
+  end
+
+  def test_absolute_end_source_bound_keeps_match_after_an_interior_utf8_byte
+    source = "(ſ)\\1\\z"
+    input = "xKss"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
+    regexp = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE)
+    actual = regexp.match(input)
+    diagnostics = regexp.send(:__onibi_diagnostics__, input)
+
+    assert_equal %w[ss s], expected&.to_a
+    assert_equal [2, 4], expected&.offset(0)
+    assert_equal [2, 3], expected&.offset(1)
+    assert_equal expected&.to_a, actual&.to_a
+    assert_equal expected&.offset(0), actual&.offset(0)
+    assert_equal expected&.offset(1), actual&.offset(1)
+    assert diagnostics.fetch(:rseq)
+    assert_equal 2, diagnostics.fetch(:exec_kind)
+    assert_equal 0, diagnostics.fetch(:fallback)
+  end
+
+  def test_absolute_end_zero_width_match_keeps_empty_and_end_positions
+    regexp = Onibi::Regexp.new("\\z")
+    cases = [["", 0], ["ss", 2]]
+
+    cases.each do |input, offset|
+      expected = ::Regexp.new("\\z").match(input, offset)
+      actual = regexp.match(input, offset)
+
+      assert_equal expected&.to_a, actual&.to_a, [input, offset]
+      assert_equal expected&.offset(0), actual&.offset(0), [input, offset]
+    end
+  end
+
+  def test_semi_end_anchor_does_not_use_the_absolute_end_bound
+    source = "s\\Z"
+    input = "ſ\n"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
+    actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_nil expected
+    assert_nil actual
+  end
+
   def test_casefold_expanding_backreference_can_end_at_absolute_anchor
     source = "(ß)\\1\\z"
     expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ßß")

@@ -70,6 +70,28 @@ class RseqPhysicalVerifierTest < Minitest::Test
     assert_invalid("abc", :prefix)
   end
 
+  def test_rejects_old_absolute_end_search_version
+    assert_end_bound_corruption_rejected(:end_bound_old_version,
+                                         "invalid Onibi RSeq blob")
+  end
+
+  def test_rejects_unknown_absolute_end_search_feature
+    assert_end_bound_corruption_rejected(:end_bound_unknown_feature,
+                                         "invalid Onibi RSeq section layout")
+  end
+
+  def test_rejects_noncanonical_unknown_absolute_end_search_bound
+    assert_end_bound_corruption_rejected(:end_bound_noncanonical_unknown,
+                                         "invalid Onibi RSeq section layout")
+  end
+
+  def test_rejects_absolute_end_search_bound_without_absolute_end_assertion
+    assert_end_bound_corruption_rejected(
+      :end_bound_missing_assertion,
+      "inconsistent Onibi RSeq execution contract"
+    )
+  end
+
   def test_zero_width_feature_uses_only_root_reachable_states
     regexp = Onibi::Regexp.new("(?=a)")
 
@@ -149,6 +171,15 @@ class RseqPhysicalVerifierTest < Minitest::Test
   end
 
   private
+
+  def assert_end_bound_corruption_rejected(scenario, expected_message)
+    regexp = Onibi::Regexp.new("(s)\\1\\z", Onibi::Regexp::IGNORECASE)
+    error = assert_raises(ArgumentError, scenario.to_s) do
+      regexp.send(:__onibi_rseq_verifier_diagnostics__, scenario)
+    end
+
+    assert_equal expected_message, error.message, scenario.to_s
+  end
 
   def assert_invalid(pattern, scenario)
     regexp = Onibi::Regexp.new(pattern)
