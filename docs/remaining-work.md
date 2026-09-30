@@ -1,6 +1,6 @@
 # Remaining gem PoC work
 
-Snapshot: 2026-09-27, source `9460fc93`.
+Snapshot: 2026-09-30, source `fc6b1b6a`.
 This list covers the MRI-only gem PoC.
 It does not authorize MRI source changes, FFI, another engine, or ZJIT work.
 The execution ledger records accepted work. This list records the remaining queue.
@@ -12,15 +12,19 @@ Native MatchData, public match routing, scan blocks, and gsub paths have accepte
 AST arena growth, brace grammar, and escape cursor repairs are accepted through TASK-42C21B.
 Do not repeat those implementation units.
 
-The remaining confirmed escape defects are one-digit hex decoding and decoded-run quantifier binding.
-Four audited meta/binary cases use explicit fallback. They are not four proven native defects.
-The accepted MatchData method list includes `match` and `values_at`.
-The current C registration has neither method. TASK-API01 must confirm this with a live probe.
-Older reports record match-reset and error-encoding gaps. Reproduce them before repair.
-Ractor support remains unaccepted. Several current-status documents still describe the older implementation.
+The queue records accepted escape, MatchData API, operator, error-encoding, and safety work below.
+Do not reopen those units without new evidence.
+RAC01 confirms the main-Ractor-only boundary. Child-Ractor support remains excluded.
 
-This is a list of known work and required checks, not a claim that no other defect exists.
-TASK-BASE01 identifies additional failures. TASK-BASE02 converts them into bounded tasks.
+The accepted BASE01 census has 52 failure rows: 43 supported defects, one explicit limit,
+one obsolete expectation, and seven open scope rows.
+Cases 2, 13, and 46 need separate capture tasks. Cases 21–45 need an audit before repair.
+Case 17 has an explicit 256-level limit. Its exact error text remains a decision.
+Case 49 expects native MRI backreference state. GIR 58 excludes it; keep the failure visible.
+BASE01 also records 70 lint findings across seven test files. TASK-BASE02 maps them separately.
+
+This list records known work and required checks. It does not claim that no other defect exists.
+TASK-BASE02 maps every census row to repair, audit, decision, or contract closure.
 
 ## Authority and execution rules
 
@@ -45,7 +49,7 @@ Record READY_FOR_REVIEW, ACCEPTED, COMMITTED, and INTEGRATED separately.
 Only an accepted source state releases a dependent task.
 
 At dispatch and acceptance, read account limits.
-Reserve review capacity near 80% use. Start no new task near 90% use.
+The latest user instruction permits sequential work until either allowance has less than 1% remaining.
 Save one exact next action. A saved queue does not configure an automatic restart.
 
 ## Common setup and checks
@@ -56,15 +60,15 @@ Use these process-local settings on the current Apple arm64 host:
 export PATH=/opt/homebrew/opt/ruby/bin:/opt/homebrew/bin:/usr/bin:/bin
 export DEVELOPER_DIR=/Library/Developer/CommandLineTools
 export BUNDLE_IGNORE_CONFIG=true
-export BUNDLE_PATH=/tmp/onibi-bench-gem
+export CC=/opt/homebrew/opt/llvm@21/bin/clang
 export BUNDLE_FROZEN=true
 ruby -v
 bundle --version
-clang --version
+"$CC" --version
 bundle check
 ```
 
-The verified runtime is MRI 4.0.6. Bundler is 4.0.16. Apple clang is 21.0.0.
+The verified runtime is MRI 4.0.6. Bundler is 4.0.16. Homebrew clang is 21.1.8.
 The default Xcode selection has an unset license. Use the settings above for Python and Git too.
 Do not change machine settings. On another host, verify an equivalent MRI toolchain before editing.
 
@@ -140,14 +144,34 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 19 | TASK-SAFE05 | Accepted | SAFE03 | Final timeout and interrupt evidence. |
 | 20 | TASK-RAC01 | Accepted | API05, SAFE04, SAFE05 | Final Ractor audit with explicit support limits. |
 | 21 | TASK-BASE01 | Accepted | All earlier repairs resolved | One current failure census. |
-| 22 | TASK-BASE02 | Ready | BASE01 | Every remaining in-scope failure has a bounded task. |
-| 23 | TASK-CI01 | Waiting | BASE02 and its blocking repairs | Reproducible gem acceptance checks in CI. |
-| 24 | TASK-PKG01 | Waiting | CI01 | A clean installed gem passes smoke checks. |
-| 25 | TASK-POC01 | Waiting | RAC01, CI01, PKG01 | Evidence for all eight PoC conditions. |
-| 26 | TASK-REL01 | Waiting | POC01 | Reviewed PR, passing required checks, and integration record. |
+| 22 | TASK-BASE02 | Accepted | BASE01 | Every remaining in-scope failure has a bounded task. |
+| 23 | TASK-BASE02-CALL-CAPTURE-COUNT | Ready | BASE02 | Nullable calls return the MRI-visible capture count. |
+| 24 | TASK-BASE02-NAMED-CAPTURE-PROJECTION | Waiting | BASE02 | Numbered captures follow the named-capture view. |
+| 25 | TASK-BASE02-MATCHDATA-SLICE | Waiting | BASE02 | MatchData slices use MRI selector rules. |
+| 26 | TASK-BASE02-BACKREF-FOLD | Waiting | BASE02 | Case-folded backreferences follow MRI. |
+| 27 | TASK-BASE02-ASSERTION-GREEDY | Waiting | BASE02 | A greedy dot respects terminal assertion priority. |
+| 28 | TASK-BASE02-CLASS-RANGE | Waiting | BASE02 | The access-log class compiles and matches MRI. |
+| 29 | TASK-BASE02-REVERSE-FOLD | Waiting | BASE02 | Reverse Unicode folds preserve native and fallback routes. |
+| 30 | TASK-BASE02-UNICODE-CLASS-FOLD | Waiting | BASE02 | Ignore-case range closure follows MRI encoding folds. |
+| 31 | TASK-BASE02-ABSENCE-AUDIT | Waiting | BASE02 | The 25 absence failures have a bounded root-cause map. |
+| 32 | TASK-BASE02-INLINE-M | Waiting | BASE02 | Inline multiline changes stay inside their scopes. |
+| 33 | TASK-BASE02-LINE-ANCHOR | Waiting | BASE02 | Line-start behavior matches MRI after a final newline. |
+| 34 | TASK-BASE02-STACKED-QUANTIFIER-SCOPE | Waiting | BASE02 | Decide whether stacked quantifiers are in the PoC subset. |
+| 35 | TASK-BASE02-PATTERN-COMMENT-SCOPE | Waiting | BASE02 | Decide whether pattern comments are in the PoC subset. |
+| 36 | TASK-BASE02-CLASS-SUBTRACTION-SCOPE | Waiting | BASE02 | Decide whether nested class subtraction is in scope. |
+| 37 | TASK-BASE02-OCTAL-SCOPE | Waiting | BASE02 | Decide the scope of octal and backreference disambiguation. |
+| 38 | TASK-BASE02-NONASCII-ENCODING-SCOPE | Waiting | BASE02 | Decide the scope of non-ASCII-compatible pattern encodings. |
+| 39 | TASK-BASE02-DEPTH-ERROR-DECISION | Waiting | BASE02 | Decide whether nesting-limit error text is an API promise. |
+| 40 | TASK-BASE02-LINT-HYGIENE | Waiting | BASE02 | Map and resolve 70 test-source lint findings safely. |
+| 41 | TASK-CI01 | Waiting | BASE02, blocking cards, and absence follow-up repairs | Reproducible gem acceptance checks in CI. |
+| 42 | TASK-PKG01 | Waiting | CI01 | A clean installed gem passes smoke checks. |
+| 43 | TASK-POC01 | Waiting | RAC01, CI01, PKG01 | Evidence for all eight PoC conditions. |
+| 44 | TASK-REL01 | Waiting | POC01 | Reviewed PR, passing required checks, and integration record. |
 
-Follow this order by default. If a conditional repair is unnecessary, record the proof and close it without code changes.
-Do not dispatch a placeholder repair before its audit defines the acceptance decision.
+The queue has 44 tasks. BASE02 adds 18 bounded cards before CI01.
+The absence audit may add repair cards before CI01.
+Follow this order by default. Close an unnecessary repair with evidence and no code change.
+Do not dispatch an absence repair before its audit defines the cause.
 
 ## Task cards
 
@@ -355,12 +379,305 @@ The complete legacy suite is not automatically a gem PoC semantic gate.
 
 ### TASK-BASE02 — Split census findings
 
-Create one task per independent invariant from BASE01.
-Each task must name its reproduction, owned symbols, dependencies, MRI cases, checks, and done condition.
-Do not bundle unrelated engine fixes or create one task per trivial edit.
-Add only in-scope blockers to the PoC queue. Preserve excluded cases and their reasons.
-Done: no unexplained supported-subset failure lacks a bounded task.
-Complete those tasks before CI01. The final queue can therefore exceed these 26 initial cards.
+Map every BASE01 row to one primary card. Each card names its reproduction, candidate C symbols,
+dependencies, MRI cases, focused checks, and done condition.
+Keep cases 2, 13, and 46 in separate cards. Do not merge independent capture failures.
+Keep the 25 absence cases in one bounded audit. Define repair cards after root-cause review.
+Keep the seven scope cases open unless current contract text resolves them.
+Keep case 17's exact error text as a decision. Close case 49 by the current MRI backreference boundary.
+Map all 70 lint findings to one separate hygiene card. Do not change test meaning to clear lint.
+Add only in-scope blockers and unresolved decisions before CI01.
+Done: every row has one primary disposition and evidence link. No supported mismatch lacks a bounded task.
+The census map and evidence live outside the repository. The cards below remain readable without them.
+
+| Census row(s) | Primary card | Action |
+| --- | --- | --- |
+| 1 | BASE02-STACKED-QUANTIFIER-SCOPE | Decide scope |
+| 2 | BASE02-CALL-CAPTURE-COUNT | Repair |
+| 3, 5 | BASE02-BACKREF-FOLD | Repair |
+| 4 | BASE02-ASSERTION-GREEDY | Repair |
+| 6, 7 | BASE02-CLASS-RANGE | Repair |
+| 8, 9 | BASE02-PATTERN-COMMENT-SCOPE | Decide scope |
+| 10, 11, 12, 18, 19, 20 | BASE02-REVERSE-FOLD | Repair with route limits |
+| 13 | BASE02-NAMED-CAPTURE-PROJECTION | Repair |
+| 14 | BASE02-CLASS-SUBTRACTION-SCOPE | Decide scope |
+| 15 | BASE02-UNICODE-CLASS-FOLD | Repair |
+| 16 | BASE02-OCTAL-SCOPE | Decide scope |
+| 17 | BASE02-DEPTH-ERROR-DECISION | Decide API text |
+| 21–45 | BASE02-ABSENCE-AUDIT | Audit, then split repairs |
+| 46 | BASE02-MATCHDATA-SLICE | Repair |
+| 47, 48 | BASE02-INLINE-M | Repair |
+| 49 | BASE02-EXCLUDED-49 | Contract closure; no queue item |
+| 50 | BASE02-LINE-ANCHOR | Repair |
+| 51, 52 | BASE02-NONASCII-ENCODING-SCOPE | Decide scope |
+| Lint 1–70 | BASE02-LINT-HYGIENE | Separate test-source hygiene |
+
+BASE01 used census source `ed681b17`. This task uses source `fc6b1b6a`.
+All 52 census test-source hashes match the current test files.
+The original frozen-input bytes are missing. BASE01 correction records eight old hash mismatches.
+Use current test sources, recorded commands and logs, and current MRI controls.
+Do not claim complete historical input provenance.
+
+Case 19 has ten `reverse-alternation` rows on explicit `input_ineligible` MRI fallback.
+Those ten rows are not native implementation defects.
+`reverse-alternation-11` reaches native DYNAMIC with zero fallback and returns a wrong match.
+Keep that distinction in the repair scope.
+
+Case 49 is `RegexpUtilityTest#test_last_match_matches_mri_and_match_question_does_not_change_it`.
+GIR 58 and `docs/development.md` exclude native MRI backreference updates.
+Keep its legacy failure visible. Do not add a repair unless the contract changes.
+
+The exact case and lint rows are in the immutable BASE02 `mapping-01.json` evidence.
+
+### TASK-BASE02-CALL-CAPTURE-COUNT — Nullable call captures
+
+Cases: `#2`. Reproduce `DynamicDifferentialTest#test_named_subprogram_variants_keep_nullable_call_context`.
+Candidate C owners: `ext/onibi/compiler.c:onibi_resolve_capture_numbers`,
+`ext/onibi/compiler.c:onibi_resolve_semantic_node`, `ext/onibi/exec_dynamic.c:onibi_rseq_dynamic_run`,
+and `ext/onibi/match_data.c:onibi_matchdata_to_a`.
+Dependency: accepted BASE02 mapping. Keep raw capture registers and MRI-visible indexing separate.
+Run the existing E2E method. Compare all patterns, subjects, values, and byte ranges with MRI 4.0.6.
+Record the DYNAMIC route and require zero fallback for the claimed native result.
+Done: every visible capture matches MRI, and the nullable call adds no unnamed capture.
+
+### TASK-BASE02-NAMED-CAPTURE-PROJECTION — Numbered capture view
+
+Case: `#13`. Reproduce `RegexpConstructorTest#test_named_capture_numbers_hide_unnamed_groups_like_mri`.
+Candidate C owners: `ext/onibi/compiler.c:onibi_resolve_capture_numbers` and
+`ext/onibi/match_data.c:onibi_matchdata_capture_array`, `onibi_matchdata_to_a`,
+and `onibi_matchdata_named_capture_index`.
+Dependency: accepted BASE02 mapping. Keep raw capture registers in their current order.
+Run the existing E2E method. Compare `to_a`, `captures`, named lookup, and byte ranges with MRI 4.0.6.
+Record the REGULAR_FAST route and require zero fallback for the native result.
+Done: numbered and named accessors expose the same captures as MRI.
+
+### TASK-BASE02-MATCHDATA-SLICE — MatchData slice selectors
+
+Case: `#46`. Reproduce `MatchDataIndexTest#test_match_value_access_supports_mri_slice_form`.
+Candidate owners: `ext/onibi/match_data.c:onibi_matchdata_aref`,
+`ext/onibi/match_data.c:onibi_matchdata_capture_array`,
+and `sig/onibi.rbs:MatchData#[]`.
+Dependency: accepted BASE02 mapping. Preserve the accepted selector rules for every accessor.
+Run the existing E2E method. Compare selector `[0, 2]`, values, and byte ranges with MRI 4.0.6.
+Record the REGULAR_FAST route and require zero fallback for the native result.
+Done: slice selection returns the same capture values and ranges as MRI.
+
+### TASK-BASE02-BACKREF-FOLD — Case-folded backreferences
+
+Cases: `#3, #5`. Reproduce `QuantifierModeTest#test_casefold_backreference_keeps_mri_direction`
+and `QuantifierModeTest#test_casefold_backreference_does_not_cross_absolute_end`.
+Candidate C owners: `ext/onibi/exec_dynamic.c:onibi_rseq_casefold_span_equal`,
+`ext/onibi/exec_dynamic.c:onibi_rseq_backref_consume`,
+and `ext/onibi/compiler.c:onibi_compile_backref_descriptor`.
+Dependency: accepted BASE02 mapping. Use MRI encoding folds and keep capture spans byte-based.
+Run both existing E2E methods. Compare patterns, subjects, captures, and ranges with MRI 4.0.6.
+Record DYNAMIC diagnostics. Require native execution and zero fallback for both cases.
+Done: both directions and absolute-end behavior match MRI.
+
+### TASK-BASE02-ASSERTION-GREEDY — Greedy repeat after terminal assertion
+
+Case: `#4`. Reproduce `QuantifierModeTest#test_multiline_greedy_dot_after_terminal_assertion_matches_mri`.
+Candidate C owners: `ext/onibi/exec_dynamic.c:onibi_rseq_position_assertion_hit`,
+`ext/onibi/exec_dynamic.c:onibi_rseq_dynamic_run`, and `ext/onibi/exec_dynamic.c:onibi_rseq_tagged_run`.
+Dependency: accepted BASE02 mapping. Preserve ordered priority across terminal assertions and greedy repeats.
+Run the existing E2E method. Compare the match value and byte range with MRI 4.0.6.
+Record the execution class. Require native execution and zero fallback for the supported result.
+Done: the native result and byte range match MRI.
+
+### TASK-BASE02-CLASS-RANGE — Basic range compilation
+
+Cases: `#6, #7`. Reproduce `MacroBenchmarksTest#test_each_workload_matches_ruby_regexp`
+and `MacroBenchmarksTest#test_runner_rejects_differential_mismatch`.
+Candidate C owners: `ext/onibi/token.c:onibi_token_scan_class`,
+`ext/onibi/parser.c:onibi_c_parse_class_part`, `ext/onibi/parser.c:onibi_c_parse_range`,
+and `ext/onibi/compiler.c:onibi_compiler_normalize_class`.
+Dependency: accepted BASE02 mapping. Keep class subtraction and other unsupported forms outside this repair.
+Run the access-log workload against MRI 4.0.6. Confirm the false adapter raises `DifferentialError`.
+Record the class compile route. Require native execution and zero fallback for the workload result.
+Done: the access-log captures match MRI, and the differential guard still rejects false results.
+
+### TASK-BASE02-REVERSE-FOLD — Reverse Unicode fold paths
+
+Cases: `#10, #11, #12, #18, #19, #20`. Reproduce these six methods:
+`LookaheadTest#test_ignorecase_reverse_fold_anchor_boundary_through_wrappers`,
+`LookaheadTest#test_ignorecase_long_s_optional_class_stops_before_absolute_end`,
+`LookaheadTest#test_ignorecase_reverse_literal_repeat_rejects_folded_capture_backreference`,
+`UnicodePropertyDifferentialTest#test_reverse_fold_class_and_capture_boundaries_match_mri`,
+`UnicodePropertyDifferentialTest#test_reverse_fold_alternation_keeps_branch_source_policy`,
+and `UnicodePropertyDifferentialTest#test_reverse_simple_fold_source_does_not_split_before_a_literal_tail`.
+Candidate C owners: `ext/onibi/compiler.c:onibi_compile_literal_bytes`,
+`ext/onibi/compiler.c:onibi_compile_character_class`, `ext/onibi/compiler.c:onibi_compiler_normalize_class`,
+`ext/onibi/exec_dynamic.c:onibi_rseq_consume_character`, and `ext/onibi/exec_dynamic.c:onibi_rseq_dynamic_run`.
+Dependency: accepted BASE02 mapping. Keep existing input-ineligible fallback rows explicit.
+Run each existing E2E method. Compare all frozen Unicode rows and ranges with MRI 4.0.6.
+Record each selected route. Preserve MRI fallback wherever the support check rejects the input.
+Do not claim the ten `reverse-alternation-1` through `-10` fallback rows as native defects.
+Investigate `reverse-alternation-11` as the native DYNAMIC mismatch. Require zero fallback only for rows claimed native.
+Done: every row matches MRI; native rows use the correct interpreter, and fallback rows remain explicit.
+
+### TASK-BASE02-UNICODE-CLASS-FOLD — Unicode range closure
+
+Case: `#15`. Reproduce `RegexpSyntaxSemanticsTest#test_ignorecase_closes_unicode_range_casefolds`.
+Candidate C owners: `ext/onibi/compiler.c:onibi_class_expr_apply_casefold`,
+`ext/onibi/compiler.c:onibi_compiler_normalize_class`, and `ext/onibi/exec_dynamic.c:onibi_rseq_class_hit`.
+Dependency: accepted BASE02 mapping. Use the MRI encoding fold table and keep class data immutable.
+Run the existing E2E method. Compare both subjects with MRI 4.0.6.
+Record the class route. Require native execution and zero fallback for the supported class.
+Done: the range and its one-character fold closure match MRI.
+
+### TASK-BASE02-ABSENCE-AUDIT — Absence failure root cause
+
+Cases: `#21–45`. Reproduce all 25 methods in `AbsenceOperatorTest`:
+`test_absence_operator_restores_deep_nested_repeat_captures`,
+`test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix`,
+`test_absence_operator_restores_outer_quantifier_suffix_captures`,
+`test_absence_operator_applies_quantifier_boundary_to_suffix_bodies`,
+`test_absence_operator_does_not_export_quantifier_body_captures`,
+`test_absence_operator_handles_nested_equal_length_captures`,
+`test_absence_operator_propagates_nested_bytecode_endpoints`,
+`test_absence_operator_restores_repeated_suffix_capture_frames`,
+`test_absence_operator_restores_nested_suffix_group_captures`,
+`test_absence_operator_keeps_a_nullable_body_capture`,
+`test_absence_operator_preserves_body_captures`,
+`test_absence_operator_clears_nested_repeat_captures`,
+`test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary`,
+`test_absence_operator_replays_variable_suffix_backtracking`,
+`test_absence_operator_replays_finite_and_positive_quantifier_probes`,
+`test_absence_operator_keeps_captures_from_a_zero_width_body`,
+`test_absence_operator_clears_nested_bounded_captures`,
+`test_absence_operator_tracks_finite_nested_repeat_frames`,
+`test_absence_operator_clears_nullable_captures_on_suffix_failure_at_end`,
+`test_absence_operator_preserves_captures_from_a_failed_suffix`,
+`test_absence_operator_preserves_alternation_branch_order`,
+`test_absence_operator_restores_nested_repeat_suffix_frames`,
+`test_absence_operator_handles_overlapping_nested_zero_width_boundaries`,
+`test_absence_body_capture_presence_is_visible_to_conditionals`,
+and `test_absence_operator_tracks_nullable_nested_repeat_frames`.
+Candidate C owners: `ext/onibi/exec_dynamic.c:onibi_dynamic_absence_consume`,
+`ext/onibi/exec_dynamic.c:onibi_dynamic_absence_filter_captures`,
+`ext/onibi/exec_dynamic.c:onibi_apply_action_program`,
+`ext/onibi/exec_dynamic.c:onibi_dynamic_assert_subprogram`, and `ext/onibi/exec_dynamic.c:onibi_rseq_dynamic_run`.
+Dependency: accepted BASE02 mapping. Do not begin implementation in this audit.
+Run all 25 E2E methods. Compare their direct MRI results and the saved MRI control rows that concern absence.
+Record route diagnostics, raw registers, captures, and byte ranges for every case.
+The BASE01 DYNAMIC routes were inferred from `G_ABSENT`; verify them before repair.
+Reject half-open and out-of-bounds raw ranges. Do not weaken MRI assertions.
+Done: every failure has a bounded root cause, route, and owner. Root review creates separate repair cards.
+
+### TASK-BASE02-INLINE-M — Inline multiline scope
+
+Cases: `#47, #48`. Reproduce
+`InlineModifierTest#test_inline_multiline_disable_modifier_turns_dot_all_off` and
+`InlineModifierTest#test_supported_modifier_scopes_match_mri`.
+Candidate C owners: `ext/onibi/token.c:onibi_token_scan_inline_options`,
+`ext/onibi/compiler.c:onibi_resolve_option_node`, and `ext/onibi/compiler.c:onibi_resolve_option_slice`.
+Dependency: accepted BASE02 mapping. Resolve options before G-IR and restore outer scope after each node.
+Run both E2E methods. Compare each scoped and unscoped result with MRI 4.0.6.
+Record native diagnostics and require zero fallback for supported forms.
+Done: both forms preserve lexical scope and match MRI.
+
+### TASK-BASE02-LINE-ANCHOR — Final newline line-start behavior
+
+Case: `#50`. Reproduce `AnchorsOptionsTest#test_line_start_does_not_match_the_empty_line_after_a_final_newline`.
+Candidate C owners: `ext/onibi/exec_dynamic.c:onibi_rseq_position_assertion_hit` and
+`ext/onibi/exec_dynamic.c:onibi_rseq_dynamic_run`.
+Dependency: accepted BASE02 mapping. Keep byte positions aligned with MRI line anchors.
+Run the existing E2E method. Compare match value and byte range with MRI 4.0.6.
+Record the execution class. Require native execution and zero fallback.
+Done: the native anchor does not return the empty position after the final newline.
+
+### TASK-BASE02-STACKED-QUANTIFIER-SCOPE — Stacked quantifier decision
+
+Case: `#1`. Reproduce `QuantifierTest#test_nested_quantifiers_follow_mri_composition`.
+The method checks five stacked forms and compares each result with MRI 4.0.6.
+Candidate files, only if support is accepted: `ext/onibi/token.c`, `ext/onibi/parser.c`,
+and `ext/onibi/compiler.c`.
+Dependency: accepted BASE02 mapping. Read GIR sections 27–29 and 133.1.
+Decide whether these exact stacked forms belong to the current PoC subset.
+If they do, create a separate repair card. If they do not, record the contract evidence.
+Done: the support decision cites current contract text. Keep the original test visible.
+
+### TASK-BASE02-PATTERN-COMMENT-SCOPE — Pattern comment decision
+
+Cases: `#8, #9`. Reproduce `PatternCommentTest#test_pattern_comments_are_ignored` and
+`PatternCommentTest#test_pattern_comments_do_not_create_captures`.
+The exact forms are `(?# greeting)cat` and `(?# greeting)(cat)`.
+Candidate files, only if support is accepted: `ext/onibi/token.c` and `ext/onibi/parser.c`.
+Dependency: accepted BASE02 mapping. Read GIR 133.1 and the declared syntax subset.
+Decide whether `(?#...)` comments belong to the current PoC subset.
+If they do, create a separate repair card. If they do not, record the contract evidence.
+Done: the support decision cites current contract text. Keep both original tests visible.
+
+### TASK-BASE02-CLASS-SUBTRACTION-SCOPE — Nested subtraction decision
+
+Case: `#14`. Reproduce `CharacterClassDifferentialTest#test_character_class_corpus_matches_mri`.
+The method includes `[a-[b]]` and its saved MRI comparisons.
+Candidate files, only if support is accepted: `ext/onibi/token.c`, `ext/onibi/parser.c`,
+and `ext/onibi/compiler.c`.
+Dependency: accepted BASE02 mapping. Read GIR section 42 and 133.1.
+Decide whether nested class subtraction belongs to the current PoC subset.
+Do not infer support from class intersection alone.
+If support is accepted, create a separate repair card. Keep all corpus assertions visible.
+Done: the support decision cites current contract text and preserves the test.
+
+### TASK-BASE02-OCTAL-SCOPE — Octal disambiguation decision
+
+Case: `#16`. Reproduce `RegexpSyntaxSemanticsTest#test_octal_escapes_match_the_encoded_byte`.
+The pattern is `\10` with no captures. MRI reads octal byte `0x08`; Onibi reports an undefined backreference.
+Candidate files, only if support is accepted: `ext/onibi/token.c`, `ext/onibi/parser.c`,
+and `ext/onibi/compiler.c`.
+Dependency: accepted BASE02 mapping. Read GIR sections 34 and 133.1.
+Decide whether this octal and backreference disambiguation rule belongs to the PoC subset.
+If it does, create a separate repair card. If it does not, record the contract evidence.
+Done: the support decision cites current contract text. Keep the original assertion visible.
+
+### TASK-BASE02-NONASCII-ENCODING-SCOPE — Pattern encoding decision
+
+Cases: `#51, #52`. Reproduce
+`EncodingContractTest#test_non_ascii_compatible_unicode_classes_honor_ignorecase` and
+`EncodingContractTest#test_non_ascii_compatible_character_classes_compare_codepoints`.
+Case 51 covers Unicode classes in UTF-16 and UTF-32 pattern encodings.
+Case 52 covers `[あ]` and `\d` in those encodings.
+Candidate files, only if support is accepted: tokenizer, parser, compiler, and encoding helpers.
+Dependency: accepted BASE02 mapping. Read GIR sections 10, 61, and 133.1.
+Decide which non-ASCII-compatible pattern encodings the gem PoC supports.
+Keep case 51 compile errors separate from case 52 literal-class errors and `\d` fallback rows.
+If support is accepted, create separate repair cards for each proven invariant.
+Done: the support decision names accepted forms and routes. Keep both original methods visible.
+
+### TASK-BASE02-DEPTH-ERROR-DECISION — Nesting-limit error text
+
+Case: `#17`. Reproduce `RegexpNestingLimitTest#test_pattern_nesting_limit_is_reported_before_recursive_parse`.
+The 256-level limit is explicit. The test expects `regexp compilation limit exceeded: pattern_nesting`.
+Current source reports `regexp nesting is too deep` as `Onibi::RegexpError`.
+Candidate file, only if the text is an API promise: `ext/onibi/parser.c`.
+Dependency: accepted BASE02 mapping. Review GIR 133.1 and review-result P-10.
+Decide whether the exact message is part of the current public error contract.
+Do not change the limit or the message during this decision.
+Done: root records the decision and its contract source. If required, create a separate repair card.
+
+### BASE02-EXCLUDED-49 — Native MRI backreference state
+
+Case: `#49`. Reproduce `RegexpUtilityTest#test_last_match_matches_mri_and_match_question_does_not_change_it`.
+GIR 58 and `docs/development.md` exclude native matches from MRI backreference storage.
+This case has no repair card or queue row under the current contract.
+Keep the test and failure visible in legacy reports. Reopen only if the contract changes.
+
+### TASK-BASE02-LINT-HYGIENE — Census test-source lint
+
+Cases: all 70 BASE01 RuboCop findings across seven test files.
+The immutable mapping assigns each offense its own number, path, line, column, cop, and message.
+Owned files: `test/features/api/backreference_boundary_audit_test.rb` (10),
+`test/features/api/match_api_test.rb` (2), `test/features/api/native_case_equality_test.rb` (20),
+`test/features/api/native_match_operator_test.rb` (15), `test/features/api/native_tilde_test.rb` (12),
+`test/features/matching/scan_block_test.rb` (9), and `test/features/matching/scan_gsub_test.rb` (2).
+Dependency: accepted BASE02 mapping. Keep this hygiene work separate from semantic repairs.
+Review each global-variable and Perl-backreference offense by hand.
+Some tests need exact `$~`, `$&`, or numbered capture spelling. Do not replace them automatically.
+Keep `===` where a test checks case equality. Use narrow lint exceptions when spelling carries test meaning.
+Fix unrelated style findings without changing expected values or removing legacy tests.
+Run focused RuboCop on these seven files after repair. Do not run the full suite for this card.
+Done: all 70 findings have a safe fix or a narrow documented exception. Test meaning stays intact.
 
 ### TASK-CI01 — Acceptance suite and CI
 
