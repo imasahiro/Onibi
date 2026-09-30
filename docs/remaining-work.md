@@ -148,7 +148,8 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 23 | TASK-BASE02-CALL-CAPTURE-COUNT | Accepted | BASE02 | Nullable calls return the MRI-visible capture count. |
 | 24 | TASK-BASE02-NAMED-CAPTURE-PROJECTION | Accepted | BASE02 | Numbered captures follow the named-capture view. |
 | 25 | TASK-BASE02-MATCHDATA-SLICE | Accepted | BASE02 | MatchData slices use MRI selector rules. |
-| 26 | TASK-BASE02-BACKREF-FOLD | Ready | BASE02 | Case-folded backreferences follow MRI. |
+| 26 | TASK-BASE02-BACKREF-FOLD | Split | BASE02 | Case-folded backreferences follow MRI. |
+| 26a | TASK-BASE02-FOLD-END-AUDIT | Ready | BACKREF-FOLD case 3 | Audit the remaining case 5 end-anchor mismatch. |
 | 27 | TASK-BASE02-ASSERTION-GREEDY | Waiting | BASE02 | A greedy dot respects terminal assertion priority. |
 | 28 | TASK-BASE02-CLASS-RANGE | Waiting | BASE02 | The access-log class compiles and matches MRI. |
 | 29 | TASK-BASE02-REVERSE-FOLD | Waiting | BASE02 | Reverse Unicode folds preserve native and fallback routes. |
@@ -168,7 +169,7 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 43 | TASK-POC01 | Waiting | RAC01, CI01, PKG01 | Evidence for all eight PoC conditions. |
 | 44 | TASK-REL01 | Waiting | POC01 | Reviewed PR, passing required checks, and integration record. |
 
-The queue has 44 tasks. BASE02 adds 18 bounded cards before CI01.
+The queue has 45 tasks. BASE02 adds 18 bounded cards before CI01.
 The absence audit may add repair cards before CI01.
 Follow this order by default. Close an unnecessary repair with evidence and no code change.
 Do not dispatch an absence repair before its audit defines the cause.
@@ -473,6 +474,17 @@ Dependency: accepted BASE02 mapping. Use MRI encoding folds and keep capture spa
 Run both existing E2E methods. Compare patterns, subjects, captures, and ranges with MRI 4.0.6.
 Record DYNAMIC diagnostics. Require native execution and zero fallback for both cases.
 Done: both directions and absolute-end behavior match MRI.
+
+### TASK-BASE02-FOLD-END-AUDIT — Case 5 end-anchor audit
+
+Case 3 is accepted under BACKREF-FOLD. Case 5 remains open.
+The captured-byte lower bound fixes case 3 without changing anchor behavior.
+Audit case 5 with literal, capture and backreference forms, plus ASCII and multibyte controls.
+Compare exact MRI results and native search-start ranges. Keep explicit fallback routes separate.
+Source candidates: `ext/onibi/exec_dynamic.c`, compiler search metadata, and public search dispatch.
+Do not edit production code. Determine the cause before selecting repair owners.
+Done: the mismatch has a reproducible cause and a bounded repair proposal, or a precise remaining question.
+Evidence starts at `task-backref-fold-01/worker/pre-edit/scope-case5-anchor-01` in the relay record.
 
 ### TASK-BASE02-ASSERTION-GREEDY — Greedy repeat after terminal assertion
 

@@ -337,6 +337,14 @@ onibi_rseq_backref_consume(VALUE str, OnibiBytePos position,
 	*next_position = position + length;
 	return 1;
     }
+    long subject_length = RSTRING_LEN(str);
+    if (capture_begin < 0 || capture_end < capture_begin ||
+	capture_end > subject_length || position < 0 ||
+	position > subject_length)
+	return 0;
+    long capture_length = capture_end - capture_begin;
+    /* MRI requires at least the captured byte length before folding. */
+    if (capture_length > subject_length - position) return 0;
     if (capture_begin == capture_end) {
 	*next_position = position;
 	return 1;
