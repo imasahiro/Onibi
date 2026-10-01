@@ -874,7 +874,8 @@ onibi_token_scan_class(OnibiTokenScanState *scan, long *cursor,
 	return 1;
     }
     if (scan->in_class) {
-	if (byte == '-' && i > scan->class_body_start)
+	if (byte == '-' && i > scan->class_body_start && i + 1 < scan->length &&
+	    source[i + 1] != ']')
 	    recognition->kind = ONIBI_TOKEN_CLASS_RANGE;
 	else if (byte == '^' && i == scan->class_body_start)
 	    recognition->kind = ONIBI_TOKEN_CLASS_NEGATE;
@@ -1021,9 +1022,10 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 	else if (kind == ONIBI_TOKEN_LITERAL && !scan.in_class &&
 		 onibi_quantifier_byte_p(byte))
 	    kind = ONIBI_TOKEN_QUANTIFIER;
-	else if (kind == ONIBI_TOKEN_LITERAL && byte == '.')
+	else if (kind == ONIBI_TOKEN_LITERAL && !scan.in_class && byte == '.')
 	    kind = ONIBI_TOKEN_WILDCARD;
-	else if (kind == ONIBI_TOKEN_LITERAL && (byte == '^' || byte == '$'))
+	else if (kind == ONIBI_TOKEN_LITERAL && !scan.in_class &&
+		 (byte == '^' || byte == '$'))
 	    kind = ONIBI_TOKEN_ANCHOR;
 	if (kind == ONIBI_TOKEN_LITERAL && byte >= 0x80) {
 	    int char_len = rb_enc_mbclen(RSTRING_PTR(src) + start,
