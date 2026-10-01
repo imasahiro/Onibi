@@ -35,6 +35,8 @@ typedef struct {
     int options;
     int has_end_search_bound;
     uint32_t end_search_bound_bytes;
+    int has_search_origin_bound;
+    uint32_t search_origin_bound_delta_bytes;
     VerifiedGIRAnalysis analysis;
     OnibiLoweringWork lowering_work;
 } OnibiCompiled;
@@ -3498,6 +3500,70 @@ onibi_end_search_bound_compute(const onibi_gir_builder_t *builder,
     return 1;
 }
 
+static int
+onibi_search_origin_bound_compute(const onibi_gir_builder_t *builder,
+				  int parsed_options, uint32_t *delta_bytes)
+{
+    const OnibiAstArena *arena = builder->ast;
+    const uint32_t allowed_options =
+	ONIBI_OPT_MULTILINE | ONIBI_OPT_FIXEDENCODING;
+    if (arena == NULL || arena->root == ONIBI_AST_NONE ||
+	(size_t)arena->root >= arena->count ||
+	(parsed_options & ONIBI_OPT_MULTILINE) == 0 ||
+	((uint32_t)parsed_options & ~allowed_options) != 0 ||
+	(builder->encoding_index != rb_utf8_encindex() &&
+	 builder->encoding_index != rb_usascii_encindex()))
+	return 0;
+
+    const OnibiAstNode *root = onibi_ast_node_const(arena, arena->root);
+    if (root->kind != ONIBI_AST_SEQUENCE || root->child_count != 2 ||
+	root->children == NULL)
+	return 0;
+    OnibiAstId lookahead_id = root->children[0];
+    OnibiAstId repeat_id = root->children[1];
+    if ((size_t)lookahead_id >= arena->count ||
+	(size_t)repeat_id >= arena->count)
+	return 0;
+
+    const OnibiAstNode *lookahead = onibi_ast_node_const(arena, lookahead_id);
+    const OnibiAstNode *repeat = onibi_ast_node_const(arena, repeat_id);
+    if (lookahead->kind != ONIBI_AST_LOOKAHEAD ||
+	(lookahead->flags & ONIBI_AST_NODE_POSITIVE) == 0 ||
+	lookahead->body == ONIBI_AST_NONE ||
+	(size_t)lookahead->body >= arena->count ||
+	repeat->kind != ONIBI_AST_QUANTIFIER || repeat->min != 0 ||
+	repeat->token_kind != ONIBI_TOKEN_QUANTIFIER || repeat->byte != '*' ||
+	(repeat->flags & (ONIBI_AST_NODE_GREEDY | ONIBI_AST_NODE_HAS_MAX |
+			  ONIBI_AST_NODE_POSSESSIVE)) !=
+	    ONIBI_AST_NODE_GREEDY ||
+	repeat->atom == ONIBI_AST_NONE || (size_t)repeat->atom >= arena->count)
+	return 0;
+
+    const OnibiAstNode *lookahead_body =
+	onibi_ast_node_const(arena, lookahead->body);
+    const OnibiAstNode *wildcard = onibi_ast_node_const(arena, repeat->atom);
+    if (lookahead_body->kind != ONIBI_AST_SEQUENCE ||
+	lookahead_body->child_count != 1 || lookahead_body->children == NULL ||
+	wildcard->kind != ONIBI_AST_ANY ||
+	wildcard->token_kind != ONIBI_TOKEN_WILDCARD)
+	return 0;
+
+    OnibiAstId assertion_id = lookahead_body->children[0];
+    if ((size_t)assertion_id >= arena->count) return 0;
+    const OnibiAstNode *assertion = onibi_ast_node_const(arena, assertion_id);
+    if (assertion->kind == ONIBI_AST_LITERAL &&
+	assertion->token_kind == ONIBI_TOKEN_LITERAL) {
+	*delta_bytes = 0;
+	return 1;
+    }
+    if (assertion->kind == ONIBI_AST_ANCHOR &&
+	assertion->token_kind == ONIBI_TOKEN_ANCHOR && assertion->byte == 'z') {
+	*delta_bytes = 1;
+	return 1;
+    }
+    return 0;
+}
+
 /* Publish pass: transfer verified immutable GIR records to the result. */
 static VALUE
 onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
@@ -3631,6 +3697,10 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     compiled_result->options = parsed_options;
     compiled_result->has_end_search_bound = onibi_end_search_bound_compute(
 	builder, parsed_options, &compiled_result->end_search_bound_bytes);
+    compiled_result->has_search_origin_bound =
+	onibi_search_origin_bound_compute(
+	    builder, parsed_options,
+	    &compiled_result->search_origin_bound_delta_bytes);
     return result;
 }
 

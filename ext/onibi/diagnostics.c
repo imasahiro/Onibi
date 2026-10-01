@@ -1035,6 +1035,15 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	    rb_raise(rb_eRuntimeError,
 		     "end-bound diagnostic requires an absolute-end assertion");
     }
+    else if (scenario == rb_intern("search_origin_bound_old_version"))
+	header->version = 2;
+    else if (scenario ==
+	     rb_intern("search_origin_bound_noncanonical_unknown")) {
+	header->features &= ~ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND;
+	header->search_origin_bound_delta_bytes = 1;
+    }
+    else if (scenario == rb_intern("search_origin_bound_zero"))
+	header->search_origin_bound_delta_bytes = 0;
     else if (scenario == rb_intern("section_order"))
 	header->edges_offset = header->states_offset;
     else if (scenario == rb_intern("section_alignment"))

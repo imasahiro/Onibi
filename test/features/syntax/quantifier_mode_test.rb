@@ -471,6 +471,42 @@ class QuantifierModeTest < Minitest::Test
     end
   end
 
+  def test_multiline_greedy_dot_origin_bound_matches_mri_matrix
+    cases = [
+      ["(?=\\z).*", true, "xy", nil],
+      ["(?=\\z).*", true, "xy", 0],
+      ["(?=\\z).*", true, "xy", 1],
+      ["(?=\\z).*", true, "xy", 2],
+      ["(?=\\z).*", true, "", nil],
+      ["(?=\\z).*", true, "x", nil],
+      ["(?=\\z).*", true, "é", nil],
+      ["(?=\\z).*", true, "xéy", nil],
+      ["(?=\\z).*", true, "x\ny", nil],
+      ["(?=a).*", true, "za", nil],
+      ["(?=a).*", true, "a", 0],
+      ["(?=a).*", true, "za", 1],
+      ["(?=z).*", true, "abz", nil],
+      ["(?=é).*", true, "xé", nil],
+      ["(?=é).*", true, "xé", 1],
+      ["(?=\\z).*?", true, "xy", nil],
+      ["(?=\\z).*", false, "xy", nil],
+      [".*(?=\\z)", true, "xy", nil],
+      ["(?!z).*", true, "xy", nil],
+      ["(?<=a).*", true, "za", nil]
+    ]
+
+    assert_mri_match_matrix(cases)
+  end
+
+  def test_multiline_greedy_dot_origin_bound_stays_native
+    regexp = Onibi::Regexp.new("(?=\\z).*", Onibi::Regexp::MULTILINE)
+    diagnostics = regexp.send(:__onibi_diagnostics__, "xy")
+
+    assert diagnostics.fetch(:rseq)
+    assert_equal 1, diagnostics.fetch(:exec_kind)
+    assert_equal 0, diagnostics.fetch(:fallback)
+  end
+
   def test_zero_width_absence_searches_for_the_first_non_matching_position
     %w[aa aba].each do |input|
       expected = ::Regexp.new("(?~(?=a))").match(input)
@@ -490,5 +526,26 @@ class QuantifierModeTest < Minitest::Test
     mri = Regexp.new("(a*)+").match("a")
     onibi = Onibi::Regexp.new("(a*)+").match("a")
     assert_equal mri.to_a, onibi.to_a
+  end
+
+  def assert_mri_match_matrix(cases)
+    mismatches = []
+    cases.each do |pattern, multiline, input, offset|
+      mri_options = multiline ? ::Regexp::MULTILINE : 0
+      onibi_options = multiline ? Onibi::Regexp::MULTILINE : 0
+      mri = ::Regexp.new(pattern, mri_options)
+      onibi = Onibi::Regexp.new(pattern, onibi_options)
+      expected = offset.nil? ? mri.match(input) : mri.match(input, offset)
+      actual = offset.nil? ? onibi.match(input) : onibi.match(input, offset)
+      next if expected&.to_a == actual&.to_a &&
+              expected&.offset(0) == actual&.offset(0)
+
+      mismatches << [
+        [pattern, multiline, input, offset],
+        [expected&.to_a, expected&.offset(0)],
+        [actual&.to_a, actual&.offset(0)]
+      ]
+    end
+    assert_empty mismatches
   end
 end

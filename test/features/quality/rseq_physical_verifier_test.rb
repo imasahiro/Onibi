@@ -92,6 +92,27 @@ class RseqPhysicalVerifierTest < Minitest::Test
     )
   end
 
+  def test_rejects_old_search_origin_bound_version
+    assert_search_origin_bound_corruption_rejected(
+      :search_origin_bound_old_version,
+      "invalid Onibi RSeq blob"
+    )
+  end
+
+  def test_rejects_noncanonical_unknown_search_origin_bound
+    assert_search_origin_bound_corruption_rejected(
+      :search_origin_bound_noncanonical_unknown,
+      "invalid Onibi RSeq section layout"
+    )
+  end
+
+  def test_rejects_zero_search_origin_bound_for_end_lookahead
+    assert_search_origin_bound_corruption_rejected(
+      :search_origin_bound_zero,
+      "invalid Onibi RSeq section layout"
+    )
+  end
+
   def test_zero_width_feature_uses_only_root_reachable_states
     regexp = Onibi::Regexp.new("(?=a)")
 
@@ -171,6 +192,15 @@ class RseqPhysicalVerifierTest < Minitest::Test
   end
 
   private
+
+  def assert_search_origin_bound_corruption_rejected(scenario, expected_message)
+    regexp = Onibi::Regexp.new("(?=\\z).*", Onibi::Regexp::MULTILINE)
+    error = assert_raises(ArgumentError, scenario.to_s) do
+      regexp.send(:__onibi_rseq_verifier_diagnostics__, scenario)
+    end
+
+    assert_equal expected_message, error.message, scenario.to_s
+  end
 
   def assert_end_bound_corruption_rejected(scenario, expected_message)
     regexp = Onibi::Regexp.new("(s)\\1\\z", Onibi::Regexp::IGNORECASE)

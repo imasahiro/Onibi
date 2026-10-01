@@ -258,18 +258,28 @@ onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
 	    onibi_semantic_live_captures_prepare(&exec_ctx.semantic_arena,
 						 &obj->rseq_view);
 	OnibiBytePos start = search_origin;
+	OnibiBytePos maximum_start = RSTRING_LEN(str);
+	uint64_t subject_length = (uint64_t)RSTRING_LEN(str);
 	if ((obj->rseq_view.header->features &
 	     ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND) != 0) {
-	    uint64_t subject_length = (uint64_t)RSTRING_LEN(str);
 	    uint64_t bound = obj->rseq_view.header->end_search_bound_bytes;
 	    uint64_t minimum_start =
 		subject_length > bound ? subject_length - bound : 0;
 	    if (minimum_start > (uint64_t)start)
 		start = (OnibiBytePos)minimum_start;
 	}
+	if ((obj->rseq_view.header->features &
+	     ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND) != 0) {
+	    uint64_t origin = (uint64_t)search_origin;
+	    uint64_t delta =
+		obj->rseq_view.header->search_origin_bound_delta_bytes;
+	    uint64_t remaining = subject_length - origin;
+	    if (delta > remaining) delta = remaining;
+	    maximum_start = (OnibiBytePos)(origin + delta);
+	}
 	int candidate_valid = onibi_search_candidate_origin(
 	    str, &start, exec_ctx.encoding, exec_ctx.encoding_mode);
-	for (; candidate_valid;
+	for (; candidate_valid && start <= maximum_start;
 	     candidate_valid = onibi_search_candidate_next(
 		 str, &start, exec_ctx.encoding, exec_ctx.encoding_mode)) {
 	    exec_ctx.attempt_start = start;

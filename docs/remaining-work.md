@@ -152,8 +152,8 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 26a | TASK-BASE02-FOLD-END-AUDIT | Accepted | BACKREF-FOLD case 3 | Audit the remaining case 5 end-anchor mismatch. |
 | 26b | TASK-BASE02-FOLD-END-REPAIR | Accepted | FOLD-END-AUDIT | Preserve MRI absolute-end candidate-start bounds. |
 | 26c | TASK-BASE02-FOLD-END-WRAPPER | Waiting | FOLD-END-REPAIR | Resolve the retained scoped-wrapper mismatch. |
-| 27 | TASK-BASE02-ASSERTION-GREEDY | Ready | BASE02 | A greedy dot respects terminal assertion priority. |
-| 28 | TASK-BASE02-CLASS-RANGE | Waiting | BASE02 | The access-log class compiles and matches MRI. |
+| 27 | TASK-BASE02-ASSERTION-GREEDY | Accepted | BASE02 | A greedy dot respects terminal assertion priority. |
+| 28 | TASK-BASE02-CLASS-RANGE | Ready | BASE02 | The access-log class compiles and matches MRI. |
 | 29 | TASK-BASE02-REVERSE-FOLD | Waiting | BASE02 | Reverse Unicode folds preserve native and fallback routes. |
 | 30 | TASK-BASE02-UNICODE-CLASS-FOLD | Waiting | BASE02 | Ignore-case range closure follows MRI encoding folds. |
 | 31 | TASK-BASE02-ABSENCE-AUDIT | Waiting | BASE02 | The 25 absence failures have a bounded root-cause map. |

@@ -2035,6 +2035,7 @@ first-character bitmap
 required exact literal
 exact prefix
 absolute-end source-byte bound for a narrow backreference form
+candidate-start byte-delta bound for a narrow lookahead form
 ```
 
 A prefilter can reject candidate positions.
@@ -2061,10 +2062,27 @@ end. The matcher starts at the larger of `search_origin` and
 position to a valid character boundary. This field is not a match width.
 The compiler derives this bound by adding the source byte width of the direct
 literal in the capture twice. The reference must be numeric or uniquely named.
-The 17-row MRI differential
-matrix checks selected public results and byte offsets. It does not inspect
-this field. The verifier checks canonical field form and an absolute-end
-action. It does not prove the value for arbitrary metadata or every path.
+The 17-row MRI differential matrix checks selected public results and byte
+offsets. It does not inspect this field. The verifier checks canonical field
+form and an absolute-end action. It does not prove the value for arbitrary
+metadata or every path.
+
+The compiler also emits a candidate-start bound for one narrow form. The root
+sequence must have exactly two nodes: a positive lookahead, then a greedy
+unbounded `.*`. The lookahead body must contain one direct literal or `\z`.
+The parsed options must include `MULTILINE`. They can also include
+`FIXEDENCODING`. Other options and AST forms keep the existing search policy.
+
+The direct literal uses a zero-byte delta. The `\z` form uses a one-byte
+delta. The feature bit distinguishes an active zero delta from no bound. The
+matcher clamps `search_origin + delta` to the subject byte length. It tests
+valid character boundaries at or below that inclusive limit. If an absolute-
+end lower bound is also active, both limits apply.
+
+The verifier checks the feature bit, canonical field form, multiline flag,
+positive lookahead, and the delta relation to an absolute-end assertion. These
+checks do not prove the exact source tree or every path. The 20-row MRI
+differential matrix checks the supported shapes and boundary cases.
 
 ---
 
@@ -2114,18 +2132,25 @@ typedef struct {
     uint8_t prefix_length;
     uint8_t prefix[31];
     uint32_t end_search_bound_bytes;
+    uint32_t search_origin_bound_delta_bytes;
 } OnibiRSeqHeader;
 ```
 
 The current RSeq version is:
 
 ```text
-2
+3
 ```
 
-Version 2 adds `end_search_bound_bytes` to the physical header. The matching
-feature bit requires a positive bound and an absolute-end action. A clear
-feature bit requires a zero field.
+Version 2 added `end_search_bound_bytes` to the physical header. Its feature
+bit requires a positive bound and an absolute-end action. A clear feature bit
+requires a zero field.
+
+Version 3 adds `search_origin_bound_delta_bytes`. Its feature bit requires a
+zero or one byte delta, the multiline flag, and a positive lookahead. A zero
+delta must not have an absolute-end assertion. A delta of one byte must have
+one.
+A clear feature bit requires a zero field.
 
 All sections must have four-byte alignment.
 
