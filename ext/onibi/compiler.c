@@ -3441,6 +3441,80 @@ onibi_end_search_capture_source_width(const OnibiAstArena *arena, OnibiAstId id,
 }
 
 static int
+onibi_end_search_optional_class_source_width(const OnibiAstArena *arena,
+					     OnibiAstId id, uint32_t *width)
+{
+    if (id == ONIBI_AST_NONE || (size_t)id >= arena->count) return 0;
+    const OnibiAstNode *quantifier = onibi_ast_node_const(arena, id);
+    if (quantifier->kind != ONIBI_AST_QUANTIFIER || quantifier->min != 0 ||
+	quantifier->max != 1 ||
+	quantifier->flags != (ONIBI_AST_NODE_GREEDY | ONIBI_AST_NODE_HAS_MAX) ||
+	quantifier->atom == ONIBI_AST_NONE ||
+	(size_t)quantifier->atom >= arena->count)
+	return 0;
+
+    const OnibiAstNode *character_class =
+	onibi_ast_node_const(arena, quantifier->atom);
+    if (character_class->kind != ONIBI_AST_CHARACTER_CLASS ||
+	character_class->token_kind != ONIBI_TOKEN_CLASS_START ||
+	character_class->flags != 0 || character_class->range_count != 0 ||
+	character_class->child_count != 1 || character_class->children == NULL)
+	return 0;
+
+    OnibiAstId member_id = character_class->children[0];
+    if (member_id == ONIBI_AST_NONE || (size_t)member_id >= arena->count)
+	return 0;
+    const OnibiAstNode *member = onibi_ast_node_const(arena, member_id);
+    if (member->kind != ONIBI_AST_LITERAL ||
+	member->token_kind != ONIBI_TOKEN_LITERAL || member->bytes.present ||
+	member->child_count != 0 || member->range_count != 0 ||
+	member->start < 0 || member->end <= member->start ||
+	member->end - member->start != 1)
+	return 0;
+    if (!((member->byte >= 'A' && member->byte <= 'Z') ||
+	  (member->byte >= 'a' && member->byte <= 'z')))
+	return 0;
+
+    *width = 1;
+    return 1;
+}
+
+static int
+onibi_end_search_optional_class_bound_compute(const OnibiAstArena *arena,
+					      const OnibiAstNode *root,
+					      int encoding_index,
+					      int parsed_options,
+					      uint32_t *bound_bytes)
+{
+    const uint32_t allowed_options =
+	ONIBI_OPT_IGNORECASE | ONIBI_OPT_FIXEDENCODING;
+    if ((encoding_index != rb_utf8_encindex() &&
+	 encoding_index != rb_usascii_encindex()) ||
+	((uint32_t)parsed_options & ~allowed_options) != 0 ||
+	(parsed_options & ONIBI_OPT_IGNORECASE) == 0 ||
+	root->child_count != 2 || root->children == NULL)
+	return 0;
+
+    OnibiAstId class_repeat_id = root->children[0];
+    OnibiAstId end_anchor_id = root->children[1];
+    if (class_repeat_id == ONIBI_AST_NONE || end_anchor_id == ONIBI_AST_NONE ||
+	(size_t)class_repeat_id >= arena->count ||
+	(size_t)end_anchor_id >= arena->count)
+	return 0;
+    const OnibiAstNode *end_anchor = onibi_ast_node_const(arena, end_anchor_id);
+    if (end_anchor->kind != ONIBI_AST_ANCHOR ||
+	end_anchor->token_kind != ONIBI_TOKEN_ANCHOR || end_anchor->byte != 'z')
+	return 0;
+
+    uint32_t source_width = 0;
+    if (!onibi_end_search_optional_class_source_width(arena, class_repeat_id,
+						      &source_width))
+	return 0;
+    *bound_bytes = source_width;
+    return 1;
+}
+
+static int
 onibi_end_search_bound_compute(const onibi_gir_builder_t *builder,
 			       int parsed_options, uint32_t *bound_bytes)
 {
@@ -3455,7 +3529,11 @@ onibi_end_search_bound_compute(const onibi_gir_builder_t *builder,
 	return 0;
 
     const OnibiAstNode *root = onibi_ast_node_const(arena, arena->root);
-    if (root->kind != ONIBI_AST_SEQUENCE || root->child_count != 3) return 0;
+    if (root->kind != ONIBI_AST_SEQUENCE) return 0;
+    if (root->child_count == 2)
+	return onibi_end_search_optional_class_bound_compute(
+	    arena, root, builder->encoding_index, parsed_options, bound_bytes);
+    if (root->child_count != 3 || root->children == NULL) return 0;
     OnibiAstId capture_id = root->children[0];
     OnibiAstId backref_id = root->children[1];
     OnibiAstId end_anchor_id = root->children[2];

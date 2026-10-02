@@ -154,7 +154,7 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 26c | TASK-BASE02-FOLD-END-WRAPPER | Waiting | FOLD-END-REPAIR | Resolve the retained scoped-wrapper mismatch. |
 | 27 | TASK-BASE02-ASSERTION-GREEDY | Accepted | BASE02 | A greedy dot respects terminal assertion priority. |
 | 28 | TASK-BASE02-CLASS-RANGE | Accepted | BASE02 | The access-log class compiles and matches MRI. |
-| 29 | TASK-BASE02-REVERSE-FOLD | Ready | BASE02 | Reverse Unicode folds preserve native and fallback routes. |
+| 29 | TASK-BASE02-REVERSE-FOLD | Partial | BASE02 | Reverse Unicode folds preserve native and fallback routes. |
 | 30 | TASK-BASE02-UNICODE-CLASS-FOLD | Waiting | BASE02 | Ignore-case range closure follows MRI encoding folds. |
 | 31 | TASK-BASE02-ABSENCE-AUDIT | Waiting | BASE02 | The 25 absence failures have a bounded root-cause map. |
 | 32 | TASK-BASE02-INLINE-M | Waiting | BASE02 | Inline multiline changes stay inside their scopes. |
@@ -531,6 +531,10 @@ Record the class compile route. Require native execution and zero fallback for t
 Done: the access-log captures match MRI, and the differential guard still rejects false results.
 
 ### TASK-BASE02-REVERSE-FOLD — Reverse Unicode fold paths
+
+Case 11 is accepted for direct optional singleton ASCII letter classes.
+The compiler uses the existing one-byte absolute-end search bound.
+Class-tail MAP search and DYNAMIC capture/fold cases remain open.
 
 Cases: `#10, #11, #12, #18, #19, #20`. Reproduce these six methods:
 `LookaheadTest#test_ignorecase_reverse_fold_anchor_boundary_through_wrappers`,

@@ -2050,11 +2050,12 @@ For ASCII-compatible strings with seven-bit content, byte search is permitted.
 
 For other strings, candidate positions must remain valid character boundaries.
 
-The compiler sets this bound only for a UTF-8 or US-ASCII pattern with
-`IGNORECASE`. Its root sequence must contain one capture, one reference to
-that capture, and a final `\z`. The capture must contain one direct literal.
-The compiler leaves all other forms unbounded. It does not use `\A`, `\G`,
-`\Z`, `$`, or branch-local anchors for this bound.
+For the capture/backreference form, the compiler sets this bound only for a
+UTF-8 or US-ASCII pattern with `IGNORECASE`. Its root sequence must contain
+one capture, one reference to that capture, and a final `\z`. The capture
+must contain one direct literal. The compiler leaves all other forms
+unbounded. It does not use `\A`, `\G`, `\Z`, `$`, or branch-local anchors
+for this bound.
 
 The header field `end_search_bound_bytes` is a byte distance from the subject
 end. The matcher starts at the larger of `search_origin` and
@@ -2066,6 +2067,17 @@ The 17-row MRI differential matrix checks selected public results and byte
 offsets. It does not inspect this field. The verifier checks canonical field
 form and an absolute-end action. It does not prove the value for arbitrary
 metadata or every path.
+
+The compiler also sets a one-byte bound for one optional-class form. The
+pattern source must be UTF-8 or US-ASCII. The only allowed options are
+`IGNORECASE`, with optional `FIXEDENCODING`. Its root sequence must contain a
+greedy optional class and a final `\z`. The class must contain one direct
+ASCII alphabetic literal. It must not be negated, nested, intersected, or
+ranged. All other AST shapes and options keep the existing search policy.
+This form excludes `\A` and extra sequence atoms. The matcher advances the
+one-byte candidate to a character boundary.
+A focused MRI E2E matrix checks long s, Kelvin, ASCII, offsets, and existing
+search bounds.
 
 The compiler also emits a candidate-start bound for one narrow form. The root
 sequence must have exactly two nodes: a positive lookahead, then a greedy

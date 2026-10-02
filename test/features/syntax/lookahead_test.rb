@@ -206,12 +206,103 @@ class LookaheadTest < Minitest::Test
 
   def test_ignorecase_long_s_optional_class_stops_before_absolute_end
     source = "[s]?\\z"
-    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ſ")
-    actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("ſ")
+    subject = "ſ"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(subject)
+    regexp = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE)
+    actual = regexp.match(subject)
 
+    assert_equal [""], expected&.to_a
+    assert_equal [1, 1], [expected.begin(0), expected.end(0)]
+    assert_equal [2, 2], expected.byteoffset(0)
     assert_equal expected&.to_a, actual&.to_a
     assert_equal expected && [expected.begin(0), expected.end(0)],
                  actual && [actual.begin(0), actual.end(0)]
+    assert_equal expected && expected.byteoffset(0),
+                 actual && actual.byteoffset(0)
+    assert_native_route(regexp, subject, source)
+  end
+
+  def test_ignorecase_optional_singleton_class_end_matrix_matches_mri
+    cases = [
+      ["long-s", "[s]?\\z", "ſ", Onibi::Regexp::IGNORECASE],
+      ["long-s-fixed", "[s]?\\z", "ſ",
+       Onibi::Regexp::IGNORECASE | Onibi::Regexp::FIXEDENCODING],
+      ["kelvin-k", "[k]?\\z", "K", Onibi::Regexp::IGNORECASE],
+      ["kelvin-upper-k-fixed", "[K]?\\z", "K",
+       Onibi::Regexp::IGNORECASE | Onibi::Regexp::FIXEDENCODING],
+      ["ascii-positive", "[a]?\\z", "a", Onibi::Regexp::IGNORECASE],
+      ["ascii-nonmatch", "[a]?\\z", "b", Onibi::Regexp::IGNORECASE],
+      ["empty-subject", "[s]?\\z", "", Onibi::Regexp::IGNORECASE],
+      ["multiline-subject", "[s]?\\z", "line\nſ",
+       Onibi::Regexp::IGNORECASE],
+      ["anchored-full-character", "\\A[s]?\\z", "ſ",
+       Onibi::Regexp::IGNORECASE],
+      ["option-off", "[s]?\\z", "ſ", 0],
+      ["standalone-class", "[s]", "ſ", Onibi::Regexp::IGNORECASE],
+      ["backreference-end-bound", "(s)\\1\\z", "ss",
+       Onibi::Regexp::IGNORECASE],
+      ["lookahead-origin-bound", "(?=\\z).*", "x",
+       Onibi::Regexp::MULTILINE]
+    ]
+    ascii_source = "[s]?\\z".dup.force_encoding(Encoding::US_ASCII)
+    ascii_subject = "s".dup.force_encoding(Encoding::US_ASCII)
+    cases << ["ascii-source", ascii_source, ascii_subject,
+              Onibi::Regexp::IGNORECASE]
+    cases << ["ascii-source-fixed", ascii_source, ascii_subject,
+              Onibi::Regexp::IGNORECASE | Onibi::Regexp::FIXEDENCODING]
+
+    cases.each do |label, source, subject, options|
+      expected = ::Regexp.new(source, options).match(subject)
+      regexp = Onibi::Regexp.new(source, options)
+      actual = regexp.match(subject)
+
+      assert_equal expected&.to_a, actual&.to_a, label
+      expected_ranges = expected&.to_a&.each_index&.map do |index|
+        [expected.begin(index), expected.end(index)]
+      end
+      actual_ranges = actual&.to_a&.each_index&.map do |index|
+        [actual.begin(index), actual.end(index)]
+      end
+      assert_equal expected_ranges, actual_ranges, label
+
+      expected_byte_ranges = expected&.to_a&.each_index&.map do |index|
+        expected.byteoffset(index)
+      end
+      actual_byte_ranges = actual&.to_a&.each_index&.map do |index|
+        actual.byteoffset(index)
+      end
+      assert_equal expected_byte_ranges, actual_byte_ranges, label
+      assert_native_route(regexp, subject, label)
+    end
+  end
+
+  def test_ignorecase_optional_singleton_class_end_keeps_match_offsets
+    source = "[s]?\\z"
+    options = Onibi::Regexp::IGNORECASE
+    regexp = Onibi::Regexp.new(source, options)
+    cases = [
+      ["omitted", "ſ", nil],
+      ["zero", "ſ", 0],
+      ["nonzero", "aſ", 1],
+      ["end", "aſ", 2]
+    ]
+
+    cases.each do |label, subject, offset|
+      expected_regexp = ::Regexp.new(source, ::Regexp::IGNORECASE)
+      expected = if offset.nil?
+                   expected_regexp.match(subject)
+                 else
+                   expected_regexp.match(subject, offset)
+                 end
+      actual = offset.nil? ? regexp.match(subject) : regexp.match(subject, offset)
+
+      assert_equal expected&.to_a, actual&.to_a, label
+      assert_equal expected && [expected.begin(0), expected.end(0)],
+                   actual && [actual.begin(0), actual.end(0)], label
+      assert_equal expected && expected.byteoffset(0),
+                   actual && actual.byteoffset(0), label
+      assert_native_route(regexp, subject, label)
+    end
   end
 
   def test_ignorecase_posix_optional_class_keeps_single_source_width
@@ -589,5 +680,18 @@ class LookaheadTest < Minitest::Test
 
   def test_lookbehind_rejects_variable_width_linebreak_escape
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=\\R).") }
+  end
+
+  private
+
+  def assert_native_route(regexp, subject, label)
+    info = regexp.send(:__onibi_diagnostics__, subject)
+
+    assert info.fetch(:rseq), label
+    refute_nil info.fetch(:exec_kind), label
+    assert_equal 0, info.fetch(:fallback), label
+    assert_equal :none, info.fetch(:fallback_reason), label
+    assert_equal :none, info.fetch(:unsupported_reason), label
+    assert_equal :none, info.fetch(:executor_error_kind), label
   end
 end
