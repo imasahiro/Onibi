@@ -2036,6 +2036,7 @@ required exact literal
 exact prefix
 absolute-end source-byte bound for a narrow backreference form
 candidate-start byte-delta bound for a narrow lookahead form
+forward class-tail MAP candidate hint for one scoped singleton class form
 ```
 
 A prefilter can reject candidate positions.
@@ -2096,6 +2097,40 @@ positive lookahead, and the delta relation to an absolute-end assertion. These
 checks do not prove the exact source tree or every path. The 20-row MRI
 differential matrix checks the supported shapes and boundary cases.
 
+The compiler can attach a forward class-tail MAP hint to one narrow form.
+The root sequence must contain only a scoped `i` option and one literal. The
+scope must contain one direct singleton class. The literal must be a
+sensitive ASCII character. An optional leading `\A` is allowed. The pattern
+source must use UTF-8 or US-ASCII. `FIXEDENCODING` is the only allowed parsed
+option. Other AST shapes and options keep the normal candidate search.
+
+The class member must be one scalar. MRI's simple fold data must consume that
+scalar. Each fold item must emit one scalar. The normalized class string
+must be one byte. At least one fold output must have a different UTF-8 width
+from the source scalar. The compiler forms the prefix map from the source
+byte and each distinct first byte of a fold output. It sets the hint only
+when MRI's integer map score strictly beats both the prefix map and the
+exact candidate. The stored tail distances are one byte each. A pinned MRI
+optimizer trace supports these rules. The rules do not clone MRI's general
+optimizer.
+
+The v4 header stores the ASCII tail byte, an optional anchored flag, and
+`dmin_bytes` and `dmax_bytes`. The feature bit requires both byte distances
+to equal one. A clear feature bit requires zero values in all class-tail
+fields. The reserved field must always be zero. The physical verifier checks
+the canonical fields and the class, tail, and optional-anchor RSeq shape.
+It cannot reconstruct the source AST or prove the optimizer score from RSeq.
+
+The matcher uses this hint only for UTF-8 input. It also uses the hint for
+ASCII-only strings tagged as UTF-8. It scans candidate starts in increasing
+character order. A MAP hit must be before an exclusive byte limit. MRI forms
+the interval as `low = hit - dmax_bytes` and
+`high = hit - dmin_bytes`. It moves only `low` to the next character head.
+The interval includes `high`. For distances `1/1`, a candidate can pass only
+when the tail byte follows it by one byte at a character head. An anchored
+hint limits MAP hits to byte positions below two. The matcher does not use
+this hint for reverse search or non-UTF-8 input.
+
 ---
 
 # 47. RSeq Header
@@ -2145,13 +2180,18 @@ typedef struct {
     uint8_t prefix[31];
     uint32_t end_search_bound_bytes;
     uint32_t search_origin_bound_delta_bytes;
+    uint8_t class_tail_map_byte;
+    uint8_t class_tail_map_flags;
+    uint16_t class_tail_map_reserved;
+    uint32_t class_tail_map_dmin_bytes;
+    uint32_t class_tail_map_dmax_bytes;
 } OnibiRSeqHeader;
 ```
 
 The current RSeq version is:
 
 ```text
-3
+4
 ```
 
 Version 2 added `end_search_bound_bytes` to the physical header. Its feature
@@ -2163,6 +2203,11 @@ zero or one byte delta, the multiline flag, and a positive lookahead. A zero
 delta must not have an absolute-end assertion. A delta of one byte must have
 one.
 A clear feature bit requires a zero field.
+
+Version 4 adds the forward class-tail MAP candidate fields described in
+section 46. Its feature bit requires an ASCII tail byte, optional anchored
+flag, and byte distances `1/1`. A clear feature bit requires zero values in
+all class-tail fields. The reserved field is always zero.
 
 All sections must have four-byte alignment.
 

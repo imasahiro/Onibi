@@ -162,6 +162,85 @@ onibi_rseq_bytes_zero(const unsigned char *bytes, size_t length)
     return 1;
 }
 
+static const OnibiRAction *onibi_rseq_action_program(const OnibiRSeqView *view,
+						     uint32_t action_offset,
+						     uint32_t *count);
+
+static int
+onibi_rseq_class_tail_map_structure_valid(const OnibiRSeqView *view,
+					  uint32_t literal_count)
+{
+    const OnibiRSeqHeader *header = view->header;
+
+    /* A claimed hint must describe the exact two consuming states that the
+     * compiler emits for one class followed by one literal.  State 2 is the
+     * physical accept sentinel; normal edges occupy 0 and 1, then the start
+     * edge occupies 2. */
+    if (header->state_count != 3 || header->edge_count != 3 ||
+	header->start_edge_base != 2 || header->start_edge_count != 1 ||
+	literal_count != 1 || header->class_count != 1 ||
+	header->capture_count != 0 || header->semantic_capture_count != 0 ||
+	header->backref_count != 0 || header->counter_count != 0 ||
+	header->subprogram_count != 1 || header->lookbehind_width_count != 0 ||
+	header->exec_kind == ONIBI_EXEC_DYNAMIC ||
+	(header->flags & ONIBI_RSEQ_HEADER_FLAG_IGNORECASE) != 0 ||
+	(header->features & (ONIBI_RSEQ_FEATURE_FIRST_BITMAP |
+			     ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND |
+			     ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND)) != 0 ||
+	header->prefix_length != 0 ||
+	!onibi_rseq_bytes_zero(header->first_bitmap,
+			       sizeof(header->first_bitmap)))
+	return 0;
+
+    const OnibiREdge *start_edge = &view->edges[header->start_edge_base];
+    if (start_edge->destination != 0) return 0;
+    int anchored = 0;
+    if (start_edge->action_offset != 0) {
+	uint32_t action_count = 0;
+	const OnibiRAction *actions = onibi_rseq_action_program(
+	    view, start_edge->action_offset, &action_count);
+	if (action_count != 1 || actions == NULL ||
+	    actions[0].op != ONIBI_RA_ASSERT_POSITION ||
+	    actions[0].flags != 0 ||
+	    actions[0].arg16 != ONIBI_RAP_BEGIN_BUFFER || actions[0].arg32 != 0)
+	    return 0;
+	anchored = 1;
+    }
+    if (((header->class_tail_map_flags &
+	  ONIBI_RSEQ_CLASS_TAIL_MAP_FLAG_ANCHORED) != 0) != anchored ||
+	header->action_count != (anchored ? 2U : 0U))
+	return 0;
+
+    const OnibiRState *class_state = &view->states[start_edge->destination];
+    if (class_state->op != ONIBI_RS_CLASS || class_state->flags != 0 ||
+	class_state->payload != 0 || class_state->edge_base != 0 ||
+	class_state->edge_count != 1)
+	return 0;
+    const OnibiClassDesc *klass = &view->classes[class_state->payload];
+    if (klass->kind != ONIBI_CLASS_CODEPOINT_RANGES ||
+	(klass->flags & (ONIBI_RSEQ_CLASS_FLAG_NEGATED |
+			 ONIBI_RSEQ_CLASS_FLAG_INCOMPLETE_CASEFOLD)) != 0)
+	return 0;
+    const OnibiREdge *class_edge = &view->edges[class_state->edge_base];
+    if (class_edge->action_offset != 0 || class_edge->destination != 1)
+	return 0;
+    const OnibiRState *tail_state = &view->states[class_edge->destination];
+    if (tail_state->op != ONIBI_RS_CHAR || tail_state->flags != 0 ||
+	tail_state->payload != 0 || tail_state->edge_base != 1 ||
+	tail_state->edge_count != 1)
+	return 0;
+    const OnibiLiteralDesc *tail = &view->literals[tail_state->payload];
+    if (tail->data_length != 1 || tail->flags != 0 ||
+	view->blob[tail->data_offset] != header->class_tail_map_byte)
+	return 0;
+    const OnibiREdge *tail_edge = &view->edges[tail_state->edge_base];
+    const OnibiRState *accept_state = &view->states[2];
+    return tail_edge->destination == ONIBI_ACCEPT_STATE &&
+	   tail_edge->action_offset == 0 && accept_state->op == 0 &&
+	   accept_state->flags == 0 && accept_state->payload == 0 &&
+	   accept_state->edge_count == 0;
+}
+
 typedef struct {
     VALUE blob;
     onibi_allocation_owner_t allocations;
@@ -741,7 +820,10 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	ONIBI_RSEQ_FEATURE_LITERAL_CASEFOLD |
 	ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY |
 	ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND |
-	ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND;
+	ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND |
+	ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP;
+    int has_class_tail_map =
+	(header->features & ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP) != 0;
     uint64_t states_end = (uint64_t)header->states_offset +
 			  (uint64_t)header->state_count * sizeof(OnibiRState);
     uint64_t edges_end = (uint64_t)header->edges_offset +
@@ -778,6 +860,19 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	 header->search_origin_bound_delta_bytes != 0) ||
 	(((header->features & ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND) != 0) &&
 	 header->search_origin_bound_delta_bytes > 1) ||
+	(header->class_tail_map_reserved != 0) ||
+	(has_class_tail_map &&
+	 ((header->class_tail_map_flags &
+	   ~ONIBI_RSEQ_CLASS_TAIL_MAP_FLAG_ANCHORED) != 0 ||
+	  header->class_tail_map_byte >= 0x80 ||
+	  header->class_tail_map_dmin_bytes != 1 ||
+	  header->class_tail_map_dmax_bytes != 1 || header->state_count != 3 ||
+	  header->edge_count != 3 || header->start_edge_base != 2 ||
+	  header->start_edge_count != 1 || header->class_count != 1)) ||
+	(!has_class_tail_map && (header->class_tail_map_byte != 0 ||
+				 header->class_tail_map_flags != 0 ||
+				 header->class_tail_map_dmin_bytes != 0 ||
+				 header->class_tail_map_dmax_bytes != 0)) ||
 	(header->states_offset | header->edges_offset | header->actions_offset |
 	 header->classes_offset | header->literals_offset |
 	 header->descriptors_offset | header->backrefs_offset |
@@ -1314,6 +1409,10 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	     ONIBI_RSEQ_CLASS_FLAG_INCOMPLETE_CASEFOLD) != 0)
 	    incomplete_casefold = 1;
 
+    if (has_class_tail_map &&
+	!onibi_rseq_class_tail_map_structure_valid(&view, literal_count))
+	rb_raise(rb_eArgError, "inconsistent Onibi RSeq execution contract");
+
     for (uint32_t i = 0; i < header->lookbehind_width_count; i++)
 	(void)view.lookbehind_widths[i];
 
@@ -1360,6 +1459,8 @@ onibi_rseq_blob_validate_body(VALUE opaque)
      * its shape, but the verifier cannot reconstruct the source AST delta. */
     if ((header->features & ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND) != 0)
 	expected_features |= ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND;
+    if (has_class_tail_map)
+	expected_features |= ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP;
     uint32_t semantic_feature_mask =
 	ONIBI_RSEQ_FEATURE_BACKREF | ONIBI_RSEQ_FEATURE_CAPTURE |
 	ONIBI_RSEQ_FEATURE_COUNTER | ONIBI_RSEQ_FEATURE_MATCH_RESET |
@@ -1368,7 +1469,8 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD |
 	ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY |
 	ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND |
-	ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND;
+	ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND |
+	ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP;
     unsigned char expected_bitmap[sizeof(header->first_bitmap)];
     int bitmap_valid = 1, bitmap_have = 0;
     memset(expected_bitmap, 0, sizeof(expected_bitmap));

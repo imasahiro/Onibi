@@ -126,6 +126,54 @@ onibi_search_candidate_next(VALUE str, OnibiBytePos *start,
     return 0;
 }
 
+/* With fixed byte distances 1/1, a MAP hit can admit only the candidate
+ * immediately before it.  Visit those candidates in the normal forward
+ * character order.  This is the same inclusive [low, high] interval that
+ * MRI forms after its character-head adjustment of low. */
+static int
+onibi_search_class_tail_map_candidate(VALUE str, const OnibiRSeqHeader *header,
+				      OnibiBytePos candidate,
+				      rb_encoding *encoding)
+{
+    uint64_t length = (uint64_t)RSTRING_LEN(str);
+    if (candidate < 0 || (uint64_t)candidate > length) return 0;
+    uint64_t candidate_offset = (uint64_t)candidate;
+    uint64_t dmin = header->class_tail_map_dmin_bytes;
+    uint64_t dmax = header->class_tail_map_dmax_bytes;
+    if (dmin > length - candidate_offset) return 0;
+
+    uint64_t hit = candidate_offset + dmin;
+    uint64_t hit_limit = length;
+    if ((header->class_tail_map_flags &
+	 ONIBI_RSEQ_CLASS_TAIL_MAP_FLAG_ANCHORED) != 0) {
+	if (candidate_offset != 0) return 0;
+	/* MRI scans one candidate byte plus dmax bytes for an anchored MAP. */
+	uint64_t anchored_limit = dmax + 1U;
+	if (anchored_limit < hit_limit) hit_limit = anchored_limit;
+    }
+
+    /* MAP search treats its upper hit bound as exclusive. */
+    if (hit >= hit_limit || hit >= length ||
+	!onibi_character_boundary(str, (OnibiBytePos)hit))
+	return 0;
+    const unsigned char *bytes = (const unsigned char *)RSTRING_PTR(str);
+    if (bytes[hit] != header->class_tail_map_byte) return 0;
+
+    /* Rebuild the byte candidate interval.  MRI leaves high raw and moves
+     * only low to the next character head.  Saturate before subtraction. */
+    uint64_t low = hit < dmax ? 0 : hit - dmax;
+    uint64_t high = hit < dmin ? 0 : hit - dmin;
+    if (!onibi_character_boundary(str, (OnibiBytePos)low)) {
+	const char *begin = RSTRING_PTR(str);
+	const char *end = begin + (size_t)length;
+	const char *adjusted =
+	    rb_enc_right_char_head(begin, begin + (size_t)low, end, encoding);
+	if (adjusted < begin || adjusted > end) return 0;
+	low = (uint64_t)(adjusted - begin);
+    }
+    return candidate_offset >= low && candidate_offset <= high;
+}
+
 static void
 onibi_frontier_release(OnibiFrontier *frontier)
 {
@@ -279,6 +327,9 @@ onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
 	}
 	int candidate_valid = onibi_search_candidate_origin(
 	    str, &start, exec_ctx.encoding, exec_ctx.encoding_mode);
+	int use_class_tail_map = (obj->rseq_view.header->features &
+				  ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP) != 0 &&
+				 exec_ctx.encoding == rb_utf8_encoding();
 	for (; candidate_valid && start <= maximum_start;
 	     candidate_valid = onibi_search_candidate_next(
 		 str, &start, exec_ctx.encoding, exec_ctx.encoding_mode)) {
@@ -290,6 +341,10 @@ onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
 	    exec_ctx.rseq = obj->rseq;
 	    exec_ctx.view = &obj->rseq_view;
 	    if (!onibi_character_boundary(str, start)) continue;
+	    if (use_class_tail_map &&
+		!onibi_search_class_tail_map_candidate(
+		    str, obj->rseq_view.header, start, exec_ctx.encoding))
+		continue;
 	    if (obj->rseq_view.regular_capable &&
 		(exec_ctx.program->features &
 		 ONIBI_RSEQ_FEATURE_FIRST_BITMAP) != 0 &&

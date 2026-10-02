@@ -37,6 +37,11 @@ typedef struct {
     uint32_t end_search_bound_bytes;
     int has_search_origin_bound;
     uint32_t search_origin_bound_delta_bytes;
+    int has_class_tail_map;
+    uint8_t class_tail_map_byte;
+    uint8_t class_tail_map_flags;
+    uint32_t class_tail_map_dmin_bytes;
+    uint32_t class_tail_map_dmax_bytes;
     VerifiedGIRAnalysis analysis;
     OnibiLoweringWork lowering_work;
 } OnibiCompiled;
@@ -3642,6 +3647,237 @@ onibi_search_origin_bound_compute(const onibi_gir_builder_t *builder,
     return 0;
 }
 
+static int
+onibi_class_tail_literal_bytes(const OnibiAstArena *arena,
+			       const OnibiAstNode *node, unsigned char *storage,
+			       const unsigned char **bytes, size_t *length)
+{
+    if (node->kind != ONIBI_AST_LITERAL) return 0;
+    if (node->bytes.present) {
+	if (node->bytes.length == 0 ||
+	    node->bytes.offset > arena->bytes_count ||
+	    node->bytes.length > arena->bytes_count - node->bytes.offset)
+	    return 0;
+	*bytes = arena->bytes + node->bytes.offset;
+	*length = node->bytes.length;
+	return 1;
+    }
+    if (node->byte < 0 || node->byte > UINT8_MAX) return 0;
+    storage[0] = (unsigned char)node->byte;
+    *bytes = storage;
+    *length = 1;
+    return 1;
+}
+
+static int
+onibi_class_tail_map_position_value(unsigned char byte)
+{
+    /* MRI 4.0.6 ByteValTable weights for UTF-8. Non-ASCII bytes weigh 4. */
+    static const uint8_t ascii_weights[128] = {
+	5, 1, 1, 1, 1, 1, 1, 1, 1, 10, 10, 1, 1, 10, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  12, 4, 7, 4,  4, 4, 4, 4, 4, 5, 5, 5,
+	5, 5, 5, 5, 6, 6, 6, 6, 6, 6,  6,  6, 6, 6,  5, 5, 5, 5, 5, 5, 5, 6,
+	6, 6, 6, 7, 6, 6, 6, 6, 6, 6,  6,  6, 6, 6,  6, 6, 6, 6, 6, 6, 6, 6,
+	6, 6, 6, 5, 6, 5, 5, 5, 5, 6,  6,  6, 6, 7,  6, 6, 6, 6, 6, 6, 6, 6,
+	6, 6, 6, 6, 6, 6, 6, 6, 6, 6,  6,  6, 6, 5,  5, 5, 5, 1,
+    };
+    return byte < sizeof(ascii_weights) ? ascii_weights[byte] : 4;
+}
+
+static int
+onibi_class_tail_map_compute(const onibi_gir_builder_t *builder,
+			     int parsed_options, uint8_t *tail_byte,
+			     uint8_t *tail_flags, uint32_t *dmin_bytes,
+			     uint32_t *dmax_bytes)
+{
+    const OnibiAstArena *arena = builder->ast;
+    const uint32_t allowed_options = ONIBI_OPT_FIXEDENCODING;
+    *tail_byte = 0;
+    *tail_flags = 0;
+    *dmin_bytes = 0;
+    *dmax_bytes = 0;
+    if (arena == NULL || arena->root == ONIBI_AST_NONE ||
+	(size_t)arena->root >= arena->count ||
+	((uint32_t)parsed_options & ~allowed_options) != 0 ||
+	(builder->encoding_index != rb_utf8_encindex() &&
+	 builder->encoding_index != rb_usascii_encindex()) ||
+	(builder->encoding_index == rb_usascii_encindex() &&
+	 (parsed_options & ONIBI_OPT_FIXEDENCODING) != 0))
+	return 0;
+
+    rb_encoding *encoding = rb_utf8_encoding();
+    const OnibiAstNode *root = onibi_ast_node_const(arena, arena->root);
+    const OnibiResolvedNode *root_semantic =
+	&builder->semantics->nodes[arena->root];
+    if (root->kind != ONIBI_AST_SEQUENCE || root->flags != 0 ||
+	root->name.present || root->negative_options.present ||
+	root->bytes.present || root->body != ONIBI_AST_NONE ||
+	root->atom != ONIBI_AST_NONE || root->yes != ONIBI_AST_NONE ||
+	root->no != ONIBI_AST_NONE || root->range_count != 0 ||
+	(root_semantic->lexical_options & ~allowed_options) != 0 ||
+	root->children == NULL ||
+	(root->child_count != 2 && root->child_count != 3))
+	return 0;
+
+    size_t child_index = 0;
+    int anchored = 0;
+    if (root->child_count == 3) {
+	OnibiAstId anchor_id = root->children[child_index++];
+	if ((size_t)anchor_id >= arena->count) return 0;
+	const OnibiAstNode *anchor = onibi_ast_node_const(arena, anchor_id);
+	const OnibiResolvedNode *anchor_semantic =
+	    &builder->semantics->nodes[anchor_id];
+	if (anchor->kind != ONIBI_AST_ANCHOR || anchor->byte != 'A' ||
+	    anchor->token_kind != ONIBI_TOKEN_ANCHOR || anchor->flags != 0 ||
+	    anchor->name.present || anchor->negative_options.present ||
+	    anchor->bytes.present || anchor->body != ONIBI_AST_NONE ||
+	    anchor->atom != ONIBI_AST_NONE || anchor->yes != ONIBI_AST_NONE ||
+	    anchor->no != ONIBI_AST_NONE || anchor->child_count != 0 ||
+	    anchor->range_count != 0 ||
+	    (anchor_semantic->lexical_options & ~allowed_options) != 0)
+	    return 0;
+	anchored = 1;
+    }
+
+    OnibiAstId scope_id = root->children[child_index++];
+    OnibiAstId tail_id = root->children[child_index++];
+    if (child_index != root->child_count || (size_t)scope_id >= arena->count ||
+	(size_t)tail_id >= arena->count)
+	return 0;
+    const OnibiAstNode *scope = onibi_ast_node_const(arena, scope_id);
+    const OnibiResolvedNode *scope_semantic =
+	&builder->semantics->nodes[scope_id];
+    if (scope->kind != ONIBI_AST_OPTION_SCOPE || scope->flags != 0 ||
+	!scope->name.present || scope->name.length != 1 ||
+	scope->name.offset >= arena->bytes_count ||
+	arena->bytes[scope->name.offset] != 'i' ||
+	scope->negative_options.present || scope->bytes.present ||
+	scope->body == ONIBI_AST_NONE || (size_t)scope->body >= arena->count ||
+	scope->atom != ONIBI_AST_NONE || scope->yes != ONIBI_AST_NONE ||
+	scope->no != ONIBI_AST_NONE || scope->child_count != 0 ||
+	scope->range_count != 0 ||
+	(scope_semantic->lexical_options & ~allowed_options) != 0)
+	return 0;
+
+    const OnibiAstNode *scope_body = onibi_ast_node_const(arena, scope->body);
+    if (scope_body->kind != ONIBI_AST_SEQUENCE || scope_body->flags != 0 ||
+	scope_body->name.present || scope_body->negative_options.present ||
+	scope_body->bytes.present || scope_body->body != ONIBI_AST_NONE ||
+	scope_body->atom != ONIBI_AST_NONE ||
+	scope_body->yes != ONIBI_AST_NONE || scope_body->no != ONIBI_AST_NONE ||
+	scope_body->range_count != 0 || scope_body->child_count != 1 ||
+	scope_body->children == NULL)
+	return 0;
+    OnibiAstId class_id = scope_body->children[0];
+    if ((size_t)class_id >= arena->count) return 0;
+    const OnibiAstNode *character_class = onibi_ast_node_const(arena, class_id);
+    const OnibiResolvedNode *class_semantic =
+	&builder->semantics->nodes[class_id];
+    if (character_class->kind != ONIBI_AST_CHARACTER_CLASS ||
+	character_class->flags != 0 || character_class->name.present ||
+	character_class->negative_options.present ||
+	character_class->bytes.present || character_class->range_count != 0 ||
+	character_class->child_count != 1 ||
+	character_class->children == NULL ||
+	character_class->body != ONIBI_AST_NONE ||
+	character_class->atom != ONIBI_AST_NONE ||
+	character_class->yes != ONIBI_AST_NONE ||
+	character_class->no != ONIBI_AST_NONE ||
+	(class_semantic->lexical_options & ONIBI_OPT_IGNORECASE) == 0 ||
+	(class_semantic->lexical_options &
+	 ~(ONIBI_OPT_IGNORECASE | allowed_options)) != 0)
+	return 0;
+
+    OnibiAstId member_id = character_class->children[0];
+    if ((size_t)member_id >= arena->count) return 0;
+    const OnibiAstNode *member = onibi_ast_node_const(arena, member_id);
+    unsigned char source_storage[ONIGENC_CODE_TO_MBC_MAXLEN];
+    const unsigned char *source_bytes = NULL;
+    size_t source_length = 0;
+    if (member->kind != ONIBI_AST_LITERAL || member->flags != 0 ||
+	member->name.present || member->negative_options.present ||
+	member->body != ONIBI_AST_NONE || member->atom != ONIBI_AST_NONE ||
+	member->yes != ONIBI_AST_NONE || member->no != ONIBI_AST_NONE ||
+	member->child_count != 0 || member->range_count != 0 ||
+	!onibi_class_tail_literal_bytes(arena, member, source_storage,
+					&source_bytes, &source_length))
+	return 0;
+    int source_width = rb_enc_precise_mbclen(
+	(const char *)source_bytes, (const char *)source_bytes + source_length,
+	encoding);
+    if (!MBCLEN_CHARFOUND_P(source_width) ||
+	(size_t)MBCLEN_CHARFOUND_LEN(source_width) != source_length)
+	return 0;
+
+    OnibiAstId tail_id_value = tail_id;
+    const OnibiAstNode *tail = onibi_ast_node_const(arena, tail_id_value);
+    const OnibiResolvedNode *tail_semantic =
+	&builder->semantics->nodes[tail_id_value];
+    unsigned char tail_storage[ONIGENC_CODE_TO_MBC_MAXLEN];
+    const unsigned char *tail_bytes = NULL;
+    size_t tail_length = 0;
+    if (tail->flags != 0 || tail->body != ONIBI_AST_NONE ||
+	tail->name.present || tail->negative_options.present ||
+	tail->atom != ONIBI_AST_NONE || tail->yes != ONIBI_AST_NONE ||
+	tail->no != ONIBI_AST_NONE || tail->child_count != 0 ||
+	tail->range_count != 0 ||
+	(tail_semantic->lexical_options & ~allowed_options) != 0 ||
+	!onibi_class_tail_literal_bytes(arena, tail, tail_storage, &tail_bytes,
+					&tail_length) ||
+	tail_length != 1 || tail_bytes[0] >= 0x80)
+	return 0;
+
+    OnigUChar normalized[ONIGENC_CODE_TO_MBC_MAXLEN];
+    const OnigUChar *fold_cursor = (const OnigUChar *)source_bytes;
+    int normalized_length = ONIGENC_MBC_CASE_FOLD(
+	encoding, ONIGENC_CASE_FOLD_DEFAULT, &fold_cursor,
+	(const OnigUChar *)source_bytes + source_length, normalized);
+    if (normalized_length != 1 ||
+	fold_cursor != (const OnigUChar *)source_bytes + source_length)
+	return 0;
+
+    OnigCaseFoldCodeItem folds[ONIGENC_GET_CASE_FOLD_CODES_MAX_NUM];
+    int fold_count = ONIGENC_GET_CASE_FOLD_CODES_BY_STR(
+	encoding, ONIGENC_CASE_FOLD_DEFAULT, (const OnigUChar *)source_bytes,
+	(const OnigUChar *)source_bytes + source_length, folds);
+    if (fold_count <= 0 || fold_count > ONIGENC_GET_CASE_FOLD_CODES_MAX_NUM)
+	return 0;
+    unsigned char prefix_map[256] = {0};
+    prefix_map[source_bytes[0]] = 1;
+    int width_changed = 0;
+    for (int i = 0; i < fold_count; i++) {
+	if (folds[i].byte_len < 0 ||
+	    (size_t)folds[i].byte_len != source_length ||
+	    folds[i].code_len != 1)
+	    return 0;
+	OnigUChar encoded[ONIGENC_CODE_TO_MBC_MAXLEN];
+	int encoded_length =
+	    ONIGENC_CODE_TO_MBC(encoding, folds[i].code[0], encoded);
+	if (encoded_length <= 0 || encoded_length > ONIGENC_CODE_TO_MBC_MAXLEN)
+	    return 0;
+	if ((size_t)encoded_length != source_length) width_changed = 1;
+	prefix_map[encoded[0]] = 1;
+    }
+    if (!width_changed) return 0;
+
+    int prefix_map_value = 0;
+    for (size_t i = 0; i < sizeof(prefix_map); i++)
+	if (prefix_map[i])
+	    prefix_map_value +=
+		onibi_class_tail_map_position_value((unsigned char)i);
+    int tail_map_value = onibi_class_tail_map_position_value(tail_bytes[0]);
+    if (prefix_map_value <= 0 || tail_map_value <= 0 ||
+	32768 / tail_map_value <= 32768 / prefix_map_value ||
+	200 / tail_map_value <= 20)
+	return 0;
+
+    *tail_byte = tail_bytes[0];
+    *tail_flags = anchored ? ONIBI_RSEQ_CLASS_TAIL_MAP_FLAG_ANCHORED : 0;
+    *dmin_bytes = 1;
+    *dmax_bytes = 1;
+    return 1;
+}
+
 /* Publish pass: transfer verified immutable GIR records to the result. */
 static VALUE
 onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
@@ -3779,6 +4015,13 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
 	onibi_search_origin_bound_compute(
 	    builder, parsed_options,
 	    &compiled_result->search_origin_bound_delta_bytes);
+    if (!compiled_result->has_end_search_bound &&
+	!compiled_result->has_search_origin_bound)
+	compiled_result->has_class_tail_map = onibi_class_tail_map_compute(
+	    builder, parsed_options, &compiled_result->class_tail_map_byte,
+	    &compiled_result->class_tail_map_flags,
+	    &compiled_result->class_tail_map_dmin_bytes,
+	    &compiled_result->class_tail_map_dmax_bytes);
     return result;
 }
 

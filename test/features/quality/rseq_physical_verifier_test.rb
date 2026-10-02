@@ -113,6 +113,51 @@ class RseqPhysicalVerifierTest < Minitest::Test
     )
   end
 
+  def test_rejects_bad_class_tail_map_metadata
+    cases = [
+      ["(?i:[s])x", :class_tail_map_old_version,
+       "invalid Onibi RSeq blob"],
+      ["(?i:[s])x", :class_tail_map_unknown_feature,
+       "invalid Onibi RSeq section layout"],
+      ["(?i:[s])x", :class_tail_map_missing_feature,
+       "invalid Onibi RSeq section layout"],
+      ["(?i:[s])x", :class_tail_map_wrong_byte,
+       "inconsistent Onibi RSeq execution contract"],
+      ["(?i:[s])x", :class_tail_map_zero_distance,
+       "invalid Onibi RSeq section layout"],
+      ["(?i:[s])x", :class_tail_map_bad_distance_range,
+       "invalid Onibi RSeq section layout"],
+      ["\\A(?i:[s])x", :class_tail_map_anchor_mismatch,
+       "inconsistent Onibi RSeq execution contract"],
+      ["(?i:[s])x", :class_tail_map_bad_root, nil],
+      ["a", :class_tail_map_nonzero_unused_field,
+       "invalid Onibi RSeq section layout"]
+    ]
+    failures = []
+
+    cases.each do |pattern, scenario, expected_message|
+      regexp = Onibi::Regexp.new(pattern)
+      error = begin
+        regexp.send(:__onibi_rseq_verifier_diagnostics__, scenario)
+        nil
+      rescue StandardError => e
+        e
+      end
+      if error.nil?
+        failures << "#{scenario}: accepted corrupted blob"
+      elsif !error.is_a?(ArgumentError)
+        failures << "#{scenario}: raised #{error.class}"
+      elsif expected_message && error.message != expected_message
+        failures << "#{scenario}: got #{error.message.inspect}"
+      elsif scenario == :class_tail_map_bad_root &&
+            !error.message.match?(/invalid|inconsistent/)
+        failures << "#{scenario}: unexpected error #{error.message.inspect}"
+      end
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
   def test_zero_width_feature_uses_only_root_reachable_states
     regexp = Onibi::Regexp.new("(?=a)")
 

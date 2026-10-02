@@ -693,7 +693,7 @@ onibi_rseq_lower_body(VALUE opaque)
 	subprogram_records.count > UINT32_MAX ||
 	lookbehind_width_records.count > UINT32_MAX ||
 	physical_size > UINT32_MAX) {
-	rb_raise(eRegexpError, "RSeq program exceeds the v3 size limit");
+	rb_raise(eRegexpError, "RSeq program exceeds the v4 size limit");
     }
     VerifiedGIRAnalysis analysis = compiled_data->analysis;
     uint32_t features = analysis.rseq_features;
@@ -712,6 +712,23 @@ onibi_rseq_lower_body(VALUE opaque)
     }
     else if (compiled_data->search_origin_bound_delta_bytes != 0) {
 	rb_raise(eRegexpError, "invalid compiled RSeq search origin bound");
+    }
+    if (compiled_data->has_class_tail_map) {
+	if ((compiled_data->class_tail_map_flags &
+	     ~ONIBI_RSEQ_CLASS_TAIL_MAP_FLAG_ANCHORED) != 0 ||
+	    compiled_data->class_tail_map_byte >= 0x80 ||
+	    compiled_data->class_tail_map_dmin_bytes != 1 ||
+	    compiled_data->class_tail_map_dmax_bytes != 1 ||
+	    compiled_data->has_end_search_bound ||
+	    compiled_data->has_search_origin_bound)
+	    rb_raise(eRegexpError, "invalid compiled RSeq class-tail map");
+	features |= ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP;
+    }
+    else if (compiled_data->class_tail_map_byte != 0 ||
+	     compiled_data->class_tail_map_flags != 0 ||
+	     compiled_data->class_tail_map_dmin_bytes != 0 ||
+	     compiled_data->class_tail_map_dmax_bytes != 0) {
+	rb_raise(eRegexpError, "invalid unused RSeq class-tail map fields");
     }
     uint32_t counter_count = analysis.counter_count;
     OnibiRSeqHeader physical;
@@ -791,6 +808,12 @@ onibi_rseq_lower_body(VALUE opaque)
     physical.end_search_bound_bytes = compiled_data->end_search_bound_bytes;
     physical.search_origin_bound_delta_bytes =
 	compiled_data->search_origin_bound_delta_bytes;
+    physical.class_tail_map_byte = compiled_data->class_tail_map_byte;
+    physical.class_tail_map_flags = compiled_data->class_tail_map_flags;
+    physical.class_tail_map_dmin_bytes =
+	compiled_data->class_tail_map_dmin_bytes;
+    physical.class_tail_map_dmax_bytes =
+	compiled_data->class_tail_map_dmax_bytes;
     if ((physical.features & ONIBI_RSEQ_FEATURE_FIRST_BITMAP) == 0)
 	memset(physical.first_bitmap, 0, sizeof(physical.first_bitmap));
     onibi_allocation_owner_set_phase(&owner->allocations, 7);

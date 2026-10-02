@@ -1044,6 +1044,29 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
     }
     else if (scenario == rb_intern("search_origin_bound_zero"))
 	header->search_origin_bound_delta_bytes = 0;
+    else if (scenario == rb_intern("class_tail_map_old_version"))
+	header->version = 3;
+    else if (scenario == rb_intern("class_tail_map_unknown_feature"))
+	header->features |= UINT32_C(1) << 31;
+    else if (scenario == rb_intern("class_tail_map_missing_feature"))
+	header->features &= ~ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP;
+    else if (scenario == rb_intern("class_tail_map_wrong_byte"))
+	header->class_tail_map_byte ^= 1U;
+    else if (scenario == rb_intern("class_tail_map_zero_distance"))
+	header->class_tail_map_dmin_bytes = 0;
+    else if (scenario == rb_intern("class_tail_map_bad_distance_range"))
+	header->class_tail_map_dmax_bytes = 2;
+    else if (scenario == rb_intern("class_tail_map_anchor_mismatch"))
+	header->class_tail_map_flags ^= ONIBI_RSEQ_CLASS_TAIL_MAP_FLAG_ANCHORED;
+    else if (scenario == rb_intern("class_tail_map_bad_root")) {
+	header->features |= ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP;
+	header->class_tail_map_byte = 'x';
+	header->class_tail_map_dmin_bytes = 1;
+	header->class_tail_map_dmax_bytes = 1;
+	states[edges[header->start_edge_base].destination].op = ONIBI_RS_CHAR;
+    }
+    else if (scenario == rb_intern("class_tail_map_nonzero_unused_field"))
+	header->class_tail_map_reserved = 1;
     else if (scenario == rb_intern("section_order"))
 	header->edges_offset = header->states_offset;
     else if (scenario == rb_intern("section_alignment"))
