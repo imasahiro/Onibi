@@ -204,6 +204,101 @@ class LookaheadTest < Minitest::Test
     assert_nil actual
   end
 
+  def test_atomic_simple_fold_alternation_end_bound_matches_mri
+    cases = [
+      ["target omitted origin", "(?>ſ|s)\\z", "ſ",
+       Onibi::Regexp::IGNORECASE, :omitted, nil, 17, :native],
+      ["target zero origin", "(?>ſ|s)\\z", "ſ",
+       Onibi::Regexp::IGNORECASE, 0, nil, 17, :native],
+      ["target longer subject", "(?>ſ|s)\\z", "xſ",
+       Onibi::Regexp::IGNORECASE, :omitted, nil, 17, :native],
+      ["target interior origin", "(?>ſ|s)\\z", "xſ",
+       Onibi::Regexp::IGNORECASE, 1, nil, 17, :native],
+      ["target end origin", "(?>ſ|s)\\z", "xſ",
+       Onibi::Regexp::IGNORECASE, 2, nil, 17, :native],
+      ["target empty subject", "(?>ſ|s)\\z", "",
+       Onibi::Regexp::IGNORECASE, :omitted, nil, 17, :native],
+      ["target explicit fixed encoding", "(?>ſ|s)\\z", "ſ",
+       Onibi::Regexp::IGNORECASE | Onibi::Regexp::FIXEDENCODING,
+       :omitted, nil, 17, :native],
+      ["target option off", "(?>ſ|s)\\z", "ſ", 0,
+       :omitted,
+       { values: ["ſ"], character_spans: [[0, 1]], byte_spans: [[0, 2]] },
+       16, :native],
+      ["leading absolute start", "\\A(?>ſ|s)\\z", "ſ",
+       Onibi::Regexp::IGNORECASE, :omitted,
+       { values: ["ſ"], character_spans: [[0, 1]], byte_spans: [[0, 2]] },
+       17, :native],
+      ["swapped branches", "(?>s|ſ)\\z", "ſ",
+       Onibi::Regexp::IGNORECASE, :omitted, nil, 17, :native],
+      ["equivalent uppercase fold", "(?>S|ſ)\\z", "ſ",
+       Onibi::Regexp::IGNORECASE, :omitted, nil, 17, :native],
+      ["equal one-byte width", "(?>ſ|s)\\z", "xs",
+       Onibi::Regexp::IGNORECASE, :omitted,
+       { values: ["s"], character_spans: [[1, 2]], byte_spans: [[1, 2]] },
+       17, :native],
+      ["equal two-byte width", "(?>σ|ς)\\z", "xς",
+       Onibi::Regexp::IGNORECASE, :omitted,
+       { values: ["ς"], character_spans: [[1, 2]], byte_spans: [[1, 3]] },
+       17, :native],
+      ["mixed-width maximum", "(?>ſ|σ)\\z", "xſ",
+       Onibi::Regexp::IGNORECASE, 1,
+       { values: ["ſ"], character_spans: [[1, 2]], byte_spans: [[1, 3]] },
+       17, :native],
+      ["scoped-option fallback", "(?i:ſ|s)\\z", "ſ",
+       Onibi::Regexp::IGNORECASE, :omitted, nil, 17, :fallback]
+    ]
+    failures = []
+
+    cases.each do |row|
+      label, source, subject, options, origin, frozen_mri, effective_options, route_kind = row
+      mri_regexp = ::Regexp.new(source, options)
+      onibi_regexp = Onibi::Regexp.new(source, options)
+      mri_match = if origin == :omitted
+                    mri_regexp.match(subject)
+                  else
+                    mri_regexp.match(subject, origin)
+                  end
+      onibi_match = if origin == :omitted
+                      onibi_regexp.match(subject)
+                    else
+                      onibi_regexp.match(subject, origin)
+                    end
+      mri_row = match_observation(mri_match, subject)
+      onibi_row = match_observation(onibi_match, subject)
+      failures << "#{label}: MRI changed to #{mri_row.inspect}" if mri_row != frozen_mri
+      if mri_regexp.options != effective_options
+        failures << "#{label}: MRI options=#{mri_regexp.options}, " \
+                    "expected #{effective_options}"
+      end
+      if onibi_row != mri_row
+        failures << "#{label}: MRI=#{mri_row.inspect}, " \
+                    "Onibi=#{onibi_row.inspect}"
+      end
+
+      diagnostics = onibi_regexp.send(:__onibi_diagnostics__, subject)
+      if route_kind == :fallback
+        unless diagnostics.fetch(:fallback) == 1 &&
+               diagnostics.fetch(:fallback_reason) == :input_ineligible
+          failures << "#{label}: route=#{diagnostics.inspect}"
+        end
+      elsif !diagnostics.fetch(:rseq) || diagnostics.fetch(:exec_kind).nil? ||
+            diagnostics.fetch(:fallback) != 0 ||
+            diagnostics.fetch(:fallback_reason) != :none
+        # The end bound can reject a candidate before DYNAMIC runs.
+        failures << "#{label}: route=#{diagnostics.inspect}"
+      end
+      if diagnostics.fetch(:unsupported_reason) != :none ||
+         diagnostics.fetch(:executor_error_kind) != :none
+        failures << "#{label}: route error=#{diagnostics.inspect}"
+      end
+    rescue StandardError => e
+      failures << "#{label}: #{e.class}: #{e.message}"
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
   def test_ignorecase_long_s_optional_class_stops_before_absolute_end
     source = "[s]?\\z"
     subject = "ſ"

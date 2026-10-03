@@ -537,7 +537,8 @@ The compiler uses the existing one-byte absolute-end search bound.
 Class-tail MAP search is accepted for the documented narrow singleton/scoped-i form.
 Case 20 passes. Case 18 retains the Greek capture mismatch.
 Repeated-capture case 12 is accepted for the narrow end-minimum policy.
-DYNAMIC atomic and Greek fold cases remain open.
+Atomic case 10 is accepted for the narrow two-literal alternation end bound.
+Greek capture/fold cases remain open.
 
 Cases: `#10, #11, #12, #18, #19, #20`. Reproduce these six methods:
 `LookaheadTest#test_ignorecase_reverse_fold_anchor_boundary_through_wrappers`,

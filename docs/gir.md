@@ -2034,7 +2034,8 @@ BEGIN_POSITION anchored
 first-character bitmap
 required exact literal
 exact prefix
-absolute-end source-byte bound for a narrow backreference form
+absolute-end byte bound for a narrow case-folded backreference form
+absolute-end byte bound for a narrow atomic literal alternation form
 candidate-start byte-delta bound for a narrow lookahead form
 forward class-tail MAP candidate hint for one scoped singleton class form
 MRI-compatible minimum end distance for one repeated capture form
@@ -2069,6 +2070,16 @@ The 17-row MRI differential matrix checks selected public results and byte
 offsets. It does not inspect this field. The verifier checks canonical field
 form and an absolute-end action. It does not prove the value for arbitrary
 metadata or every path.
+
+For the atomic literal form, the root sequence contains one atomic group and
+a final `\z`. The group body contains one alternation with two branches.
+Each branch contains one direct UTF-8 literal scalar. Global options include
+`IGNORECASE`; `FIXEDENCODING` is the only optional flag.
+
+The compiler folds each scalar with MRI's encoding interface. Each simple
+fold must contain one code point. The compiler sets the bound to the larger
+normalized byte width. It does not set this bound for other shapes, unknown
+folds, or multi-codepoint folds. A leading `\A` does not use this bound.
 
 The compiler also sets an MRI-compatible minimum end distance for one narrow
 root form. It requires a greedy plus around a capture with one direct UTF-8

@@ -3519,6 +3519,61 @@ onibi_end_search_literal_fold_minimum_width(const OnibiAstArena *arena,
 }
 
 static int
+onibi_end_search_literal_normalized_width(const OnibiAstArena *arena,
+					  OnibiAstId id, int encoding_index,
+					  uint32_t *normalized_width)
+{
+    if (id == ONIBI_AST_NONE || (size_t)id >= arena->count ||
+	encoding_index != rb_utf8_encindex() || normalized_width == NULL)
+	return 0;
+    const OnibiAstNode *node = onibi_ast_node_const(arena, id);
+    if (node->kind != ONIBI_AST_LITERAL ||
+	node->token_kind != ONIBI_TOKEN_LITERAL || node->child_count != 0 ||
+	node->range_count != 0)
+	return 0;
+
+    uint32_t minimum_width = 0;
+    if (!onibi_end_search_literal_fold_minimum_width(arena, id, encoding_index,
+						     &minimum_width) ||
+	minimum_width == 0)
+	return 0;
+
+    unsigned char ascii_byte = 0;
+    const unsigned char *source_bytes = NULL;
+    size_t source_length = 0;
+    if (node->bytes.present) {
+	if (node->bytes.length == 0 ||
+	    node->bytes.offset > arena->bytes_count ||
+	    node->bytes.length > arena->bytes_count - node->bytes.offset ||
+	    node->bytes.length > ONIGENC_CODE_TO_MBC_MAXLEN)
+	    return 0;
+	source_bytes = arena->bytes + node->bytes.offset;
+	source_length = node->bytes.length;
+    }
+    else {
+	if (node->byte < 0 || node->byte > 0x7f) return 0;
+	ascii_byte = (unsigned char)node->byte;
+	source_bytes = &ascii_byte;
+	source_length = 1;
+    }
+
+    rb_encoding *encoding = rb_enc_from_index(encoding_index);
+    OnigUChar normalized[ONIGENC_CODE_TO_MBC_MAXLEN];
+    const OnigUChar *cursor = (const OnigUChar *)source_bytes;
+    int normalized_length = ONIGENC_MBC_CASE_FOLD(
+	encoding, ONIGENC_CASE_FOLD_DEFAULT, &cursor,
+	(const OnigUChar *)source_bytes + source_length, normalized);
+    if (normalized_length <= 0 ||
+	cursor != (const OnigUChar *)source_bytes + source_length ||
+	onigenc_strlen(encoding, normalized, normalized + normalized_length) !=
+	    1)
+	return 0;
+
+    *normalized_width = (uint32_t)normalized_length;
+    return 1;
+}
+
+static int
 onibi_end_search_minimum_compute(const onibi_gir_builder_t *builder,
 				 int parsed_options, uint32_t *minimum_bytes,
 				 uint32_t *repeat_bytes,
@@ -3677,6 +3732,69 @@ onibi_end_search_optional_class_bound_compute(const OnibiAstArena *arena,
 }
 
 static int
+onibi_end_search_atomic_branch_width(const OnibiAstArena *arena,
+				     OnibiAstId branch_id, int encoding_index,
+				     uint32_t *normalized_width)
+{
+    if (branch_id == ONIBI_AST_NONE || (size_t)branch_id >= arena->count)
+	return 0;
+    const OnibiAstNode *branch = onibi_ast_node_const(arena, branch_id);
+    if (branch->kind != ONIBI_AST_SEQUENCE || branch->child_count != 1 ||
+	branch->children == NULL)
+	return 0;
+
+    return onibi_end_search_literal_normalized_width(
+	arena, branch->children[0], encoding_index, normalized_width);
+}
+
+static int
+onibi_end_search_atomic_alternation_bound_compute(const OnibiAstArena *arena,
+						  const OnibiAstNode *root,
+						  int encoding_index,
+						  int parsed_options,
+						  uint32_t *bound_bytes)
+{
+    const uint32_t allowed_options =
+	ONIBI_OPT_IGNORECASE | ONIBI_OPT_FIXEDENCODING;
+    if (encoding_index != rb_utf8_encindex() ||
+	(parsed_options & ONIBI_OPT_IGNORECASE) == 0 ||
+	((uint32_t)parsed_options & ~allowed_options) != 0 ||
+	root->kind != ONIBI_AST_SEQUENCE || root->child_count != 2 ||
+	root->children == NULL)
+	return 0;
+
+    OnibiAstId atomic_id = root->children[0];
+    OnibiAstId end_anchor_id = root->children[1];
+    if (atomic_id == ONIBI_AST_NONE || end_anchor_id == ONIBI_AST_NONE ||
+	(size_t)atomic_id >= arena->count ||
+	(size_t)end_anchor_id >= arena->count)
+	return 0;
+    const OnibiAstNode *atomic = onibi_ast_node_const(arena, atomic_id);
+    const OnibiAstNode *end_anchor = onibi_ast_node_const(arena, end_anchor_id);
+    if (atomic->kind != ONIBI_AST_ATOMIC || atomic->body == ONIBI_AST_NONE ||
+	(size_t)atomic->body >= arena->count ||
+	end_anchor->kind != ONIBI_AST_ANCHOR ||
+	end_anchor->token_kind != ONIBI_TOKEN_ANCHOR || end_anchor->byte != 'z')
+	return 0;
+
+    const OnibiAstNode *alternation = onibi_ast_node_const(arena, atomic->body);
+    if (alternation->kind != ONIBI_AST_ALTERNATIVE ||
+	alternation->child_count != 2 || alternation->children == NULL)
+	return 0;
+
+    uint32_t first_width = 0;
+    uint32_t second_width = 0;
+    if (!onibi_end_search_atomic_branch_width(arena, alternation->children[0],
+					      encoding_index, &first_width) ||
+	!onibi_end_search_atomic_branch_width(arena, alternation->children[1],
+					      encoding_index, &second_width))
+	return 0;
+
+    *bound_bytes = first_width > second_width ? first_width : second_width;
+    return *bound_bytes != 0;
+}
+
+static int
 onibi_end_search_bound_compute(const onibi_gir_builder_t *builder,
 			       int parsed_options, uint32_t *bound_bytes)
 {
@@ -3692,9 +3810,14 @@ onibi_end_search_bound_compute(const onibi_gir_builder_t *builder,
 
     const OnibiAstNode *root = onibi_ast_node_const(arena, arena->root);
     if (root->kind != ONIBI_AST_SEQUENCE) return 0;
-    if (root->child_count == 2)
+    if (root->child_count == 2) {
+	if (onibi_end_search_atomic_alternation_bound_compute(
+		arena, root, builder->encoding_index, parsed_options,
+		bound_bytes))
+	    return 1;
 	return onibi_end_search_optional_class_bound_compute(
 	    arena, root, builder->encoding_index, parsed_options, bound_bytes);
+    }
     if (root->child_count != 3 || root->children == NULL) return 0;
     OnibiAstId capture_id = root->children[0];
     OnibiAstId backref_id = root->children[1];
