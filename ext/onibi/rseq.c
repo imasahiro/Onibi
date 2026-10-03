@@ -705,6 +705,25 @@ onibi_rseq_lower_body(VALUE opaque)
     else if (compiled_data->end_search_bound_bytes != 0) {
 	rb_raise(eRegexpError, "invalid compiled RSeq end search bound");
     }
+    if (compiled_data->has_end_search_minimum) {
+	uint64_t expected_minimum =
+	    (uint64_t)compiled_data->end_search_minimum_repeat_bytes +
+	    compiled_data->end_search_minimum_capture_source_bytes;
+	if (compiled_data->end_search_minimum_bytes == 0 ||
+	    compiled_data->end_search_minimum_repeat_bytes == 0 ||
+	    compiled_data->end_search_minimum_capture_source_bytes == 0 ||
+	    expected_minimum != compiled_data->end_search_minimum_bytes ||
+	    compiled_data->has_end_search_bound ||
+	    compiled_data->has_search_origin_bound ||
+	    compiled_data->has_class_tail_map)
+	    rb_raise(eRegexpError, "invalid compiled RSeq end search minimum");
+	features |= ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM;
+    }
+    else if (compiled_data->end_search_minimum_bytes != 0 ||
+	     compiled_data->end_search_minimum_repeat_bytes != 0 ||
+	     compiled_data->end_search_minimum_capture_source_bytes != 0) {
+	rb_raise(eRegexpError, "invalid compiled RSeq end search minimum");
+    }
     if (compiled_data->has_search_origin_bound) {
 	if (compiled_data->search_origin_bound_delta_bytes > 1)
 	    rb_raise(eRegexpError, "invalid compiled RSeq search origin bound");
@@ -814,6 +833,11 @@ onibi_rseq_lower_body(VALUE opaque)
 	compiled_data->class_tail_map_dmin_bytes;
     physical.class_tail_map_dmax_bytes =
 	compiled_data->class_tail_map_dmax_bytes;
+    physical.end_search_minimum_bytes = compiled_data->end_search_minimum_bytes;
+    physical.end_search_minimum_repeat_bytes =
+	compiled_data->end_search_minimum_repeat_bytes;
+    physical.end_search_minimum_capture_source_bytes =
+	compiled_data->end_search_minimum_capture_source_bytes;
     if ((physical.features & ONIBI_RSEQ_FEATURE_FIRST_BITMAP) == 0)
 	memset(physical.first_bitmap, 0, sizeof(physical.first_bitmap));
     onibi_allocation_owner_set_phase(&owner->allocations, 7);

@@ -327,6 +327,24 @@ onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
 	}
 	int candidate_valid = onibi_search_candidate_origin(
 	    str, &start, exec_ctx.encoding, exec_ctx.encoding_mode);
+	if ((obj->rseq_view.header->features &
+	     ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM) != 0) {
+	    uint64_t minimum_distance =
+		obj->rseq_view.header->end_search_minimum_bytes;
+	    uint64_t origin = (uint64_t)search_origin;
+	    if (subject_length < minimum_distance) {
+		candidate_valid = 0;
+	    }
+	    else {
+		uint64_t range = subject_length - minimum_distance + 1U;
+		if (origin > range)
+		    candidate_valid = 0;
+		else if (origin == range)
+		    maximum_start = (OnibiBytePos)range;
+		else
+		    maximum_start = (OnibiBytePos)(range - 1U);
+	    }
+	}
 	int use_class_tail_map = (obj->rseq_view.header->features &
 				  ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP) != 0 &&
 				 exec_ctx.encoding == rb_utf8_encoding();

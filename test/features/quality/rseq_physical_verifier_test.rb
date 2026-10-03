@@ -92,6 +92,42 @@ class RseqPhysicalVerifierTest < Minitest::Test
     )
   end
 
+  def test_rejects_invalid_minimum_end_search_metadata
+    regexp = Onibi::Regexp.new("(ſ)+\\1\\z", Onibi::Regexp::IGNORECASE)
+    cases = [
+      [:minimum_end_old_version, "invalid Onibi RSeq blob"],
+      [:minimum_end_unknown_feature, "invalid Onibi RSeq section layout"],
+      [:minimum_end_noncanonical_unknown,
+       "invalid Onibi RSeq section layout"],
+      [:minimum_end_zero_distance, "invalid Onibi RSeq section layout"],
+      [:minimum_end_width_mismatch,
+       "inconsistent Onibi RSeq execution contract"],
+      [:minimum_end_missing_assertion,
+       "inconsistent Onibi RSeq execution contract"],
+      [:minimum_end_bad_root,
+       "inconsistent Onibi RSeq execution contract"]
+    ]
+    failures = []
+
+    cases.each do |scenario, expected_message|
+      error = begin
+        regexp.send(:__onibi_rseq_verifier_diagnostics__, scenario)
+        nil
+      rescue StandardError => e
+        e
+      end
+      if error.nil?
+        failures << "#{scenario}: accepted corrupted blob"
+      elsif !error.is_a?(ArgumentError)
+        failures << "#{scenario}: raised #{error.class}"
+      elsif error.message != expected_message
+        failures << "#{scenario}: got #{error.message.inspect}"
+      end
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
   def test_rejects_old_search_origin_bound_version
     assert_search_origin_bound_corruption_rejected(
       :search_origin_bound_old_version,

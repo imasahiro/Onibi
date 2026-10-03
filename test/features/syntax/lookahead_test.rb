@@ -569,6 +569,96 @@ class LookaheadTest < Minitest::Test
                  actual && [actual.begin(0), actual.end(0)]
   end
 
+  def test_ignorecase_reverse_literal_repeat_matches_mri_end_distance_cases
+    ignorecase = ::Regexp::IGNORECASE
+    onibi_ignorecase = Onibi::Regexp::IGNORECASE
+    fixed = ::Regexp::FIXEDENCODING
+    onibi_fixed = Onibi::Regexp::FIXEDENCODING
+    cases = [
+      ["short subject", "(ſ)+\\1\\z", "SS", nil, ignorecase,
+       onibi_ignorecase],
+      ["three-byte subject", "(ſ)+\\1\\z", "SSS", 0, ignorecase,
+       onibi_ignorecase],
+      ["short origin zero", "(ſ)+\\1\\z", "xSS", 0, ignorecase,
+       onibi_ignorecase],
+      ["range equality origin", "(ſ)+\\1\\z", "xSS", 1, ignorecase,
+       onibi_ignorecase],
+      ["end origin", "(ſ)+\\1\\z", "xSS", 3, ignorecase,
+       onibi_ignorecase],
+      ["long subject origin zero", "(ſ)+\\1\\z", "xSSS", 0, ignorecase,
+       onibi_ignorecase],
+      ["long subject origin one", "(ſ)+\\1\\z", "xSSS", 1, ignorecase,
+       onibi_ignorecase],
+      ["empty subject", "(ſ)+\\1\\z", "", 0, ignorecase,
+       onibi_ignorecase],
+      ["absolute start short subject", "\\A(ſ)+\\1\\z", "SS", 0,
+       ignorecase, onibi_ignorecase],
+      ["absolute start nonzero origin", "\\A(ſ)+\\1\\z", "xSSS", 1,
+       ignorecase, onibi_ignorecase],
+      ["ASCII source control", "(S)+\\1\\z", "SS", 0, ignorecase,
+       onibi_ignorecase],
+      ["fixed encoding control", "(ſ)+\\1\\z", "SSS", 0,
+       ignorecase | fixed, onibi_ignorecase | onibi_fixed],
+      ["single capture long-s control", "(?i:(ſ))\\1\\z", "SS", 0,
+       0, 0],
+      ["sharp-s control", "(?i:(ß))\\1\\z", "ßß", 0, 0, 0]
+    ]
+    failures = []
+
+    cases.each do |label, source, subject, origin, mri_options, onibi_options|
+      mri_regexp = ::Regexp.new(source, mri_options)
+      onibi_regexp = Onibi::Regexp.new(source, onibi_options)
+      expected = if origin.nil?
+                   mri_regexp.match(subject)
+                 else
+                   mri_regexp.match(subject, origin)
+                 end
+      actual = if origin.nil?
+                 onibi_regexp.match(subject)
+               else
+                 onibi_regexp.match(subject, origin)
+               end
+      expected_row = match_observation(expected, subject)
+      actual_row = match_observation(actual, subject)
+      unless expected_row == actual_row
+        failures << "#{label}: MRI=#{expected_row.inspect}, " \
+                    "Onibi=#{actual_row.inspect}"
+      end
+
+      diagnostics = onibi_regexp.send(:__onibi_diagnostics__, subject)
+
+      # The end-distance check rejects these subjects before the DYNAMIC VM.
+      early_rejection = ["short subject", "empty subject"].include?(label)
+      if early_rejection
+        failures << "#{label}: native RSeq was not selected" unless
+          diagnostics.fetch(:rseq) && diagnostics.fetch(:exec_kind)
+        failures << "#{label}: expected rejection before DYNAMIC" unless
+          diagnostics.fetch(:dynamic).zero?
+      elsif diagnostics.fetch(:dynamic).zero?
+        failures << "#{label}: native DYNAMIC did not run"
+      end
+      if diagnostics.fetch(:fallback) != 0 ||
+         diagnostics.fetch(:fallback_reason) != :none ||
+         diagnostics.fetch(:unsupported_reason) != :none ||
+         diagnostics.fetch(:executor_error_kind) != :none
+        failures << "#{label}: route diagnostics=#{diagnostics.inspect}"
+      end
+      if ["short subject", "short origin zero", "end origin",
+          "empty subject", "absolute start nonzero origin"].include?(label) &&
+         !expected.nil?
+        failures << "#{label}: frozen MRI result must be nil"
+      end
+      if label == "range equality origin" &&
+         (expected.nil? || expected.begin(0) != 1 || expected.end(0) != 3)
+        failures << "#{label}: frozen MRI character range must be [1, 3]"
+      end
+    rescue StandardError => e
+      failures << "#{label}: #{e.class}: #{e.message}"
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
   def test_ignorecase_reverse_fold_literal_run_can_end_at_line_anchor
     source = "ss$"
     expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ſſ")
@@ -693,5 +783,24 @@ class LookaheadTest < Minitest::Test
     assert_equal :none, info.fetch(:fallback_reason), label
     assert_equal :none, info.fetch(:unsupported_reason), label
     assert_equal :none, info.fetch(:executor_error_kind), label
+  end
+
+  def match_observation(match, subject)
+    return nil unless match
+
+    character_spans = (0...match.length).map do |index|
+      first = match.begin(index)
+      last = match.end(index)
+      first.nil? ? nil : [first, last]
+    end
+    byte_spans = character_spans.map do |span|
+      span && [subject[0...span[0]].bytesize,
+               subject[0...span[1]].bytesize]
+    end
+    {
+      values: match.to_a,
+      character_spans: character_spans,
+      byte_spans: byte_spans
+    }
   end
 end

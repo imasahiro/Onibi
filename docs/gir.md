@@ -2037,6 +2037,7 @@ exact prefix
 absolute-end source-byte bound for a narrow backreference form
 candidate-start byte-delta bound for a narrow lookahead form
 forward class-tail MAP candidate hint for one scoped singleton class form
+MRI-compatible minimum end distance for one repeated capture form
 ```
 
 A prefilter can reject candidate positions.
@@ -2068,6 +2069,33 @@ The 17-row MRI differential matrix checks selected public results and byte
 offsets. It does not inspect this field. The verifier checks canonical field
 form and an absolute-end action. It does not prove the value for arbitrary
 metadata or every path.
+
+The compiler also sets an MRI-compatible minimum end distance for one narrow
+root form. It requires a greedy plus around a capture with one direct UTF-8
+literal scalar. A resolved reference must target that capture, followed by a
+final \z. Global options must be IGNORECASE, with optional
+FIXEDENCODING. Leading anchors, wrappers, scoped options, branches, extra
+atoms, other quantifiers, and unproven folds keep the existing search policy.
+
+The compiler gets the minimum folded byte width from MRI's encoding fold
+interface. It adds that width times the repeat lower bound to the original
+capture source byte width. It uses checked arithmetic. This is an MRI search
+compatibility rule. It can reject a start that direct matching can accept.
+It does not change the native executor. It does not use MRI fallback.
+
+The matcher rejects a subject that is shorter than the minimum distance. It
+uses MRI's candidate range. When the origin is below the range boundary, it
+tests only starts below that boundary. If the origin equals the boundary, it
+tests that origin once. It rejects an origin beyond the boundary.
+A leading \A form does not use this metadata because MRI gives that anchor
+priority over the end-distance check.
+
+The header stores the minimum distance, folded repeat width, and source
+capture width in separate fields. The verifier checks positive canonical
+fields, their sum, one capture, one repeated capture path, one matching
+backreference, and one absolute-end assertion. The certificate does not prove
+the original source spelling or MRI optimizer timing. The verifier checks the
+physical RSeq structure only.
 
 The compiler also sets a one-byte bound for one optional-class form. The
 pattern source must be UTF-8 or US-ASCII. The only allowed options are
@@ -2185,13 +2213,16 @@ typedef struct {
     uint16_t class_tail_map_reserved;
     uint32_t class_tail_map_dmin_bytes;
     uint32_t class_tail_map_dmax_bytes;
+    uint32_t end_search_minimum_bytes;
+    uint32_t end_search_minimum_repeat_bytes;
+    uint32_t end_search_minimum_capture_source_bytes;
 } OnibiRSeqHeader;
 ```
 
 The current RSeq version is:
 
 ```text
-4
+5
 ```
 
 Version 2 added `end_search_bound_bytes` to the physical header. Its feature
@@ -2208,6 +2239,11 @@ Version 4 adds the forward class-tail MAP candidate fields described in
 section 46. Its feature bit requires an ASCII tail byte, optional anchored
 flag, and byte distances `1/1`. A clear feature bit requires zero values in
 all class-tail fields. The reserved field is always zero.
+
+Version 5 adds the MRI-compatible minimum end-distance fields from section
+46. Its feature bit requires positive total, repeat, and source-width values.
+The total must equal the repeat value plus the source-width value. A clear
+feature bit requires zero values in all three fields.
 
 All sections must have four-byte alignment.
 

@@ -35,6 +35,10 @@ typedef struct {
     int options;
     int has_end_search_bound;
     uint32_t end_search_bound_bytes;
+    int has_end_search_minimum;
+    uint32_t end_search_minimum_bytes;
+    uint32_t end_search_minimum_repeat_bytes;
+    uint32_t end_search_minimum_capture_source_bytes;
     int has_search_origin_bound;
     uint32_t search_origin_bound_delta_bytes;
     int has_class_tail_map;
@@ -3446,6 +3450,159 @@ onibi_end_search_capture_source_width(const OnibiAstArena *arena, OnibiAstId id,
 }
 
 static int
+onibi_end_search_literal_fold_minimum_width(const OnibiAstArena *arena,
+					    OnibiAstId id, int encoding_index,
+					    uint32_t *minimum_width)
+{
+    if (id == ONIBI_AST_NONE || (size_t)id >= arena->count ||
+	encoding_index != rb_utf8_encindex())
+	return 0;
+    const OnibiAstNode *node = onibi_ast_node_const(arena, id);
+    if (node->kind != ONIBI_AST_LITERAL ||
+	node->token_kind != ONIBI_TOKEN_LITERAL)
+	return 0;
+
+    unsigned char ascii_byte = 0;
+    const unsigned char *source_bytes = NULL;
+    size_t source_length = 0;
+    if (node->bytes.present) {
+	if (node->bytes.length == 0 ||
+	    node->bytes.offset > arena->bytes_count ||
+	    node->bytes.length > arena->bytes_count - node->bytes.offset)
+	    return 0;
+	source_bytes = arena->bytes + node->bytes.offset;
+	source_length = node->bytes.length;
+    }
+    else {
+	if (node->byte < 0 || node->byte > 0x7f) return 0;
+	ascii_byte = (unsigned char)node->byte;
+	source_bytes = &ascii_byte;
+	source_length = 1;
+    }
+    if (source_length == 0 || source_length > ONIGENC_CODE_TO_MBC_MAXLEN)
+	return 0;
+
+    rb_encoding *encoding = rb_enc_from_index(encoding_index);
+    OnigUChar normalized[ONIGENC_CODE_TO_MBC_MAXLEN];
+    const OnigUChar *cursor = (const OnigUChar *)source_bytes;
+    int normalized_length = ONIGENC_MBC_CASE_FOLD(
+	encoding, ONIGENC_CASE_FOLD_DEFAULT, &cursor,
+	(const OnigUChar *)source_bytes + source_length, normalized);
+    if (normalized_length <= 0 ||
+	cursor != (const OnigUChar *)source_bytes + source_length)
+	return 0;
+
+    OnigCaseFoldCodeItem folds[ONIGENC_GET_CASE_FOLD_CODES_MAX_NUM];
+    int fold_count = ONIGENC_GET_CASE_FOLD_CODES_BY_STR(
+	encoding, ONIGENC_CASE_FOLD_DEFAULT, (const OnigUChar *)source_bytes,
+	(const OnigUChar *)source_bytes + source_length, folds);
+    if (fold_count <= 0 || fold_count > ONIGENC_GET_CASE_FOLD_CODES_MAX_NUM)
+	return 0;
+
+    uint32_t minimum = (uint32_t)source_length;
+    for (int i = 0; i < fold_count; i++) {
+	if (folds[i].byte_len < 0 ||
+	    (size_t)folds[i].byte_len != source_length ||
+	    folds[i].code_len != 1)
+	    return 0;
+	OnigUChar encoded[ONIGENC_CODE_TO_MBC_MAXLEN];
+	int encoded_length =
+	    ONIGENC_CODE_TO_MBC(encoding, folds[i].code[0], encoded);
+	if (encoded_length <= 0 || encoded_length > ONIGENC_CODE_TO_MBC_MAXLEN)
+	    return 0;
+	if ((uint32_t)encoded_length < minimum)
+	    minimum = (uint32_t)encoded_length;
+    }
+    if (minimum == 0) return 0;
+    *minimum_width = minimum;
+    return 1;
+}
+
+static int
+onibi_end_search_minimum_compute(const onibi_gir_builder_t *builder,
+				 int parsed_options, uint32_t *minimum_bytes,
+				 uint32_t *repeat_bytes,
+				 uint32_t *capture_source_bytes)
+{
+    const uint32_t allowed_options =
+	ONIBI_OPT_IGNORECASE | ONIBI_OPT_FIXEDENCODING;
+    const OnibiAstArena *arena = builder->ast;
+    const OnibiResolvedArena *semantics = builder->semantics;
+    if (arena == NULL || semantics == NULL || semantics->nodes == NULL ||
+	arena->root == ONIBI_AST_NONE || (size_t)arena->root >= arena->count ||
+	builder->encoding_index != rb_utf8_encindex() ||
+	(parsed_options & ONIBI_OPT_IGNORECASE) == 0 ||
+	((uint32_t)parsed_options & ~allowed_options) != 0)
+	return 0;
+
+    const OnibiAstNode *root = onibi_ast_node_const(arena, arena->root);
+    if (root->kind != ONIBI_AST_SEQUENCE || root->child_count != 3 ||
+	root->children == NULL)
+	return 0;
+
+    OnibiAstId repeat_id = root->children[0];
+    OnibiAstId backref_id = root->children[1];
+    OnibiAstId end_anchor_id = root->children[2];
+    if ((size_t)repeat_id >= arena->count ||
+	(size_t)backref_id >= arena->count ||
+	(size_t)end_anchor_id >= arena->count ||
+	(size_t)backref_id >= semantics->count)
+	return 0;
+    const OnibiAstNode *repeat = onibi_ast_node_const(arena, repeat_id);
+    const OnibiAstNode *backref = onibi_ast_node_const(arena, backref_id);
+    const OnibiAstNode *end_anchor = onibi_ast_node_const(arena, end_anchor_id);
+    if (repeat->kind != ONIBI_AST_QUANTIFIER ||
+	repeat->token_kind != ONIBI_TOKEN_QUANTIFIER || repeat->byte != '+' ||
+	repeat->min != 1 || repeat->max != 0 ||
+	repeat->flags != ONIBI_AST_NODE_GREEDY ||
+	repeat->atom == ONIBI_AST_NONE ||
+	(size_t)repeat->atom >= arena->count ||
+	backref->kind != ONIBI_AST_BACKREF ||
+	end_anchor->kind != ONIBI_AST_ANCHOR ||
+	end_anchor->token_kind != ONIBI_TOKEN_ANCHOR || end_anchor->byte != 'z')
+	return 0;
+
+    OnibiAstId capture_id = repeat->atom;
+    if ((size_t)capture_id >= semantics->count) return 0;
+    const OnibiAstNode *capture = onibi_ast_node_const(arena, capture_id);
+    if (capture->kind != ONIBI_AST_CAPTURE) return 0;
+    OnibiAstId target = semantics->nodes[backref_id].reference_target;
+    if (target != capture_id || target == ONIBI_AST_NONE ||
+	(size_t)target >= semantics->count ||
+	semantics->nodes[target].capture_id < 0)
+	return 0;
+    if (backref->name.present) {
+	OnibiNameIndexEntry *entry = onibi_name_index_find(
+	    (OnibiResolvedArena *)semantics, arena, backref->name,
+	    rb_enc_from_index(builder->encoding_index));
+	if (entry == NULL || !entry->used || entry->definition_count != 1 ||
+	    entry->definitions[0] != target)
+	    return 0;
+    }
+
+    uint32_t source_width = 0, folded_width = 0;
+    if (!onibi_end_search_capture_source_width(
+	    arena, capture_id, builder->encoding_index, &source_width))
+	return 0;
+    const OnibiAstNode *capture_body =
+	onibi_ast_node_const(arena, capture->body);
+    if (!onibi_end_search_literal_fold_minimum_width(
+	    arena, capture_body->children[0], builder->encoding_index,
+	    &folded_width))
+	return 0;
+    if (folded_width > UINT32_MAX / (uint32_t)repeat->min) return 0;
+    uint32_t repeated_minimum = folded_width * (uint32_t)repeat->min;
+    if (source_width > UINT32_MAX - repeated_minimum) return 0;
+    uint32_t total = repeated_minimum + source_width;
+    if (repeated_minimum == 0 || source_width == 0 || total == 0) return 0;
+
+    *minimum_bytes = total;
+    *repeat_bytes = repeated_minimum;
+    *capture_source_bytes = source_width;
+    return 1;
+}
+
+static int
 onibi_end_search_optional_class_source_width(const OnibiAstArena *arena,
 					     OnibiAstId id, uint32_t *width)
 {
@@ -4011,6 +4168,10 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     compiled_result->options = parsed_options;
     compiled_result->has_end_search_bound = onibi_end_search_bound_compute(
 	builder, parsed_options, &compiled_result->end_search_bound_bytes);
+    compiled_result->has_end_search_minimum = onibi_end_search_minimum_compute(
+	builder, parsed_options, &compiled_result->end_search_minimum_bytes,
+	&compiled_result->end_search_minimum_repeat_bytes,
+	&compiled_result->end_search_minimum_capture_source_bytes);
     compiled_result->has_search_origin_bound =
 	onibi_search_origin_bound_compute(
 	    builder, parsed_options,

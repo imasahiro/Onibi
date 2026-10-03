@@ -1035,6 +1035,48 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	    rb_raise(rb_eRuntimeError,
 		     "end-bound diagnostic requires an absolute-end assertion");
     }
+    else if (scenario == rb_intern("minimum_end_old_version"))
+	header->version = 4;
+    else if (scenario == rb_intern("minimum_end_unknown_feature"))
+	header->features |= UINT32_C(1) << 31;
+    else if (scenario == rb_intern("minimum_end_noncanonical_unknown")) {
+	header->features &= ~ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM;
+	header->end_search_minimum_bytes = 1;
+    }
+    else if (scenario == rb_intern("minimum_end_zero_distance"))
+	header->end_search_minimum_bytes = 0;
+    else if (scenario == rb_intern("minimum_end_width_mismatch"))
+	header->end_search_minimum_bytes++;
+    else if (scenario == rb_intern("minimum_end_missing_assertion")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++) {
+	    if (actions[i].op == ONIBI_RA_ASSERT_POSITION &&
+		actions[i].arg16 == ONIBI_RAP_END_BUFFER) {
+		actions[i].arg16 = ONIBI_RAP_BEGIN_BUFFER;
+		changed = 1;
+		break;
+	    }
+	}
+	if (!changed)
+	    rb_raise(
+		rb_eRuntimeError,
+		"minimum-end diagnostic requires an absolute-end assertion");
+    }
+    else if (scenario == rb_intern("minimum_end_bad_root")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->state_count; i++) {
+	    if (states[i].op == ONIBI_RS_BACKREF) {
+		states[i].op = ONIBI_RS_CHAR;
+		states[i].payload = 0;
+		states[i].flags = literals[0].flags;
+		changed = 1;
+		break;
+	    }
+	}
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "minimum-end diagnostic requires a backreference state");
+    }
     else if (scenario == rb_intern("search_origin_bound_old_version"))
 	header->version = 2;
     else if (scenario ==
