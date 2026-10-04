@@ -111,6 +111,23 @@ RSeq publication validates section offsets, state ranges, edge destinations,
 action offsets, opcodes, and payload descriptors directly from the blob. The
 runtime validator does not compare the blob with the Ruby semantic mirror.
 
+### Folded capture and sensitive backreference search
+
+One narrow UTF-8 form has a scoped ignorecase capture around one direct scalar,
+one case-sensitive reference to that capture, and a final `\z`. The compiler
+uses encoding fold data to prove MRI's expansion-overflow case. It stores the
+normalized widths and end-search distances in RSeq v6. This form uses native
+`DYNAMIC` execution.
+
+The matcher compares `Dmin` with the full subject length. It applies `Dmax` to
+the lower candidate bound and keeps MRI's raw exclusive upper range and its
+equal-origin case. It does not compare the remaining suffix with `Dmin`.
+
+The physical verifier checks the certificate fields, equations, feature
+conflicts, and exact RSeq shape. It cannot prove the source fold or normalized
+text. The compiler proves those source-level facts. Other AST forms stay
+outside this native profile.
+
 The native interpreters execute ordered actions, cycles, classes, wildcards,
 graphemes, position assertions, captures, bounded-repeat counters,
 backreferences, conditions, calls, atomic groups, absence, and lookarounds for

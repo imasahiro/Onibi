@@ -2170,6 +2170,34 @@ when the tail byte follows it by one byte at a character head. An anchored
 hint limits MAP hits to byte positions below two. The matcher does not use
 this hint for reverse search or non-UTF-8 input.
 
+The compiler also supports one fold-derived direct-capture end range. The root
+must contain one scoped `i` capture with one direct UTF-8 scalar, one sensitive
+numeric or named reference to that capture, and a final `\z`. Reject other
+nodes, wrappers, options, leading anchors, and other end-search profiles.
+
+The compiler reads fold items from Onibi's encoding API. A fold item has a
+variable width when its `byte_len` differs from the source scalar byte width,
+or its `code_len` differs from one. Require at least eight alternatives, so
+the source plus alternatives exceeds MRI 4.0.6's limit of eight. Normalize the
+full scalar with `ONIGENC_MBC_CASE_FOLD`. Its output buffer capacity is
+`ONIGENC_MBC_CASE_FOLD_MAXLEN` (18 bytes). After normalization, accept only
+`B` and `N` values from one through seven. `B` is normalized bytes. `N` is
+normalized UTF-8 codepoints. Also require `N <= B <= 4*N`.
+
+RSeq v6 stores a separate feature bit and the fields `B`, `N`, `Dmin`, and
+`Dmax`. The compiler uses checked arithmetic: `Dmin = 2*B` and
+`Dmax = 4*N+B`. The compiler proves source scope, fold eligibility, and full
+normalization. The physical verifier checks field bounds, equations, feature
+conflicts, and the one-capture, one-sensitive-reference, final-end-action
+shape. It does not prove normalized widths from source bytes.
+
+The matcher first compares the full subject byte length with `Dmin`. It raises
+the lower start bound to `max(0, end-Dmax)` only when this bound is higher than
+the requested origin. It rounds the lower bound up to a character head. The
+raw exclusive upper pointer is `end-Dmin+1`. An origin below it uses the
+preceding byte as the inclusive last candidate. An origin equal to it can be
+tested once. Do not test the remaining suffix against `Dmin`.
+
 ---
 
 # 47. RSeq Header
@@ -2227,13 +2255,17 @@ typedef struct {
     uint32_t end_search_minimum_bytes;
     uint32_t end_search_minimum_repeat_bytes;
     uint32_t end_search_minimum_capture_source_bytes;
+    uint32_t end_search_fold_normalized_bytes;
+    uint32_t end_search_fold_normalized_codepoints;
+    uint32_t end_search_fold_dmin_bytes;
+    uint32_t end_search_fold_dmax_bytes;
 } OnibiRSeqHeader;
 ```
 
 The current RSeq version is:
 
 ```text
-5
+6
 ```
 
 Version 2 added `end_search_bound_bytes` to the physical header. Its feature

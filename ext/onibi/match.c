@@ -325,10 +325,34 @@ onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
 	    if (delta > remaining) delta = remaining;
 	    maximum_start = (OnibiBytePos)(origin + delta);
 	}
+	int has_end_search_fold_direct_capture =
+	    (obj->rseq_view.header->features &
+	     ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE) != 0;
+	uint64_t direct_fold_range = 0;
+	if (has_end_search_fold_direct_capture) {
+	    uint64_t dmax = obj->rseq_view.header->end_search_fold_dmax_bytes;
+	    uint64_t dmin = obj->rseq_view.header->end_search_fold_dmin_bytes;
+	    uint64_t minimum_start =
+		subject_length > dmax ? subject_length - dmax : 0;
+	    if (minimum_start > (uint64_t)start)
+		start = (OnibiBytePos)minimum_start;
+	    if (subject_length >= dmin)
+		direct_fold_range = subject_length - dmin + 1U;
+	}
 	int candidate_valid = onibi_search_candidate_origin(
 	    str, &start, exec_ctx.encoding, exec_ctx.encoding_mode);
-	if ((obj->rseq_view.header->features &
-	     ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM) != 0) {
+	if (has_end_search_fold_direct_capture) {
+	    uint64_t dmin = obj->rseq_view.header->end_search_fold_dmin_bytes;
+	    uint64_t adjusted_start = (uint64_t)start;
+	    if (subject_length < dmin || adjusted_start > direct_fold_range)
+		candidate_valid = 0;
+	    else if (adjusted_start == direct_fold_range)
+		maximum_start = (OnigPosition)direct_fold_range;
+	    else
+		maximum_start = (OnigPosition)(direct_fold_range - 1U);
+	}
+	else if ((obj->rseq_view.header->features &
+		  ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM) != 0) {
 	    uint64_t minimum_distance =
 		obj->rseq_view.header->end_search_minimum_bytes;
 	    uint64_t origin = (uint64_t)search_origin;

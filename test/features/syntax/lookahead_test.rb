@@ -654,6 +654,174 @@ class LookaheadTest < Minitest::Test
     end
   end
 
+  def test_ignorecase_greek_direct_capture_backreference_matches_mri_end_range
+    source_scalar = "\u{1F80}"
+    normalized_scalar = "\u{1F00}\u03B9"
+    variant_scalar = "\u{1F08}\u03B9"
+    source = "(?i:(?<p>#{source_scalar}))\\k<p>\\z"
+    long_subject = "abcdefghij#{normalized_scalar * 2}"
+
+    normalized_match = {
+      values: [normalized_scalar * 2, normalized_scalar],
+      character_spans: [[0, 4], [0, 2]],
+      byte_spans: [[0, 10], [0, 5]]
+    }
+    four_byte_prefix_match = {
+      values: [normalized_scalar * 2, normalized_scalar],
+      character_spans: [[1, 5], [1, 3]],
+      byte_spans: [[4, 14], [4, 9]]
+    }
+    long_subject_match = {
+      values: [normalized_scalar * 2, normalized_scalar],
+      character_spans: [[10, 14], [10, 12]],
+      byte_spans: [[10, 20], [10, 15]]
+    }
+    absolute_start_match = {
+      values: [source_scalar * 2, source_scalar],
+      character_spans: [[0, 2], [0, 1]],
+      byte_spans: [[0, 6], [0, 3]]
+    }
+    insensitive_reference_match = {
+      values: [normalized_scalar + variant_scalar, normalized_scalar],
+      character_spans: [[0, 4], [0, 2]],
+      byte_spans: [[0, 10], [0, 5]]
+    }
+    sharp_s = "\u00DF"
+    sharp_s_source = "(?i:(?<p>#{sharp_s}))\\k<p>\\z"
+    sharp_s_match = {
+      values: [sharp_s * 2, sharp_s],
+      character_spans: [[0, 2], [0, 1]],
+      byte_spans: [[0, 4], [0, 2]]
+    }
+    insensitive_reference_source =
+      "(?i:(?<p>#{source_scalar})\\k<p>)\\z"
+    cases = [
+      ["short source", source, source_scalar * 2, :omitted, nil],
+      ["normalized source", source, normalized_scalar * 2, :omitted,
+       normalized_match],
+      ["four-byte prefix", source,
+       "😀#{normalized_scalar * 2}", :omitted, four_byte_prefix_match],
+      ["ten-byte prefix from zero", source, long_subject, 0,
+       long_subject_match],
+      ["positive origin before candidate", source, long_subject, 9,
+       long_subject_match],
+      ["negative origin at candidate", source, long_subject, -4,
+       long_subject_match],
+      ["origin at subject end", source, long_subject, 14, nil],
+      ["origin beyond subject end", source, long_subject, 15, nil],
+      ["leading absolute start", "\\A#{source}", source_scalar * 2, 0,
+       absolute_start_match],
+      ["sensitive reference control", source,
+       normalized_scalar + variant_scalar, :omitted, nil],
+      ["insensitive reference control", insensitive_reference_source,
+       normalized_scalar + variant_scalar, :omitted,
+       insensitive_reference_match],
+      ["sharp-s control", sharp_s_source, sharp_s * 2, 0, sharp_s_match]
+    ]
+    failures = []
+
+    cases.each do |label, pattern, subject, origin, frozen_mri|
+      mri_regexp = ::Regexp.new(pattern)
+      onibi_regexp = Onibi::Regexp.new(pattern)
+      expected = if origin == :omitted
+                   mri_regexp.match(subject)
+                 else
+                   mri_regexp.match(subject, origin)
+                 end
+      actual = if origin == :omitted
+                 onibi_regexp.match(subject)
+               else
+                 onibi_regexp.match(subject, origin)
+               end
+      expected_row = match_observation(expected, subject)
+      actual_row = match_observation(actual, subject)
+      if expected_row != frozen_mri
+        failures << "#{label}: MRI=#{expected_row.inspect}, " \
+                    "frozen=#{frozen_mri.inspect}"
+      end
+      if actual_row != expected_row
+        failures << "#{label}: MRI=#{expected_row.inspect}, " \
+                    "Onibi=#{actual_row.inspect}"
+      end
+
+      expected_bytes = expected&.to_a&.each_index&.map do |index|
+        expected.byteoffset(index)
+      end
+      actual_bytes = actual&.to_a&.each_index&.map do |index|
+        actual.byteoffset(index)
+      end
+      frozen_bytes = frozen_mri&.fetch(:byte_spans)
+      if expected_bytes != frozen_bytes
+        failures << "#{label}: MRI byte offsets=#{expected_bytes.inspect}, " \
+                    "frozen=#{frozen_bytes.inspect}"
+      end
+      if actual_bytes != expected_bytes
+        failures << "#{label}: Onibi byte offsets=#{actual_bytes.inspect}, " \
+                    "MRI=#{expected_bytes.inspect}"
+      end
+
+      diagnostics = onibi_regexp.send(:__onibi_diagnostics__, subject)
+      if !diagnostics.fetch(:rseq) || diagnostics.fetch(:exec_kind) != 2 ||
+         diagnostics.fetch(:fallback) != 0 ||
+         diagnostics.fetch(:fallback_reason) != :none ||
+         diagnostics.fetch(:unsupported_reason) != :none ||
+         diagnostics.fetch(:executor_error_kind) != :none
+        failures << "#{label}: native route=#{diagnostics.inspect}"
+      end
+      failures << "#{label}: native DYNAMIC did not run" if
+        frozen_mri && diagnostics.fetch(:dynamic).zero?
+      failures << "#{label}: MRI minimum distance must reject before DYNAMIC" if
+        label == "short source" && !diagnostics.fetch(:dynamic).zero?
+    rescue StandardError => e
+      failures << "#{label}: #{e.class}: #{e.message}"
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
+  def test_ignorecase_greek_numeric_backreference_matches_mri_short_source
+    source_scalar = "\u{1F80}"
+    pattern = "(?i:(#{source_scalar}))\\1\\z"
+    subject = source_scalar * 2
+    expected = ::Regexp.new(pattern).match(subject)
+    onibi_regexp = Onibi::Regexp.new(pattern)
+    actual = onibi_regexp.match(subject)
+    failures = []
+
+    expected_row = match_observation(expected, subject)
+    actual_row = match_observation(actual, subject)
+    failures << "MRI=#{expected_row.inspect}, frozen=nil" unless
+      expected_row.nil?
+    failures << "MRI=#{expected_row.inspect}, Onibi=#{actual_row.inspect}" if
+      actual_row != expected_row
+
+    expected_bytes = expected&.to_a&.each_index&.map do |index|
+      expected.byteoffset(index)
+    end
+    actual_bytes = actual&.to_a&.each_index&.map do |index|
+      actual.byteoffset(index)
+    end
+    failures << "MRI byte offsets=#{expected_bytes.inspect}, frozen=nil" unless
+      expected_bytes.nil?
+    if actual_bytes != expected_bytes
+      failures << "Onibi byte offsets=#{actual_bytes.inspect}, " \
+                  "MRI=#{expected_bytes.inspect}"
+    end
+
+    diagnostics = onibi_regexp.send(:__onibi_diagnostics__, subject)
+    if !diagnostics.fetch(:rseq) || diagnostics.fetch(:exec_kind) != 2 ||
+       diagnostics.fetch(:fallback) != 0 ||
+       diagnostics.fetch(:fallback_reason) != :none ||
+       diagnostics.fetch(:unsupported_reason) != :none ||
+       diagnostics.fetch(:executor_error_kind) != :none
+      failures << "native route=#{diagnostics.inspect}"
+    end
+    failures << "MRI minimum distance must reject before DYNAMIC" unless
+      diagnostics.fetch(:dynamic).zero?
+
+    assert_empty failures, failures.join("\n")
+  end
+
   def test_ignorecase_reverse_literal_repeat_rejects_folded_capture_backreference
     source = "(ſ)+\\1\\z"
     expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("SS")

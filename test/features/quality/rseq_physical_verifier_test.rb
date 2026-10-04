@@ -128,6 +128,111 @@ class RseqPhysicalVerifierTest < Minitest::Test
     assert_empty failures, failures.join("\n")
   end
 
+  def test_rejects_invalid_direct_fold_end_range_metadata
+    regexp = Onibi::Regexp.new("(?i:(ᾀ))\\1\\z")
+    cases = [
+      [:casefold_direct_old_version, "invalid Onibi RSeq blob"],
+      [:casefold_direct_feature_clear_normalized_bytes,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_feature_clear_normalized_codepoints,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_feature_clear_dmin,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_feature_clear_dmax,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_end_search_bound_conflict,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_search_origin_bound_conflict,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_class_tail_map_conflict,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_end_search_minimum_conflict,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_zero_normalized_bytes,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_zero_normalized_codepoints,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_bytes_over_buffer_limit,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_codepoints_over_buffer_limit,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_uint32_max_normalized_bytes,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_codepoints_exceed_bytes,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_bytes_exceed_codepoint_maximum,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_minimum_mismatch,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_maximum_mismatch,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_capture_count,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_capture_open_missing,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_capture_close_missing,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_capture_open_extra,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_capture_close_extra,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_reference_target,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_reference_ignorecase,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_end_anchor,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_end_anchor_nonfinal,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_extra_state,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_extra_edge,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_extra_action,
+       "inconsistent Onibi RSeq execution contract"]
+    ]
+    failures = []
+
+    cases.each do |scenario, expected_message|
+      error = begin
+        regexp.send(:__onibi_rseq_verifier_diagnostics__, scenario)
+        nil
+      rescue StandardError => e
+        e
+      end
+      if error.nil?
+        failures << "#{scenario}: accepted corrupted blob"
+      elsif !error.is_a?(ArgumentError)
+        failures << "#{scenario}: raised #{error.class}"
+      elsif error.message != expected_message
+        failures << "#{scenario}: got #{error.message.inspect}"
+      end
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
+  def test_valid_direct_fold_end_range_profiles_pass_physical_verifier
+    cases = [
+      ["Greek", "(?i:(ᾀ))\\1\\z"],
+      ["sharp-s", "(?i:(ß))\\1\\z"]
+    ]
+    failures = []
+
+    cases.each do |label, pattern|
+      valid = begin
+        Onibi::Regexp.new(pattern).send(:__onibi_rseq_verifier_diagnostics__,
+                                        :casefold_direct_valid)
+      rescue StandardError => e
+        failures << "#{label}: #{e.class}: #{e.message}"
+        next
+      end
+      failures << "#{label}: invalid direct profile" unless valid
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
   def test_rejects_old_search_origin_bound_version
     assert_search_origin_bound_corruption_rejected(
       :search_origin_bound_old_version,

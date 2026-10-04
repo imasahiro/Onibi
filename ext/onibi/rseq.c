@@ -715,7 +715,8 @@ onibi_rseq_lower_body(VALUE opaque)
 	    expected_minimum != compiled_data->end_search_minimum_bytes ||
 	    compiled_data->has_end_search_bound ||
 	    compiled_data->has_search_origin_bound ||
-	    compiled_data->has_class_tail_map)
+	    compiled_data->has_class_tail_map ||
+	    compiled_data->has_end_search_fold_direct_capture)
 	    rb_raise(eRegexpError, "invalid compiled RSeq end search minimum");
 	features |= ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM;
     }
@@ -723,6 +724,41 @@ onibi_rseq_lower_body(VALUE opaque)
 	     compiled_data->end_search_minimum_repeat_bytes != 0 ||
 	     compiled_data->end_search_minimum_capture_source_bytes != 0) {
 	rb_raise(eRegexpError, "invalid compiled RSeq end search minimum");
+    }
+    if (compiled_data->has_end_search_fold_direct_capture) {
+	uint64_t expected_dmin =
+	    (uint64_t)compiled_data->end_search_fold_normalized_bytes * 2U;
+	uint64_t expected_dmax =
+	    (uint64_t)compiled_data->end_search_fold_normalized_codepoints *
+		4U +
+	    compiled_data->end_search_fold_normalized_bytes;
+	if (compiled_data->end_search_fold_normalized_bytes == 0 ||
+	    compiled_data->end_search_fold_normalized_bytes >
+		ONIBI_RSEQ_DIRECT_FOLD_WIDTH_LIMIT ||
+	    compiled_data->end_search_fold_normalized_codepoints == 0 ||
+	    compiled_data->end_search_fold_normalized_codepoints >
+		ONIBI_RSEQ_DIRECT_FOLD_WIDTH_LIMIT ||
+	    compiled_data->end_search_fold_normalized_codepoints >
+		compiled_data->end_search_fold_normalized_bytes ||
+	    (uint64_t)compiled_data->end_search_fold_normalized_bytes >
+		(uint64_t)compiled_data->end_search_fold_normalized_codepoints *
+		    4U ||
+	    expected_dmin != compiled_data->end_search_fold_dmin_bytes ||
+	    expected_dmax != compiled_data->end_search_fold_dmax_bytes ||
+	    compiled_data->has_end_search_bound ||
+	    compiled_data->has_search_origin_bound ||
+	    compiled_data->has_class_tail_map ||
+	    compiled_data->has_end_search_minimum)
+	    rb_raise(eRegexpError,
+		     "invalid compiled RSeq direct-fold end search range");
+	features |= ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE;
+    }
+    else if (compiled_data->end_search_fold_normalized_bytes != 0 ||
+	     compiled_data->end_search_fold_normalized_codepoints != 0 ||
+	     compiled_data->end_search_fold_dmin_bytes != 0 ||
+	     compiled_data->end_search_fold_dmax_bytes != 0) {
+	rb_raise(eRegexpError,
+		 "invalid unused RSeq direct-fold end search range fields");
     }
     if (compiled_data->has_search_origin_bound) {
 	if (compiled_data->search_origin_bound_delta_bytes > 1)
@@ -838,6 +874,14 @@ onibi_rseq_lower_body(VALUE opaque)
 	compiled_data->end_search_minimum_repeat_bytes;
     physical.end_search_minimum_capture_source_bytes =
 	compiled_data->end_search_minimum_capture_source_bytes;
+    physical.end_search_fold_normalized_bytes =
+	compiled_data->end_search_fold_normalized_bytes;
+    physical.end_search_fold_normalized_codepoints =
+	compiled_data->end_search_fold_normalized_codepoints;
+    physical.end_search_fold_dmin_bytes =
+	compiled_data->end_search_fold_dmin_bytes;
+    physical.end_search_fold_dmax_bytes =
+	compiled_data->end_search_fold_dmax_bytes;
     if ((physical.features & ONIBI_RSEQ_FEATURE_FIRST_BITMAP) == 0)
 	memset(physical.first_bitmap, 0, sizeof(physical.first_bitmap));
     onibi_allocation_owner_set_phase(&owner->allocations, 7);

@@ -5,6 +5,8 @@
 #include "onibi_matchdata_internal.h"
 #include "onibi_rseq_internal.h"
 
+#include <string.h>
+
 static int
 onibi_unicode_ctype_id(ID property)
 {
@@ -986,6 +988,14 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 
 /* This hook changes a private copy of a published blob. It exists only for
  * verifier tests. Normal construction validates the original blob once. */
+static int
+onibi_rseq_verifier_direct_fold_scenario(ID scenario)
+{
+    const char *name = rb_id2name(scenario);
+    static const char prefix[] = "casefold_direct_";
+    return name != NULL && strncmp(name, prefix, sizeof(prefix) - 1U) == 0;
+}
+
 static VALUE
 onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 {
@@ -994,6 +1004,23 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
     if (NIL_P(obj->rseq_blob))
 	rb_raise(rb_eArgError,
 		 "RSeq verifier diagnostic requires an RSeq blob");
+    ID scenario = rb_to_id(scenario_value);
+    if (onibi_rseq_verifier_direct_fold_scenario(scenario)) {
+	/* Validate the untouched published blob before a scenario reads its
+	 * direct-fold states, edges, actions, or backreference descriptors. */
+	onibi_rseq_blob_validate(obj->rseq_blob);
+	const OnibiRSeqHeader *source_header =
+	    (const OnibiRSeqHeader *)RSTRING_PTR(obj->rseq_blob);
+	if ((source_header->features &
+	     ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE) == 0 ||
+	    source_header->state_count != 3 || source_header->edge_count != 3 ||
+	    source_header->action_count != 6 ||
+	    source_header->backref_count != 1 ||
+	    source_header->capture_count != 1 ||
+	    source_header->semantic_capture_count != 1)
+	    rb_raise(rb_eArgError, "direct-fold diagnostic requires a "
+				   "validated direct-fold profile");
+    }
     VALUE blob = rb_str_dup(obj->rseq_blob);
     OnibiRSeqHeader *header = (OnibiRSeqHeader *)RSTRING_PTR(blob);
     OnibiRState *states =
@@ -1012,7 +1039,6 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	(uint32_t *)(RSTRING_PTR(blob) + header->backref_lists_offset);
     OnibiSubprogramDesc *subprograms =
 	(OnibiSubprogramDesc *)(RSTRING_PTR(blob) + header->subprograms_offset);
-    ID scenario = rb_to_id(scenario_value);
     if (scenario == rb_intern("end_bound_old_version"))
 	header->version = 1;
     else if (scenario == rb_intern("end_bound_unknown_feature"))
@@ -1076,6 +1102,232 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	if (!changed)
 	    rb_raise(rb_eRuntimeError,
 		     "minimum-end diagnostic requires a backreference state");
+    }
+    else if (scenario == rb_intern("casefold_direct_valid")) {
+	if ((header->features &
+	     ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE) == 0)
+	    rb_raise(rb_eArgError, "direct-fold diagnostic requires a compiled "
+				   "direct-fold profile");
+    }
+    else if (scenario == rb_intern("casefold_direct_old_version"))
+	header->version = 5;
+    else if (scenario ==
+	     rb_intern("casefold_direct_feature_clear_normalized_bytes")) {
+	header->features &= ~ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE;
+	header->end_search_fold_normalized_bytes = 1;
+	header->end_search_fold_normalized_codepoints = 0;
+	header->end_search_fold_dmin_bytes = 0;
+	header->end_search_fold_dmax_bytes = 0;
+    }
+    else if (scenario ==
+	     rb_intern("casefold_direct_feature_clear_normalized_codepoints")) {
+	header->features &= ~ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE;
+	header->end_search_fold_normalized_bytes = 0;
+	header->end_search_fold_normalized_codepoints = 1;
+	header->end_search_fold_dmin_bytes = 0;
+	header->end_search_fold_dmax_bytes = 0;
+    }
+    else if (scenario == rb_intern("casefold_direct_feature_clear_dmin")) {
+	header->features &= ~ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE;
+	header->end_search_fold_normalized_bytes = 0;
+	header->end_search_fold_normalized_codepoints = 0;
+	header->end_search_fold_dmin_bytes = 1;
+	header->end_search_fold_dmax_bytes = 0;
+    }
+    else if (scenario == rb_intern("casefold_direct_feature_clear_dmax")) {
+	header->features &= ~ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE;
+	header->end_search_fold_normalized_bytes = 0;
+	header->end_search_fold_normalized_codepoints = 0;
+	header->end_search_fold_dmin_bytes = 0;
+	header->end_search_fold_dmax_bytes = 1;
+    }
+    else if (scenario == rb_intern("casefold_direct_end_search_bound_conflict"))
+	header->features |= ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND;
+    else if (scenario ==
+	     rb_intern("casefold_direct_search_origin_bound_conflict"))
+	header->features |= ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND;
+    else if (scenario == rb_intern("casefold_direct_class_tail_map_conflict"))
+	header->features |= ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP;
+    else if (scenario ==
+	     rb_intern("casefold_direct_end_search_minimum_conflict"))
+	header->features |= ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM;
+    else if (scenario == rb_intern("casefold_direct_zero_normalized_bytes"))
+	header->end_search_fold_normalized_bytes = 0;
+    else if (scenario ==
+	     rb_intern("casefold_direct_zero_normalized_codepoints"))
+	header->end_search_fold_normalized_codepoints = 0;
+    else if (scenario == rb_intern("casefold_direct_bytes_over_buffer_limit"))
+	header->end_search_fold_normalized_bytes =
+	    ONIBI_RSEQ_DIRECT_FOLD_WIDTH_LIMIT + 1U;
+    else if (scenario ==
+	     rb_intern("casefold_direct_codepoints_over_buffer_limit"))
+	header->end_search_fold_normalized_codepoints =
+	    ONIBI_RSEQ_DIRECT_FOLD_WIDTH_LIMIT + 1U;
+    else if (scenario ==
+	     rb_intern("casefold_direct_uint32_max_normalized_bytes"))
+	header->end_search_fold_normalized_bytes = UINT32_MAX;
+    else if (scenario == rb_intern("casefold_direct_codepoints_exceed_bytes")) {
+	header->end_search_fold_normalized_bytes = 1;
+	header->end_search_fold_normalized_codepoints = 2;
+    }
+    else if (scenario ==
+	     rb_intern("casefold_direct_bytes_exceed_codepoint_maximum")) {
+	header->end_search_fold_normalized_bytes = 5;
+	header->end_search_fold_normalized_codepoints = 1;
+    }
+    else if (scenario == rb_intern("casefold_direct_minimum_mismatch"))
+	header->end_search_fold_dmin_bytes++;
+    else if (scenario == rb_intern("casefold_direct_maximum_mismatch"))
+	header->end_search_fold_dmax_bytes++;
+    else if (scenario == rb_intern("casefold_direct_capture_count")) {
+	header->capture_count = 2;
+    }
+    else if (scenario == rb_intern("casefold_direct_capture_open_missing")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_CAPTURE && actions[i].flags == 0 &&
+		actions[i].arg16 == 0) {
+		actions[i] = (OnibiRAction){ONIBI_RA_ORDER, 0, 0, 0};
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "direct-fold diagnostic requires a capture open");
+    }
+    else if (scenario == rb_intern("casefold_direct_capture_close_missing")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_CAPTURE &&
+		actions[i].flags == ONIBI_RA_CAPTURE_CLOSE &&
+		actions[i].arg16 == 1) {
+		actions[i] = (OnibiRAction){ONIBI_RA_ORDER, 0, 0, 0};
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "direct-fold diagnostic requires a capture close");
+    }
+    else if (scenario == rb_intern("casefold_direct_capture_open_extra")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_ASSERT_POSITION &&
+		actions[i].arg16 == ONIBI_RAP_END_BUFFER) {
+		actions[i] = (OnibiRAction){ONIBI_RA_CAPTURE, 0, 0, 0};
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(
+		rb_eRuntimeError,
+		"direct-fold diagnostic requires an absolute-end assertion");
+    }
+    else if (scenario == rb_intern("casefold_direct_capture_close_extra")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_ASSERT_POSITION &&
+		actions[i].arg16 == ONIBI_RAP_END_BUFFER) {
+		actions[i] = (OnibiRAction){ONIBI_RA_CAPTURE,
+					    ONIBI_RA_CAPTURE_CLOSE, 1, 0};
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(
+		rb_eRuntimeError,
+		"direct-fold diagnostic requires an absolute-end assertion");
+    }
+    else if (scenario == rb_intern("casefold_direct_reference_target")) {
+	uint32_t list_index =
+	    (backrefs[0].capture_list_off - header->backref_lists_offset) /
+	    (uint32_t)sizeof(uint32_t);
+	header->capture_count = 2;
+	header->semantic_capture_count = 2;
+	backref_capture_ids[list_index] = 1;
+    }
+    else if (scenario == rb_intern("casefold_direct_reference_ignorecase")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->state_count; i++)
+	    if (states[i].op == ONIBI_RS_BACKREF) {
+		states[i].flags = ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE;
+		backrefs[states[i].payload].flags |=
+		    ONIBI_BACKREF_FLAG_IGNORE_CASE;
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "direct-fold diagnostic requires a backreference state");
+    }
+    else if (scenario == rb_intern("casefold_direct_end_anchor")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_ASSERT_POSITION &&
+		actions[i].arg16 == ONIBI_RAP_END_BUFFER) {
+		actions[i].arg16 = ONIBI_RAP_BEGIN_BUFFER;
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(
+		rb_eRuntimeError,
+		"direct-fold diagnostic requires an absolute-end assertion");
+    }
+    else if (scenario == rb_intern("casefold_direct_end_anchor_nonfinal")) {
+	int end_changed = 0, close_changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_ASSERT_POSITION &&
+		actions[i].arg16 == ONIBI_RAP_END_BUFFER) {
+		actions[i].arg16 = ONIBI_RAP_BEGIN_BUFFER;
+		end_changed = 1;
+		break;
+	    }
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_CAPTURE &&
+		actions[i].flags == ONIBI_RA_CAPTURE_CLOSE &&
+		actions[i].arg16 == 1) {
+		actions[i] = (OnibiRAction){ONIBI_RA_ASSERT_POSITION, 0,
+					    ONIBI_RAP_END_BUFFER, 0};
+		close_changed = 1;
+		break;
+	    }
+	if (!end_changed || !close_changed)
+	    rb_raise(rb_eRuntimeError, "direct-fold diagnostic requires an end "
+				       "assertion and capture close");
+    }
+    else if (scenario == rb_intern("casefold_direct_extra_state")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->state_count; i++)
+	    if (states[i].op == ONIBI_RS_BACKREF) {
+		states[i].op = ONIBI_RS_CHAR;
+		states[i].flags = ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE;
+		states[i].payload = 0;
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "direct-fold diagnostic requires a backreference state");
+    }
+    else if (scenario == rb_intern("casefold_direct_extra_edge")) {
+	states[0].edge_count = 2;
+	states[1].edge_base = 2;
+	states[1].edge_count = 0;
+    }
+    else if (scenario == rb_intern("casefold_direct_extra_action")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_ASSERT_POSITION &&
+		actions[i].arg16 == ONIBI_RAP_END_BUFFER) {
+		actions[i] = (OnibiRAction){ONIBI_RA_ORDER, 0, 0, 0};
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(
+		rb_eRuntimeError,
+		"direct-fold diagnostic requires an absolute-end assertion");
     }
     else if (scenario == rb_intern("search_origin_bound_old_version"))
 	header->version = 2;
