@@ -4024,6 +4024,192 @@ onibi_end_search_atomic_alternation_bound_compute(const OnibiAstArena *arena,
 }
 
 static int
+onibi_end_search_wrapped_capture_bound_compute(
+    const onibi_gir_builder_t *builder, int parsed_options,
+    const OnibiAstNode *root, uint32_t *bound_bytes)
+{
+    const OnibiAstArena *arena = builder->ast;
+    const OnibiResolvedArena *semantics = builder->semantics;
+    const uint32_t allowed_options =
+	ONIBI_OPT_IGNORECASE | ONIBI_OPT_FIXEDENCODING;
+    if (arena == NULL || semantics == NULL || semantics->nodes == NULL ||
+	semantics->count != arena->count || semantics->capture_count != 1 ||
+	root->kind != ONIBI_AST_SEQUENCE || root->child_count != 2 ||
+	root->children == NULL ||
+	((uint32_t)parsed_options & ~allowed_options) != 0)
+	return 0;
+
+    OnibiAstId payload_id = root->children[0];
+    OnibiAstId end_anchor_id = root->children[1];
+    if (payload_id == ONIBI_AST_NONE || end_anchor_id == ONIBI_AST_NONE ||
+	(size_t)payload_id >= arena->count ||
+	(size_t)end_anchor_id >= arena->count ||
+	(size_t)end_anchor_id >= semantics->count)
+	return 0;
+
+    const OnibiAstNode *end_anchor = onibi_ast_node_const(arena, end_anchor_id);
+    const OnibiResolvedNode *anchor_semantic = &semantics->nodes[end_anchor_id];
+    if (end_anchor->kind != ONIBI_AST_ANCHOR ||
+	end_anchor->token_kind != ONIBI_TOKEN_ANCHOR ||
+	end_anchor->byte != 'z' || end_anchor->flags != 0 ||
+	(anchor_semantic->lexical_options & ~allowed_options) != 0)
+	return 0;
+
+    int scoped_ignorecase = 0;
+    OnibiAstId pair_sequence_id = payload_id;
+    const OnibiAstNode *payload = onibi_ast_node_const(arena, payload_id);
+    if (payload->kind == ONIBI_AST_OPTION_SCOPE) {
+	if (payload->flags != 0 ||
+	    payload->token_kind != ONIBI_TOKEN_OPTION_SCOPE_START ||
+	    !payload->name.present || payload->name.length != 1 ||
+	    payload->name.offset >= arena->bytes_count ||
+	    arena->bytes[payload->name.offset] != 'i' ||
+	    payload->negative_options.present ||
+	    payload->body == ONIBI_AST_NONE ||
+	    (size_t)payload->body >= arena->count ||
+	    payload_id >= semantics->count ||
+	    (semantics->nodes[payload_id].lexical_options & ~allowed_options) !=
+		0)
+	    return 0;
+	scoped_ignorecase = 1;
+	pair_sequence_id = payload->body;
+	const OnibiAstNode *scope_body =
+	    onibi_ast_node_const(arena, pair_sequence_id);
+	if (scope_body->kind != ONIBI_AST_SEQUENCE ||
+	    scope_body->children == NULL)
+	    return 0;
+	if (scope_body->child_count == 1) {
+	    OnibiAstId group_id = scope_body->children[0];
+	    if (group_id == ONIBI_AST_NONE || (size_t)group_id >= arena->count)
+		return 0;
+	    const OnibiAstNode *group = onibi_ast_node_const(arena, group_id);
+	    if (group->kind != ONIBI_AST_GROUP ||
+		group->token_kind != ONIBI_TOKEN_NONCAPTURE_START ||
+		group->flags != 0 || group->name.present ||
+		group->negative_options.present ||
+		group->body == ONIBI_AST_NONE ||
+		(size_t)group->body >= arena->count ||
+		group_id >= semantics->count ||
+		(semantics->nodes[group_id].lexical_options &
+		 ~allowed_options) != 0)
+		return 0;
+	    pair_sequence_id = group->body;
+	}
+	else if (scope_body->child_count != 2) {
+	    return 0;
+	}
+    }
+    else {
+	if (payload->kind != ONIBI_AST_GROUP ||
+	    payload->token_kind != ONIBI_TOKEN_NONCAPTURE_START ||
+	    payload->flags != 0 || payload->name.present ||
+	    payload->negative_options.present ||
+	    payload->body == ONIBI_AST_NONE ||
+	    (size_t)payload->body >= arena->count ||
+	    payload_id >= semantics->count ||
+	    (semantics->nodes[payload_id].lexical_options &
+	     ONIBI_OPT_IGNORECASE) == 0 ||
+	    (semantics->nodes[payload_id].lexical_options & ~allowed_options) !=
+		0)
+	    return 0;
+	pair_sequence_id = payload->body;
+    }
+
+    if (pair_sequence_id == ONIBI_AST_NONE ||
+	(size_t)pair_sequence_id >= arena->count)
+	return 0;
+    const OnibiAstNode *pair_sequence =
+	onibi_ast_node_const(arena, pair_sequence_id);
+    if (pair_sequence->kind != ONIBI_AST_SEQUENCE ||
+	pair_sequence->child_count != 2 || pair_sequence->children == NULL)
+	return 0;
+
+    OnibiAstId capture_id = pair_sequence->children[0];
+    OnibiAstId backref_id = pair_sequence->children[1];
+    if (capture_id == ONIBI_AST_NONE || backref_id == ONIBI_AST_NONE ||
+	(size_t)capture_id >= arena->count ||
+	(size_t)backref_id >= arena->count ||
+	(size_t)capture_id >= semantics->count ||
+	(size_t)backref_id >= semantics->count)
+	return 0;
+    const OnibiAstNode *capture = onibi_ast_node_const(arena, capture_id);
+    const OnibiAstNode *backref = onibi_ast_node_const(arena, backref_id);
+    const OnibiResolvedNode *capture_semantic = &semantics->nodes[capture_id];
+    const OnibiResolvedNode *backref_semantic = &semantics->nodes[backref_id];
+    if (capture->kind != ONIBI_AST_CAPTURE ||
+	capture->flags != ONIBI_AST_NODE_CAPTURING ||
+	backref->kind != ONIBI_AST_BACKREF ||
+	backref->token_kind != ONIBI_TOKEN_BACKREF || backref->flags != 0 ||
+	(capture_semantic->lexical_options & ONIBI_OPT_IGNORECASE) == 0 ||
+	(backref_semantic->lexical_options & ONIBI_OPT_IGNORECASE) == 0 ||
+	(capture_semantic->lexical_options & ~allowed_options) != 0 ||
+	(backref_semantic->lexical_options & ~allowed_options) != 0 ||
+	(!scoped_ignorecase && (parsed_options & ONIBI_OPT_IGNORECASE) == 0))
+	return 0;
+
+    if (capture->body == ONIBI_AST_NONE ||
+	(size_t)capture->body >= arena->count)
+	return 0;
+    const OnibiAstNode *capture_body =
+	onibi_ast_node_const(arena, capture->body);
+    if (capture_body->kind != ONIBI_AST_SEQUENCE ||
+	capture_body->child_count != 1 || capture_body->children == NULL)
+	return 0;
+    OnibiAstId literal_id = capture_body->children[0];
+    if (literal_id == ONIBI_AST_NONE || (size_t)literal_id >= arena->count ||
+	(size_t)literal_id >= semantics->count)
+	return 0;
+    const OnibiAstNode *literal = onibi_ast_node_const(arena, literal_id);
+    const OnibiResolvedNode *literal_semantic = &semantics->nodes[literal_id];
+    if (literal->kind != ONIBI_AST_LITERAL ||
+	literal->token_kind != ONIBI_TOKEN_LITERAL || literal->flags != 0 ||
+	literal->child_count != 0 || literal->range_count != 0 ||
+	literal->name.present || literal->negative_options.present ||
+	literal->body != ONIBI_AST_NONE || literal->atom != ONIBI_AST_NONE ||
+	literal->yes != ONIBI_AST_NONE || literal->no != ONIBI_AST_NONE ||
+	(literal_semantic->lexical_options & ONIBI_OPT_IGNORECASE) == 0 ||
+	(literal_semantic->lexical_options & ~allowed_options) != 0)
+	return 0;
+    if (literal->bytes.present) {
+	if (literal->bytes.length != 1 ||
+	    literal->bytes.offset >= arena->bytes_count ||
+	    arena->bytes[literal->bytes.offset] >= 0x80)
+	    return 0;
+    }
+    else if (literal->byte < 0 || literal->byte >= 0x80) {
+	return 0;
+    }
+
+    uint32_t capture_width = 0;
+    uint32_t backref_width = 0;
+    if (!onibi_end_search_capture_source_width(
+	    arena, capture_id, builder->encoding_index, &capture_width) ||
+	capture_width != 1)
+	return 0;
+    OnibiAstId target = backref_semantic->reference_target;
+    if (target != capture_id || target == ONIBI_AST_NONE ||
+	(size_t)target >= semantics->count ||
+	capture_semantic->capture_id < 0 ||
+	semantics->nodes[target].capture_id != capture_semantic->capture_id ||
+	!onibi_end_search_capture_source_width(
+	    arena, target, builder->encoding_index, &backref_width) ||
+	backref_width != capture_width)
+	return 0;
+    if (backref->name.present) {
+	OnibiNameIndexEntry *entry = onibi_name_index_find(
+	    (OnibiResolvedArena *)semantics, arena, backref->name,
+	    rb_enc_from_index(builder->encoding_index));
+	if (entry == NULL || !entry->used || entry->definition_count != 1 ||
+	    entry->definitions[0] != target)
+	    return 0;
+    }
+
+    if (backref_width > UINT32_MAX - capture_width) return 0;
+    *bound_bytes = capture_width + backref_width;
+    return *bound_bytes != 0;
+}
+
+static int
 onibi_end_search_bound_compute(const onibi_gir_builder_t *builder,
 			       int parsed_options, uint32_t *bound_bytes)
 {
@@ -4031,7 +4217,6 @@ onibi_end_search_bound_compute(const onibi_gir_builder_t *builder,
     const OnibiResolvedArena *semantics = builder->semantics;
     if (arena == NULL || semantics == NULL || semantics->nodes == NULL ||
 	arena->root == ONIBI_AST_NONE || (size_t)arena->root >= arena->count ||
-	(parsed_options & ONIBI_OPT_IGNORECASE) == 0 ||
 	(parsed_options & ONIBI_OPT_EXTENDED) != 0 ||
 	(builder->encoding_index != rb_utf8_encindex() &&
 	 builder->encoding_index != rb_usascii_encindex()))
@@ -4044,9 +4229,14 @@ onibi_end_search_bound_compute(const onibi_gir_builder_t *builder,
 		arena, root, builder->encoding_index, parsed_options,
 		bound_bytes))
 	    return 1;
-	return onibi_end_search_optional_class_bound_compute(
-	    arena, root, builder->encoding_index, parsed_options, bound_bytes);
+	if (onibi_end_search_optional_class_bound_compute(
+		arena, root, builder->encoding_index, parsed_options,
+		bound_bytes))
+	    return 1;
+	return onibi_end_search_wrapped_capture_bound_compute(
+	    builder, parsed_options, root, bound_bytes);
     }
+    if ((parsed_options & ONIBI_OPT_IGNORECASE) == 0) return 0;
     if (root->child_count != 3 || root->children == NULL) return 0;
     OnibiAstId capture_id = root->children[0];
     OnibiAstId backref_id = root->children[1];

@@ -151,7 +151,8 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 26 | TASK-BASE02-BACKREF-FOLD | Split | BASE02 | Case-folded backreferences follow MRI. |
 | 26a | TASK-BASE02-FOLD-END-AUDIT | Accepted | BACKREF-FOLD case 3 | Audit the remaining case 5 end-anchor mismatch. |
 | 26b | TASK-BASE02-FOLD-END-REPAIR | Accepted | FOLD-END-AUDIT | Preserve MRI absolute-end candidate-start bounds. |
-| 26c | TASK-BASE02-FOLD-END-WRAPPER | Waiting | FOLD-END-REPAIR | Resolve the retained scoped-wrapper mismatch. |
+| 26c | TASK-BASE02-FOLD-END-WRAPPER | Accepted | FOLD-END-REPAIR | Resolve the retained scoped-wrapper mismatch. |
+| 26d | TASK-BASE02-FOLD-END-NESTED-RESTORE | Waiting | FOLD-END-WRAPPER | Prove the retained nested-option form with an extra literal. |
 | 27 | TASK-BASE02-ASSERTION-GREEDY | Accepted | BASE02 | A greedy dot respects terminal assertion priority. |
 | 28 | TASK-BASE02-CLASS-RANGE | Accepted | BASE02 | The access-log class compiles and matches MRI. |
 | 29 | TASK-BASE02-REVERSE-FOLD | Accepted | BASE02 | Reverse Unicode folds preserve native and fallback routes. |
@@ -501,12 +502,22 @@ Done: case 5 and the frozen supported controls agree with MRI without native fal
 
 ### TASK-BASE02-FOLD-END-WRAPPER — Scoped end-bound form
 
-The narrow numeric and named case 5 forms are accepted. The matrix row `scoped_wrapper` still fails.
+The narrow numeric and named case 5 forms and `scoped_wrapper` are accepted.
+The 12-row wrapper matrix passes on native DYNAMIC with zero fallback.
 Reuse the immutable 17-row matrix and exact MRI/native results from FOLD-END-REPAIR.
 Inspect effective option scope and wrapper transparency before extending compiler eligibility.
 Candidate owner: `ext/onibi/compiler.c` source-byte analysis. Do not change executor end assertions.
 Freeze tests before C edits. Preserve disabled options, nested scope restoration and anchor precedence.
 Done: the scoped form and bounded controls match MRI on native routes; unrelated unknown forms stay explicit.
+
+### TASK-BASE02-FOLD-END-NESTED-RESTORE — Nested option restore
+
+The wrapper audit found a native mismatch in `nested_option_restore` with an extra literal.
+Reuse `task-fold-end-wrapper-audit-01/worker/freeze-01/minimal-inputs-01.json` under the saved relay root.
+MRI returns nil; Onibi returns a native DYNAMIC match with zero fallback.
+Prove the optimizer bound and option restoration before extending compiler eligibility.
+Keep the accepted narrow wrapper profile unchanged until a test-first proof supports extension.
+Done: the retained row and bounded controls match MRI on native routes.
 
 ### TASK-BASE02-ASSERTION-GREEDY — Greedy repeat after terminal assertion
 

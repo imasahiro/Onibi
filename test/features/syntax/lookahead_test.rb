@@ -842,6 +842,83 @@ class LookaheadTest < Minitest::Test
     end
   end
 
+  def test_ignorecase_end_bound_keeps_scoped_capture_backreference_wrappers
+    ignorecase = ::Regexp::IGNORECASE
+    onibi_ignorecase = Onibi::Regexp::IGNORECASE
+    cases = [
+      ["global numeric control", "(s)\\1\\z", "ſſ", 0,
+       ignorecase, onibi_ignorecase, nil],
+      ["scoped wrapper numeric", "(?i:(?:(s)\\1))\\z", "ſſ", 0,
+       0, 0, nil],
+      ["scoped plain numeric", "(?i:(s)\\1)\\z", "ſſ", 0,
+       0, 0, nil],
+      ["global group numeric", "(?:(s)\\1)\\z", "ſſ", 0,
+       ignorecase, onibi_ignorecase, nil],
+      ["scoped wrapper named",
+       "(?i:(?:(?<p>s)\\k<p>))\\z", "ſſ", 0, 0, 0, nil],
+      ["nested disable-i control",
+       "(?i:(?:(?-i:(s)\\1)))\\z", "ſſ", 0, 0, 0, nil],
+      ["scoped numeric multibyte prefix",
+       "(?i:(?:(s)\\1))\\z", "éss", 1, 0, 0,
+       { values: %w[ss s], character_spans: [[1, 3], [1, 2]],
+         byte_spans: [[2, 4], [2, 3]] }],
+      ["scoped named multibyte prefix",
+       "(?i:(?:(?<p>s)\\k<p>))\\z", "éss", 1, 0, 0,
+       { values: %w[ss s], character_spans: [[1, 3], [1, 2]],
+         byte_spans: [[2, 4], [2, 3]] }],
+      ["exclusive upper-range equality origin",
+       "(?i:(?:(s)\\1))\\z", "éss", 2, 0, 0, nil],
+      ["end origin",
+       "(?i:(?:(s)\\1))\\z", "éss", 3, 0, 0, nil],
+      ["absolute-start precedence",
+       "\\A(?i:(?:(s)\\1))\\z", "ſſ", 0, 0, 0,
+       { values: %w[ſſ ſ], character_spans: [[0, 2], [0, 1]],
+         byte_spans: [[0, 4], [0, 2]] }],
+      ["begin-position precedence at nonzero origin",
+       "\\G(?i:(?:(s)\\1))\\z", "xſſ", 1, 0, 0,
+       { values: %w[ſſ ſ], character_spans: [[1, 3], [1, 2]],
+         byte_spans: [[1, 5], [1, 3]] }]
+    ]
+    failures = []
+
+    cases.each do |row|
+      label, source, subject, origin, mri_options, onibi_options, frozen_mri = row
+      mri_regexp = ::Regexp.new(source, mri_options)
+      onibi_regexp = Onibi::Regexp.new(source, onibi_options)
+      expected = mri_regexp.match(subject, origin)
+      actual = onibi_regexp.match(subject, origin)
+      expected_row = match_observation(expected, subject)
+      actual_row = match_observation(actual, subject)
+      failures << "#{label}: MRI=#{expected_row.inspect}; frozen=#{frozen_mri.inspect}" if expected_row != frozen_mri
+      failures << "#{label}: MRI=#{expected_row.inspect}; Onibi=#{actual_row.inspect}" if actual_row != expected_row
+
+      expected_bytes = expected&.to_a&.each_index&.map do |index|
+        expected.byteoffset(index)
+      end
+      actual_bytes = actual&.to_a&.each_index&.map do |index|
+        actual.byteoffset(index)
+      end
+      frozen_bytes = frozen_mri&.fetch(:byte_spans)
+      failures << "#{label}: MRI bytes=#{expected_bytes.inspect}; frozen=#{frozen_bytes.inspect}" if expected_bytes != frozen_bytes
+      failures << "#{label}: Onibi bytes=#{actual_bytes.inspect}; MRI=#{expected_bytes.inspect}" if actual_bytes != expected_bytes
+
+      diagnostics = onibi_regexp.send(:__onibi_diagnostics__, subject)
+      if !diagnostics.fetch(:rseq) || diagnostics.fetch(:exec_kind) != 2 ||
+         diagnostics.fetch(:fallback) != 0 ||
+         diagnostics.fetch(:fallback_reason) != :none ||
+         diagnostics.fetch(:unsupported_reason) != :none ||
+         diagnostics.fetch(:executor_error_kind) != :none
+        failures << "#{label}: native route=#{diagnostics.inspect}"
+      end
+      failures << "#{label}: native DYNAMIC did not run" if
+        diagnostics.fetch(:dynamic).zero?
+    rescue StandardError => e
+      failures << "#{label}: #{e.class}: #{e.message}"
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
   def test_ignorecase_reverse_literal_repeat_matches_mri_end_distance_cases
     ignorecase = ::Regexp::IGNORECASE
     onibi_ignorecase = Onibi::Regexp::IGNORECASE

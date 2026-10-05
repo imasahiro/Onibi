@@ -2053,23 +2053,34 @@ For ASCII-compatible strings with seven-bit content, byte search is permitted.
 
 For other strings, candidate positions must remain valid character boundaries.
 
-For the capture/backreference form, the compiler sets this bound only for a
-UTF-8 or US-ASCII pattern with `IGNORECASE`. Its root sequence must contain
-one capture, one reference to that capture, and a final `\z`. The capture
-must contain one direct literal. The compiler leaves all other forms
-unbounded. It does not use `\A`, `\G`, `\Z`, `$`, or branch-local anchors
-for this bound.
+For the capture/backreference form, the compiler sets this bound for a UTF-8
+or US-ASCII pattern with `IGNORECASE`. The exact root form contains one
+capture, one reference to that capture, and a final `\z`. The capture must
+contain one direct literal.
+
+The compiler also accepts three wrapped forms. One form has one neutral
+`(?:...)` group with global `IGNORECASE`. Another has one positive `(?i:...)`
+scope. The third has that scope around one neutral group. Each form has one
+capture, its reference, and a final `\z`, in that order. The group must be
+noncapturing. The scope can enable only `i`. The wrapped capture must contain
+one direct, one-byte ASCII literal. The capture, literal, and reference must
+have effective `IGNORECASE`. Without a scope, global `IGNORECASE` is required.
+Top-level options can contain only `IGNORECASE` and optional
+`FIXEDENCODING`. The reference must be numeric or uniquely named.
+
+The compiler leaves other forms unbounded. It does not use `\A`, `\G`,
+`\Z`, `$`, or branch-local anchors for this bound.
 
 The header field `end_search_bound_bytes` is a byte distance from the subject
 end. The matcher starts at the larger of `search_origin` and
 `max(0, subject_byte_length - end_search_bound_bytes)`. It then moves that
 position to a valid character boundary. This field is not a match width.
-The compiler derives this bound by adding the source byte width of the direct
-literal in the capture twice. The reference must be numeric or uniquely named.
-The 17-row MRI differential matrix checks selected public results and byte
-offsets. It does not inspect this field. The verifier checks canonical field
-form and an absolute-end action. It does not prove the value for arbitrary
-metadata or every path.
+The compiler derives this bound by adding the source byte widths of the
+capture and resolved reference. The 17-row MRI differential matrix checks
+selected public results and byte offsets. A frozen 12-row E2E covers the
+wrapped forms and boundary origins. Neither matrix inspects this field. The
+verifier checks canonical field form and an absolute-end action. It does not
+prove the value for arbitrary metadata or every path.
 
 For the atomic literal form, the root sequence contains one atomic group and
 a final `\z`. The group body contains one alternation with two branches.
