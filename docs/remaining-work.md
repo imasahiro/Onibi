@@ -154,7 +154,7 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 26c | TASK-BASE02-FOLD-END-WRAPPER | Waiting | FOLD-END-REPAIR | Resolve the retained scoped-wrapper mismatch. |
 | 27 | TASK-BASE02-ASSERTION-GREEDY | Accepted | BASE02 | A greedy dot respects terminal assertion priority. |
 | 28 | TASK-BASE02-CLASS-RANGE | Accepted | BASE02 | The access-log class compiles and matches MRI. |
-| 29 | TASK-BASE02-REVERSE-FOLD | Partial | BASE02 | Reverse Unicode folds preserve native and fallback routes. |
+| 29 | TASK-BASE02-REVERSE-FOLD | Accepted | BASE02 | Reverse Unicode folds preserve native and fallback routes. |
 | 30 | TASK-BASE02-UNICODE-CLASS-FOLD | Waiting | BASE02 | Ignore-case range closure follows MRI encoding folds. |
 | 31 | TASK-BASE02-ABSENCE-AUDIT | Waiting | BASE02 | The 25 absence failures have a bounded root-cause map. |
 | 32 | TASK-BASE02-INLINE-M | Waiting | BASE02 | Inline multiline changes stay inside their scopes. |
@@ -539,7 +539,8 @@ Case 20 passes. The direct Greek capture/reference form is accepted.
 Repeated-capture case 12 is accepted for the narrow end-minimum policy.
 Atomic case 10 is accepted for the narrow two-literal alternation end bound.
 Greek direct-capture search is accepted with fold-derived minimum and maximum distances.
-Final reconciliation of the six original methods remains open.
+All six original methods pass after two nil-assertion corrections.
+The repeated 29-row MRI artifact matches; fallback controls remain explicit.
 
 Cases: `#10, #11, #12, #18, #19, #20`. Reproduce these six methods:
 `LookaheadTest#test_ignorecase_reverse_fold_anchor_boundary_through_wrappers`,

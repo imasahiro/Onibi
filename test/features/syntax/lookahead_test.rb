@@ -606,9 +606,14 @@ class LookaheadTest < Minitest::Test
       expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ſ")
       actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("ſ")
 
-      assert_equal expected&.to_a, actual&.to_a
-      assert_equal expected && [expected.begin(0), expected.end(0)],
-                   actual && [actual.begin(0), actual.end(0)]
+      if expected.nil?
+        assert_nil actual&.to_a
+        assert_nil actual && [actual.begin(0), actual.end(0)]
+      else
+        assert_equal expected.to_a, actual&.to_a
+        assert_equal [expected.begin(0), expected.end(0)],
+                     actual && [actual.begin(0), actual.end(0)]
+      end
     end
   end
 
@@ -827,9 +832,14 @@ class LookaheadTest < Minitest::Test
     expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("SS")
     actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("SS")
 
-    assert_equal expected&.to_a, actual&.to_a
-    assert_equal expected && [expected.begin(0), expected.end(0)],
-                 actual && [actual.begin(0), actual.end(0)]
+    if expected.nil?
+      assert_nil actual&.to_a
+      assert_nil actual && [actual.begin(0), actual.end(0)]
+    else
+      assert_equal expected.to_a, actual&.to_a
+      assert_equal [expected.begin(0), expected.end(0)],
+                   actual && [actual.begin(0), actual.end(0)]
+    end
   end
 
   def test_ignorecase_reverse_literal_repeat_matches_mri_end_distance_cases
