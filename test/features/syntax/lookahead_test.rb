@@ -299,6 +299,85 @@ class LookaheadTest < Minitest::Test
     assert_empty failures, failures.join("\n")
   end
 
+  def test_nested_option_restore_end_bound_matches_mri
+    target = "(?i:(?-i:s)(s))\\1\\z"
+    absolute_target = "\\A#{target}"
+    begin_target = "\\G#{target}"
+    cases = [
+      ["nested_option_restore_origin_zero", target, "sſſ", 0, 0, nil],
+      ["nested_option_restore_nonzero_origin", target, "sſſ", 0, 1, nil],
+      ["nested_option_restore_ascii_positive", target, "sss", 0, 0,
+       { values: %w[sss s],
+         character_spans: [[0, 3], [1, 2]],
+         byte_spans: [[0, 3], [1, 2]] }],
+      ["begin_buffer_priority", absolute_target, "sſſ", 0, 0,
+       { values: %w[sſſ ſ],
+         character_spans: [[0, 3], [1, 2]],
+         byte_spans: [[0, 5], [1, 3]] }],
+      ["begin_position_priority_nonzero", begin_target, "xsſſ", 0, 1,
+       { values: %w[sſſ ſ],
+         character_spans: [[1, 4], [2, 3]],
+         byte_spans: [[1, 6], [2, 4]] }],
+      ["begin_position_priority_multibyte_prefix", begin_target, "Ωsſſ", 0, 1,
+       { values: %w[sſſ ſ],
+         character_spans: [[1, 4], [2, 3]],
+         byte_spans: [[2, 7], [3, 5]] }],
+      ["inner_prefix_case_sensitive", absolute_target, "Sss", 0, 0, nil],
+      ["outside_reference_case_sensitive", absolute_target, "sſS", 0, 0, nil],
+      ["nested_option_restore_fixed_encoding", target, "sſſ",
+       Onibi::Regexp::FIXEDENCODING, 0, nil]
+    ]
+    failures = []
+    observations = []
+
+    cases.each do |label, source, subject, options, origin, frozen_mri|
+      mri_regexp = ::Regexp.new(source, options)
+      onibi_regexp = Onibi::Regexp.new(source, options)
+      expected = match_observation(mri_regexp.match(subject, origin), subject)
+      actual = match_observation(onibi_regexp.match(subject, origin), subject)
+      failures << "#{label}: MRI changed to #{expected.inspect}" if expected != frozen_mri
+      failures << "#{label}: MRI=#{expected.inspect}, Onibi=#{actual.inspect}" if actual != expected
+
+      # This diagnostic call uses its default origin zero. It stays separate
+      # from the public match at the requested character origin above.
+      diagnostics = onibi_regexp.send(:__onibi_diagnostics__, subject)
+      route = {
+        rseq: diagnostics.fetch(:rseq),
+        exec_kind: diagnostics.fetch(:exec_kind),
+        dynamic: diagnostics.fetch(:dynamic),
+        fallback: diagnostics.fetch(:fallback),
+        fallback_reason: diagnostics.fetch(:fallback_reason),
+        unsupported_reason: diagnostics.fetch(:unsupported_reason),
+        executor_error_kind: diagnostics.fetch(:executor_error_kind)
+      }
+      if route[:rseq] != true || route[:exec_kind] != 2 ||
+         route[:fallback] != 0 || route[:fallback_reason] != :none ||
+         route[:unsupported_reason] != :none ||
+         route[:executor_error_kind] != :none
+        failures << "#{label}: diagnostic origin zero route=#{route.inspect}"
+      end
+      observations << {
+        id: label,
+        request_origin: origin,
+        diagnostic_origin: 0,
+        frozen_mri: frozen_mri,
+        mri: expected,
+        onibi: actual,
+        native_route: route
+      }
+    rescue StandardError => e
+      failures << "#{label}: #{e.class}: #{e.message}"
+      observations << {
+        id: label,
+        request_origin: origin,
+        diagnostic_origin: 0,
+        error: "#{e.class}: #{e.message}"
+      }
+    end
+
+    assert_empty failures, "#{failures.join("\n")}\nRows: #{observations.inspect}"
+  end
+
   def test_ignorecase_long_s_optional_class_stops_before_absolute_end
     source = "[s]?\\z"
     subject = "ſ"

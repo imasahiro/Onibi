@@ -2082,6 +2082,23 @@ wrapped forms and boundary origins. Neither matrix inspects this field. The
 verifier checks canonical field form and an absolute-end action. It does not
 prove the value for arbitrary metadata or every path.
 
+The compiler also uses this field for one nested option-restore form. Its
+root sequence has one positive `(?i:...)` scope, then numeric `\1`, then a
+final `\z`. The scope body has one negative `(?-i:...)` scope around one
+direct ASCII prefix literal, then one capture around one direct ASCII
+literal. The reference must resolve to that capture. No other captures,
+wrappers, option scopes, branches, repeats, or sequence nodes are allowed.
+
+The compiled regexp encoding must be UTF-8 or US-ASCII. Top-level options can
+contain only optional `FIXEDENCODING`. The compiler checks effective options
+on the prefix, capture, reference, and final anchor. It derives the bound by
+checked addition of the prefix, capture, and resolved-reference source byte
+widths. Each width is one byte in this form. The existing `END_SEARCH_BOUND`
+verifier checks its physical field and final end assertion. It does not prove
+the source shape or the compiler's width calculation. Other encodings,
+options, or AST shapes keep the existing search policy. The frozen nine-row
+MRI E2E checks results, captures, offsets, option scope, and anchor priority.
+
 For the atomic literal form, the root sequence contains one atomic group and
 a final `\z`. The group body contains one alternation with two branches.
 Each branch contains one direct UTF-8 literal scalar. Global options include

@@ -4210,6 +4210,204 @@ onibi_end_search_wrapped_capture_bound_compute(
 }
 
 static int
+onibi_end_search_direct_ascii_literal_width(const OnibiAstArena *arena,
+					    OnibiAstId id, int encoding_index,
+					    uint32_t *width)
+{
+    if (arena == NULL || id == ONIBI_AST_NONE || (size_t)id >= arena->count ||
+	width == NULL)
+	return 0;
+    const OnibiAstNode *literal = onibi_ast_node_const(arena, id);
+    if (literal->kind != ONIBI_AST_LITERAL ||
+	literal->token_kind != ONIBI_TOKEN_LITERAL || literal->flags != 0 ||
+	literal->child_count != 0 || literal->range_count != 0 ||
+	literal->name.present || literal->negative_options.present ||
+	literal->body != ONIBI_AST_NONE || literal->atom != ONIBI_AST_NONE ||
+	literal->yes != ONIBI_AST_NONE || literal->no != ONIBI_AST_NONE)
+	return 0;
+    if (literal->bytes.present) {
+	if (literal->bytes.length != 1 ||
+	    literal->bytes.offset >= arena->bytes_count ||
+	    arena->bytes[literal->bytes.offset] >= 0x80)
+	    return 0;
+    }
+    else if (literal->byte < 0 || literal->byte >= 0x80) {
+	return 0;
+    }
+
+    uint32_t source_width = 0;
+    if (!onibi_end_search_literal_source_width(arena, id, encoding_index,
+					       &source_width) ||
+	source_width != 1)
+	return 0;
+    *width = source_width;
+    return 1;
+}
+
+static int
+onibi_end_search_sequence_shape(const OnibiAstNode *node, size_t child_count)
+{
+    return node->kind == ONIBI_AST_SEQUENCE && node->flags == 0 &&
+	   node->name.present == 0 && node->negative_options.present == 0 &&
+	   node->bytes.present == 0 && node->body == ONIBI_AST_NONE &&
+	   node->atom == ONIBI_AST_NONE && node->yes == ONIBI_AST_NONE &&
+	   node->no == ONIBI_AST_NONE && node->child_count == child_count &&
+	   node->children != NULL && node->range_count == 0;
+}
+
+static int
+onibi_end_search_nested_restore_bound_compute(
+    const onibi_gir_builder_t *builder, int parsed_options,
+    const OnibiAstNode *root, uint32_t *bound_bytes)
+{
+    const OnibiAstArena *arena = builder->ast;
+    const OnibiResolvedArena *semantics = builder->semantics;
+    const uint32_t options = (uint32_t)parsed_options;
+    const uint32_t allowed_options = ONIBI_OPT_FIXEDENCODING;
+    if (arena == NULL || semantics == NULL || semantics->nodes == NULL ||
+	semantics->count != arena->count || semantics->capture_count != 1 ||
+	arena->count != 11 || !onibi_end_search_sequence_shape(root, 3) ||
+	(options & ~allowed_options) != 0 ||
+	(builder->encoding_index != rb_utf8_encindex() &&
+	 builder->encoding_index != rb_usascii_encindex()))
+	return 0;
+
+    OnibiAstId outer_scope_id = root->children[0];
+    OnibiAstId backref_id = root->children[1];
+    OnibiAstId end_anchor_id = root->children[2];
+    if ((size_t)outer_scope_id >= arena->count ||
+	(size_t)backref_id >= arena->count ||
+	(size_t)end_anchor_id >= arena->count)
+	return 0;
+    const OnibiAstNode *outer_scope =
+	onibi_ast_node_const(arena, outer_scope_id);
+    const OnibiAstNode *backref = onibi_ast_node_const(arena, backref_id);
+    const OnibiAstNode *end_anchor = onibi_ast_node_const(arena, end_anchor_id);
+    if (outer_scope->kind != ONIBI_AST_OPTION_SCOPE ||
+	outer_scope->token_kind != ONIBI_TOKEN_OPTION_SCOPE_START ||
+	outer_scope->flags != 0 || !outer_scope->name.present ||
+	outer_scope->name.length != 1 ||
+	outer_scope->name.offset >= arena->bytes_count ||
+	arena->bytes[outer_scope->name.offset] != 'i' ||
+	outer_scope->negative_options.present || outer_scope->bytes.present ||
+	outer_scope->body == ONIBI_AST_NONE ||
+	(size_t)outer_scope->body >= arena->count ||
+	outer_scope->atom != ONIBI_AST_NONE ||
+	outer_scope->yes != ONIBI_AST_NONE ||
+	outer_scope->no != ONIBI_AST_NONE || outer_scope->child_count != 0 ||
+	outer_scope->range_count != 0 || backref->kind != ONIBI_AST_BACKREF ||
+	backref->token_kind != ONIBI_TOKEN_BACKREF || backref->flags != 0 ||
+	backref->capture != 1 || backref->name.present ||
+	backref->negative_options.present || backref->bytes.present ||
+	backref->body != ONIBI_AST_NONE || backref->atom != ONIBI_AST_NONE ||
+	backref->yes != ONIBI_AST_NONE || backref->no != ONIBI_AST_NONE ||
+	backref->child_count != 0 || backref->range_count != 0 ||
+	end_anchor->kind != ONIBI_AST_ANCHOR ||
+	end_anchor->token_kind != ONIBI_TOKEN_ANCHOR ||
+	end_anchor->byte != 'z' || end_anchor->flags != 0 ||
+	end_anchor->name.present || end_anchor->negative_options.present ||
+	end_anchor->bytes.present || end_anchor->body != ONIBI_AST_NONE ||
+	end_anchor->atom != ONIBI_AST_NONE ||
+	end_anchor->yes != ONIBI_AST_NONE || end_anchor->no != ONIBI_AST_NONE ||
+	end_anchor->child_count != 0 || end_anchor->range_count != 0)
+	return 0;
+
+    OnibiAstId outer_body_id = outer_scope->body;
+    const OnibiAstNode *outer_body = onibi_ast_node_const(arena, outer_body_id);
+    if (!onibi_end_search_sequence_shape(outer_body, 2)) return 0;
+    OnibiAstId inner_scope_id = outer_body->children[0];
+    OnibiAstId capture_id = outer_body->children[1];
+    if ((size_t)inner_scope_id >= arena->count ||
+	(size_t)capture_id >= arena->count)
+	return 0;
+    const OnibiAstNode *inner_scope =
+	onibi_ast_node_const(arena, inner_scope_id);
+    const OnibiAstNode *capture = onibi_ast_node_const(arena, capture_id);
+    if (inner_scope->kind != ONIBI_AST_OPTION_SCOPE ||
+	inner_scope->token_kind != ONIBI_TOKEN_OPTION_SCOPE_START ||
+	inner_scope->flags != ONIBI_AST_NODE_NEGATIVE ||
+	!inner_scope->name.present || inner_scope->name.length != 1 ||
+	inner_scope->name.offset >= arena->bytes_count ||
+	arena->bytes[inner_scope->name.offset] != 'i' ||
+	inner_scope->negative_options.present || inner_scope->bytes.present ||
+	inner_scope->body == ONIBI_AST_NONE ||
+	(size_t)inner_scope->body >= arena->count ||
+	inner_scope->atom != ONIBI_AST_NONE ||
+	inner_scope->yes != ONIBI_AST_NONE ||
+	inner_scope->no != ONIBI_AST_NONE || inner_scope->child_count != 0 ||
+	inner_scope->range_count != 0 || capture->kind != ONIBI_AST_CAPTURE ||
+	capture->token_kind != ONIBI_TOKEN_GROUP_START ||
+	capture->flags != ONIBI_AST_NODE_CAPTURING || capture->name.present ||
+	capture->negative_options.present || capture->bytes.present ||
+	capture->body == ONIBI_AST_NONE ||
+	(size_t)capture->body >= arena->count ||
+	capture->atom != ONIBI_AST_NONE || capture->yes != ONIBI_AST_NONE ||
+	capture->no != ONIBI_AST_NONE || capture->child_count != 0 ||
+	capture->range_count != 0)
+	return 0;
+
+    OnibiAstId inner_body_id = inner_scope->body;
+    const OnibiAstNode *inner_body = onibi_ast_node_const(arena, inner_body_id);
+    const OnibiAstNode *capture_body =
+	onibi_ast_node_const(arena, capture->body);
+    if (!onibi_end_search_sequence_shape(inner_body, 1) ||
+	!onibi_end_search_sequence_shape(capture_body, 1))
+	return 0;
+    OnibiAstId prefix_literal_id = inner_body->children[0];
+    OnibiAstId capture_literal_id = capture_body->children[0];
+    if ((size_t)prefix_literal_id >= arena->count ||
+	(size_t)capture_literal_id >= arena->count)
+	return 0;
+
+    const uint32_t folded_options = options | ONIBI_OPT_IGNORECASE;
+    if (semantics->nodes[arena->root].lexical_options != options ||
+	semantics->nodes[outer_scope_id].lexical_options != options ||
+	semantics->nodes[outer_body_id].lexical_options != folded_options ||
+	semantics->nodes[inner_scope_id].lexical_options != folded_options ||
+	semantics->nodes[inner_body_id].lexical_options != options ||
+	semantics->nodes[prefix_literal_id].lexical_options != options ||
+	semantics->nodes[capture_id].lexical_options != folded_options ||
+	semantics->nodes[capture->body].lexical_options != folded_options ||
+	semantics->nodes[capture_literal_id].lexical_options !=
+	    folded_options ||
+	semantics->nodes[backref_id].lexical_options != options ||
+	semantics->nodes[end_anchor_id].lexical_options != options)
+	return 0;
+
+    const OnibiResolvedNode *capture_semantic = &semantics->nodes[capture_id];
+    const OnibiResolvedNode *backref_semantic = &semantics->nodes[backref_id];
+    OnibiAstId target = backref_semantic->reference_target;
+    if (capture_semantic->capture_id != 0 ||
+	backref_semantic->capture_id != capture_semantic->capture_id ||
+	target != capture_id || target == ONIBI_AST_NONE ||
+	(size_t)target >= semantics->count ||
+	semantics->nodes[target].capture_id != capture_semantic->capture_id)
+	return 0;
+
+    uint32_t prefix_width = 0, capture_width = 0;
+    uint32_t capture_literal_width = 0, reference_width = 0;
+    if (!onibi_end_search_direct_ascii_literal_width(
+	    arena, prefix_literal_id, builder->encoding_index, &prefix_width) ||
+	!onibi_end_search_capture_source_width(
+	    arena, capture_id, builder->encoding_index, &capture_width) ||
+	!onibi_end_search_direct_ascii_literal_width(arena, capture_literal_id,
+						     builder->encoding_index,
+						     &capture_literal_width) ||
+	capture_literal_width != capture_width ||
+	!onibi_end_search_capture_source_width(
+	    arena, target, builder->encoding_index, &reference_width) ||
+	prefix_width > UINT32_MAX - capture_width)
+	return 0;
+    uint32_t total = prefix_width + capture_width;
+    if (reference_width == 0 || reference_width > UINT32_MAX - total) return 0;
+    total += reference_width;
+    if (total == 0) return 0;
+
+    *bound_bytes = total;
+    return 1;
+}
+
+static int
 onibi_end_search_bound_compute(const onibi_gir_builder_t *builder,
 			       int parsed_options, uint32_t *bound_bytes)
 {
@@ -4236,6 +4434,9 @@ onibi_end_search_bound_compute(const onibi_gir_builder_t *builder,
 	return onibi_end_search_wrapped_capture_bound_compute(
 	    builder, parsed_options, root, bound_bytes);
     }
+    if (onibi_end_search_nested_restore_bound_compute(builder, parsed_options,
+						      root, bound_bytes))
+	return 1;
     if ((parsed_options & ONIBI_OPT_IGNORECASE) == 0) return 0;
     if (root->child_count != 3 || root->children == NULL) return 0;
     OnibiAstId capture_id = root->children[0];
