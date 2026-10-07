@@ -2,6 +2,7 @@
 #define ONIBI_AST_INTERNAL_H
 
 #include "ruby.h"
+#include "ruby/encoding.h"
 
 #include <stdint.h>
 
@@ -31,6 +32,7 @@ typedef struct OnibiAstArena OnibiAstArena;
 typedef uint32_t OnibiAstId;
 
 static void onibi_tokenize_internal(VALUE source, int extended,
+				    rb_encoding *effective_encoding,
 				    OnibiTokenVector *tokens);
 static VALUE onibi_parser_parse_internal(VALUE source, VALUE options,
 					 const OnibiTokenVector *tokens);

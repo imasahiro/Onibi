@@ -1203,6 +1203,7 @@ onibi_compile_outcome_select_fallback(onibi_regexp_t *obj,
 typedef struct {
     VALUE source;
     int extended;
+    rb_encoding *effective_encoding;
     OnibiTokenVector *tokens;
 } OnibiTokenizeArgs;
 
@@ -1210,7 +1211,8 @@ static VALUE
 onibi_tokenize_protected(VALUE argument)
 {
     OnibiTokenizeArgs *args = (OnibiTokenizeArgs *)(uintptr_t)argument;
-    onibi_tokenize_internal(args->source, args->extended, args->tokens);
+    onibi_tokenize_internal(args->source, args->extended,
+			    args->effective_encoding, args->tokens);
     return Qnil;
 }
 
@@ -1304,6 +1306,8 @@ onibi_token_features(const OnibiTokenVector *feature_tokens,
 	  ONIBI_FEATURE_INLINE_IGNORECASE);
     obj->ast_flags = 0;
     obj->feature_flags = 0;
+    if (feature_tokens->has_unicode_escape)
+	obj->feature_flags |= ONIBI_FEATURE_UNICODE_ESCAPE;
     for (size_t i = 0; i < feature_tokens->count; i++) {
 	const OnibiTokenRecord *token = &feature_tokens->items[i];
 	OnibiTokenKind kind_code = token->kind;
@@ -1372,7 +1376,7 @@ onibi_token_features(const OnibiTokenVector *feature_tokens,
 	}
 	if (in_class && previous && previous->kind == ONIBI_TOKEN_LITERAL &&
 	    kind_code == ONIBI_TOKEN_LITERAL && previous->byte == '&' &&
-	    token->byte == '&')
+	    token->byte == '&' && !previous->from_escape && !token->from_escape)
 	    obj->feature_flags |= ONIBI_FEATURE_CLASS_INTERSECTION;
 	if (kind_code == ONIBI_TOKEN_SUBROUTINE) {
 	    obj->feature_flags |= ONIBI_FEATURE_SUBROUTINE;
@@ -1595,10 +1599,6 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     int source_ascii_only = rb_enc_str_asciionly_p(source);
     obj->source_encoding_index = source_encoding_index;
     obj->source_ascii_only = source_ascii_only;
-    if ((opts & 32) && source_encoding_index != rb_ascii8bit_encindex() &&
-	!source_ascii_only)
-	rb_raise(eRegexpError, "non-ASCII pattern with no encoding");
-    if (!(opts & 32) && !source_ascii_only && !(opts & 16)) opts |= 16;
     obj->options = opts;
     obj->source = rb_str_dup(source);
     rb_obj_freeze(obj->source);
@@ -1609,37 +1609,10 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     obj->rseq_view_valid = 0;
     OnibiTokenVector tokens;
     onibi_token_vector_init(&tokens);
-    OnibiTokenizeArgs tokenize_args = {source, (opts & 2) != 0, &tokens};
-    int tokenize_state = 0;
-    rb_protect(onibi_tokenize_protected, (VALUE)(uintptr_t)&tokenize_args,
-	       &tokenize_state);
-    if (tokenize_state) {
-	onibi_token_vector_free(&tokens);
-	rb_jump_tag(tokenize_state);
-    }
-    onibi_token_features(&tokens, obj);
-    if (!(opts & 32) && source_encoding_index == rb_utf8_encindex() &&
-	ONIBI_FEATURE_P(obj, ONIBI_FEATURE_PROPERTY_ESCAPE))
-	opts |= 16;
-    if (((opts & 32) && source_ascii_only &&
-	 (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_NON_ASCII_LITERAL) ||
-	  ONIBI_FEATURE_P(obj, ONIBI_FEATURE_PROPERTY_ESCAPE))) ||
-	(!(opts & 32) && source_encoding_index != rb_utf8_encindex() &&
-	 source_encoding_index != rb_usascii_encindex() &&
-	 (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_NON_ASCII_LITERAL) ||
-	  ONIBI_FEATURE_P(obj, ONIBI_FEATURE_PROPERTY_ESCAPE))))
-	opts |= 16;
-    obj->options = opts;
-    VALUE regexp_source = source;
-    if (source_encoding_index != rb_utf8_encindex() &&
-	(obj->feature_flags & ONIBI_FEATURE_UNICODE_ESCAPE)) {
-	regexp_source = rb_funcall(source, id_encode, 1,
-				   rb_enc_from_encoding(rb_utf8_encoding()));
-	opts |= 16;
-	obj->options = opts;
-    }
-    OnibiProgramArgs regexp_args = {regexp_source, INT2NUM(opts), NULL, NULL,
-				    NULL};
+
+    /* Let MRI validate the original bytes and options before the tokenizer
+     * reads them. Its regexp carries the effective encoding and option bits. */
+    OnibiProgramArgs regexp_args = {source, INT2NUM(opts), NULL, NULL, NULL};
     int regexp_state = 0;
     obj->regexp = rb_protect(onibi_make_mri_regexp,
 			     (VALUE)(uintptr_t)&regexp_args, &regexp_state);
@@ -1652,9 +1625,22 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 	wrapped_error = rb_exc_new_str(eRegexpError, message);
 	rb_exc_raise(wrapped_error);
     }
+    opts = rb_reg_options(obj->regexp);
+    obj->options = opts;
     obj->names = rb_funcall(obj->regexp, id_names, 0);
     obj->named_captures = rb_funcall(obj->regexp, id_named_captures, 0);
     onibi_freeze_metadata(obj);
+
+    OnibiTokenizeArgs tokenize_args = {source, (opts & 2) != 0,
+				       rb_enc_get(obj->regexp), &tokens};
+    int tokenize_state = 0;
+    rb_protect(onibi_tokenize_protected, (VALUE)(uintptr_t)&tokenize_args,
+	       &tokenize_state);
+    if (tokenize_state) {
+	onibi_token_vector_free(&tokens);
+	rb_jump_tag(tokenize_state);
+    }
+    onibi_token_features(&tokens, obj);
     VALUE compilation_source = rb_str_dup(source);
     rb_enc_associate(compilation_source, rb_enc_get(obj->regexp));
     memset(&obj->lowering_work, 0, sizeof(obj->lowering_work));

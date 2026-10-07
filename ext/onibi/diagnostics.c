@@ -532,8 +532,9 @@ onibi_nfa_diagnostic_call(VALUE opaque)
 {
     OnibiNfaDiagnosticCall *call = (OnibiNfaDiagnosticCall *)(uintptr_t)opaque;
     onibi_token_vector_init(&call->tokens);
-    onibi_tokenize_internal(
-	call->source, (call->options & ONIBI_OPT_EXTENDED) != 0, &call->tokens);
+    onibi_tokenize_internal(call->source,
+			    (call->options & ONIBI_OPT_EXTENDED) != 0,
+			    rb_enc_get(call->source), &call->tokens);
     VALUE parsed = onibi_parser_parse_internal(
 	call->source, INT2NUM(call->options), &call->tokens);
     return onibi_compiler_nfa_diagnostics(parsed);
@@ -552,7 +553,9 @@ onibi_pre_elimination_nfa_diagnostics(VALUE self)
 {
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    OnibiNfaDiagnosticCall call = {obj->source, obj->options, {0}};
+    VALUE diagnostic_source = rb_str_dup(obj->source);
+    rb_enc_associate(diagnostic_source, rb_enc_get(obj->regexp));
+    OnibiNfaDiagnosticCall call = {diagnostic_source, obj->options, {0}};
     return rb_ensure(onibi_nfa_diagnostic_call, (VALUE)(uintptr_t)&call,
 		     onibi_nfa_diagnostic_cleanup, (VALUE)(uintptr_t)&call);
 }
@@ -1687,7 +1690,7 @@ onibi_compile_failure_diagnostic_call(VALUE opaque)
     int options = NUM2INT(call->options);
     onibi_token_vector_init(&call->tokens);
     onibi_tokenize_internal(call->source, (options & ONIBI_OPT_EXTENDED) != 0,
-			    &call->tokens);
+			    rb_enc_get(call->source), &call->tokens);
     call->parsed =
 	onibi_parser_parse_internal(call->source, call->options, &call->tokens);
     int compiler_phase = call->phase <= 8 ? call->phase : 0;
@@ -1716,8 +1719,10 @@ onibi_compile_failure_diagnostics(VALUE self, VALUE phase_value)
     int phase = NUM2INT(phase_value);
     if (phase < 1 || phase > 15)
 	rb_raise(rb_eArgError, "compiler failure phase is out of range");
+    VALUE diagnostic_source = rb_str_dup(obj->source);
+    rb_enc_associate(diagnostic_source, rb_enc_get(obj->regexp));
     OnibiCompileFailureDiagnostic call = {
-	obj->source, INT2NUM(obj->options), phase, {0}, Qnil, 0, {0}};
+	diagnostic_source, INT2NUM(obj->options), phase, {0}, Qnil, 0, {0}};
     size_t allocations_before = call.accounting.live_count;
     if (allocations_before != 0)
 	rb_raise(eRegexpError,

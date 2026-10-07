@@ -106,6 +106,7 @@ typedef struct {
     unsigned char has_capture;
     unsigned char inline_ignorecase;
     unsigned char negative;
+    unsigned char from_escape;
 } OnibiTokenRecord;
 
 typedef struct OnibiTokenVector {
@@ -115,6 +116,7 @@ typedef struct OnibiTokenVector {
     unsigned char *bytes;
     size_t bytes_count;
     size_t bytes_capacity;
+    unsigned char has_unicode_escape;
 } OnibiTokenVector;
 
 static void
@@ -268,6 +270,7 @@ typedef struct {
     const char *bytes;
     long length;
     rb_encoding *encoding;
+    rb_encoding *effective_encoding;
     int extended;
     int in_class;
     long class_depth;
@@ -337,6 +340,7 @@ typedef struct {
     long name_length;
     long capture_number;
     int has_capture_number;
+    int tokens_emitted;
 } OnibiEscapeRecognition;
 
 typedef struct {
@@ -600,6 +604,114 @@ onibi_token_decoded_char_needs_more(const OnibiTokenVector *tokens,
     return ONIGENC_MBCLEN_NEEDMORE_P(result);
 }
 
+static int
+onibi_token_unicode_list_space(unsigned char byte)
+{
+    return byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r' ||
+	   byte == '\f' || byte == '\v';
+}
+
+static void
+onibi_token_push_unicode_scalar(OnibiTokenVector *tokens, long start, long end,
+				uint32_t codepoint, rb_encoding *encoding)
+{
+    unsigned char encoded[16];
+    int width = rb_enc_code_to_mbclen((int)codepoint, encoding);
+    if (width <= 0 || (size_t)width > sizeof(encoded))
+	rb_raise(eRegexpError, "invalid Unicode range");
+    int written =
+	rb_enc_mbcput((unsigned int)codepoint, (char *)encoded, encoding);
+    if (written != width) rb_raise(eRegexpError, "invalid Unicode range");
+
+    OnibiTokenSlice bytes =
+	onibi_token_vector_copy(tokens, (const char *)encoded, (size_t)written);
+    OnibiTokenRecord token = {0};
+    token.kind = ONIBI_TOKEN_LITERAL;
+    token.byte = tokens->bytes[bytes.offset];
+    token.start = start;
+    token.end = end;
+    token.matching = -1;
+    token.bytes = bytes;
+    token.property_kind = ONIBI_ASCII_PROP_UNKNOWN;
+    token.from_escape = 1;
+    onibi_token_record_push(tokens, token);
+}
+
+static long
+onibi_token_scan_class_unicode_escape(OnibiTokenScanState *scan,
+				      OnibiTokenVector *tokens,
+				      long escape_start)
+{
+    const unsigned char *source = (const unsigned char *)scan->bytes;
+    size_t length = (size_t)scan->length;
+    size_t position = (size_t)escape_start + 2;
+    size_t first_token = tokens->count;
+    size_t scalar_count = 0;
+    tokens->has_unicode_escape = 1;
+
+    if (position < length && source[position] == '{') {
+	position++;
+	for (;;) {
+	    while (position < length &&
+		   onibi_token_unicode_list_space(source[position]))
+		position++;
+	    if (position >= length)
+		rb_raise(eRegexpError, "invalid Unicode list");
+	    if (source[position] == '}') {
+		if (scalar_count == 0)
+		    rb_raise(eRegexpError, "invalid Unicode list");
+		position++;
+		break;
+	    }
+
+	    size_t digits = 0;
+	    while (digits < length - position &&
+		   onibi_hex_digit(source[position + digits]) >= 0)
+		digits++;
+	    if (digits == 0 || digits > 6)
+		rb_raise(eRegexpError, "invalid Unicode list");
+	    size_t scalar_cursor = position;
+	    uint32_t codepoint = 0;
+	    OnibiUnicodeScalarStatus status = onibi_unicode_scalar_read_hex(
+		source, length, &scalar_cursor, digits, &codepoint);
+	    if (status == ONIBI_UNICODE_SCALAR_MALFORMED)
+		rb_raise(eRegexpError, "invalid Unicode list");
+	    if (status != ONIBI_UNICODE_SCALAR_OK)
+		rb_raise(eRegexpError, "invalid Unicode range");
+	    position = scalar_cursor;
+	    if (position < length && source[position] != '}' &&
+		!onibi_token_unicode_list_space(source[position]))
+		rb_raise(eRegexpError, "invalid Unicode list");
+	    scalar_count++;
+	    onibi_token_push_unicode_scalar(tokens, escape_start,
+					    (long)position, codepoint,
+					    scan->effective_encoding);
+	}
+    }
+    else {
+	size_t scalar_cursor = position;
+	uint32_t codepoint = 0;
+	OnibiUnicodeScalarStatus status = onibi_unicode_scalar_read_hex(
+	    source, length, &scalar_cursor, 4, &codepoint);
+	if (status == ONIBI_UNICODE_SCALAR_MALFORMED)
+	    rb_raise(eRegexpError, "invalid Unicode escape");
+	if (status != ONIBI_UNICODE_SCALAR_OK)
+	    rb_raise(eRegexpError, "invalid Unicode range");
+	position = scalar_cursor;
+	onibi_token_push_unicode_scalar(tokens, escape_start, (long)position,
+					codepoint, scan->effective_encoding);
+    }
+
+    /* Braced items share the complete escape span, including the closing
+     * brace. Fixed-width escapes use the complete four-digit span. */
+    if (source[position - 1] == '}') {
+	long end = (long)position;
+	for (size_t i = first_token; i < tokens->count; i++)
+	    tokens->items[i].end = end;
+    }
+    return (long)position;
+}
+
 /* Recognize one complete escape token.  This includes named and numeric
  * references, byte decoding, meta/control forms, properties, and anchors.
  * The helper owns the cursor advance so no escape prefix is re-scanned by
@@ -668,6 +780,12 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
     if (i + 1 >= scan->length) return 0;
 
     unsigned char escaped = (unsigned char)source[i + 1];
+    if (scan->in_class && escaped == 'u') {
+	long end = onibi_token_scan_class_unicode_escape(scan, tokens, i);
+	*cursor = end - 1;
+	recognition->tokens_emitted = 1;
+	return 1;
+    }
     int hex_literal = 0;
     int octal_literal = 0;
     recognition->byte = escaped;
@@ -938,7 +1056,9 @@ onibi_token_index_delimiters(OnibiTokenVector *tokens)
 }
 
 static void
-onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
+onibi_tokenize_internal(VALUE src, int extended,
+			rb_encoding *effective_encoding,
+			OnibiTokenVector *tokens)
 {
     onibi_token_vector_init(tokens);
     /* One escape is one semantic token.  Do not let an escaped metacharacter
@@ -946,6 +1066,7 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
     OnibiTokenScanState scan = {.bytes = RSTRING_PTR(src),
 				.length = RSTRING_LEN(src),
 				.encoding = rb_enc_get(src),
+				.effective_encoding = effective_encoding,
 				.extended = extended,
 				.in_class = 0,
 				.class_depth = 0,
@@ -975,6 +1096,7 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 	long negative_name_length = 0;
 	int option_negative = 0;
 	int option_scope_x = -1;
+	int from_escape = 0;
 	OnibiTokenRecognition recognition;
 	if (onibi_token_scan_group(&scan, &i, &recognition)) {
 	    kind = recognition.kind;
@@ -995,6 +1117,8 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 	if (byte == '\\') {
 	    OnibiEscapeRecognition escape;
 	    if (onibi_token_scan_escape(&scan, &i, tokens, &escape)) {
+		if (escape.tokens_emitted) continue;
+		from_escape = 1;
 		kind = escape.kind;
 		byte = escape.byte;
 		literal_slice = escape.literal_slice;
@@ -1096,7 +1220,8 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 	    (unsigned char)(name_start >= 0 &&
 			    memchr(RSTRING_PTR(src) + name_start, 'i',
 				   (size_t)name_length) != NULL),
-	    (unsigned char)(option_negative ? 1 : 0)};
+	    (unsigned char)(option_negative ? 1 : 0),
+	    (unsigned char)from_escape};
 	onibi_token_record_push(tokens, record);
 	if (kind == ONIBI_TOKEN_GROUP_END && scan.extended_depth > 0) {
 	    int prior_extended = scan.extended_stack[--scan.extended_depth];

@@ -1834,6 +1834,19 @@ The compiler must normalize:
 - shorthand classes;
 - Unicode properties.
 
+MRI validates the original source and requested options before tokenization.
+The tokenizer reads source bytes with the source encoding.
+It encodes decoded Unicode scalars with the effective regexp encoding from MRI.
+
+In a class, `\uHHHH` and braced `\u{...}` escapes produce one literal token
+per scalar. Fixed-width escapes use four hex digits. Braced items use one to
+six hex digits. Reject values above U+10FFFF and surrogate values.
+
+Each token keeps the full source span of its escape and an offset and length
+in the token byte pool. Decoded bytes do not enter syntax scanning again.
+Escaped ampersands, hyphens, close brackets, carets, and backslashes stay
+literal. Only two raw ampersand tokens form class intersection.
+
 RSeq stores immutable class descriptors.
 
 A class descriptor uses this header:

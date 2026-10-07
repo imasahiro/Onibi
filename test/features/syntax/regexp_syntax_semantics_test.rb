@@ -3,6 +3,127 @@
 require "test_helper"
 
 class RegexpSyntaxSemanticsTest < Minitest::Test
+  UNICODE_CLASS_RANGE_CASES = [
+    ["original_braced_ignorecase", "[\\u{100}-\\u{200}]", ["IGNORECASE"],
+     %w[s S], [true, true]],
+    ["original_braced_sensitive", "[\\u{100}-\\u{200}]", [],
+     %w[Ā Ȁ ā s], [true, true, true, false]],
+    ["fixed_width_ignorecase", "[\\u0100-\\u0200]", ["IGNORECASE"],
+     %w[s S], [true, true]],
+    ["first_endpoint_braced_escape", "[\\u{100}-Ȁ]", ["IGNORECASE"],
+     %w[s S], [true, true]],
+    ["last_endpoint_braced_escape", "[Ā-\\u{200}]", ["IGNORECASE"],
+     %w[s S], [true, true]],
+    ["native_long_s_braced_range", "[\\u{17F}-\\u{17F}]", ["IGNORECASE"],
+     %w[s S ſ], [true, true, true]],
+    ["wide_literal_incomplete_fold", "[Ā-Ȁ]", ["IGNORECASE"],
+     %w[s S], [true, true]],
+    ["wide_escaped_incomplete_fold", "[\\u{100}-\\u{200}]", ["IGNORECASE"],
+     %w[s S], [true, true]],
+    ["multi_scalar_class_not_range", "[\\u{41 42}]", [],
+     %w[A B C], [true, true, false]],
+    ["multi_scalar_left_endpoint", "[\\u{41 42}-\\u{5A}]", [],
+     ["A", "B", "C", "Z", "["], [true, true, true, true, false]],
+    ["multi_scalar_right_endpoint", "[\\u{41}-\\u{42 43}]", [],
+     %w[A B C D], [true, true, true, false]]
+  ].freeze
+
+  UNICODE_CLASS_RANGE_ROUTE_CASES = [
+    ["native_long_s_braced_range", "[\\u{17F}-\\u{17F}]", ["IGNORECASE"],
+     %w[s S ſ], :native],
+    ["wide_literal_incomplete_fold", "[Ā-Ȁ]", ["IGNORECASE"],
+     %w[s S], :input_ineligible],
+    ["wide_escaped_incomplete_fold", "[\\u{100}-\\u{200}]", ["IGNORECASE"],
+     %w[s S], :input_ineligible]
+  ].freeze
+
+  UNICODE_CLASS_RANGE_ERROR_CASES = [
+    ["malformed_braced_escape", "[\\u{12Z}-\\u{200}]",
+     "invalid Unicode list: /[\\u{12Z}-\\u{200}]/"],
+    ["surrogate_scalar", "[\\u{D800}-Z]",
+     "invalid Unicode range: /[\\u{D800}-Z]/"],
+    ["codepoint_above_unicode_max", "[\\u{110000}-Z]",
+     "invalid Unicode range: /[\\u{110000}-Z]/"],
+    ["descending_escaped_range", "[\\u{200}-\\u{100}]",
+     "empty range in char class: /[\\u{200}-\\u{100}]/"]
+  ].freeze
+
+  UNICODE_ESCAPE_CLASS_ENCODING_CASES = [
+    {
+      label: "ascii_only_default_unicode_escape",
+      pattern: "([\\u{100}])",
+      source_encoding: "US-ASCII",
+      options: [],
+      expected_regexp: {
+        encoding: "UTF-8", fixed_encoding: true, no_encoding: false, options: 16
+      },
+      subjects: [["Ā", "UTF-8", true], ["A", "UTF-8", false]]
+    },
+    {
+      label: "ascii_only_fixed_encoding_conflict",
+      pattern: "([\\u{100}])",
+      source_encoding: "US-ASCII",
+      options: ["FIXEDENCODING"],
+      expected_error: {
+        regexp_error: true,
+        message: "incompatible character encoding: /([\\u{100}])/"
+      }
+    },
+    {
+      label: "shift_jis_non_ascii_fixed_encoding_conflict",
+      pattern: "([\\u{100}])",
+      source_encoding: "Shift_JIS",
+      options: ["FIXEDENCODING"],
+      expected_error: {
+        regexp_error: true,
+        message: "incompatible character encoding: /([\\u{100}])/"
+      }
+    },
+    {
+      label: "utf8_fixed_unicode_escape",
+      pattern: "([\\u{100}])",
+      source_encoding: "UTF-8",
+      options: ["FIXEDENCODING"],
+      expected_regexp: {
+        encoding: "UTF-8", fixed_encoding: true, no_encoding: false, options: 16
+      },
+      subjects: [["Ā", "UTF-8", true], ["A", "UTF-8", false]]
+    },
+    {
+      label: "noencoding_ascii_scalar",
+      pattern: "([\\u{41}])",
+      source_encoding: "US-ASCII",
+      options: ["NOENCODING"],
+      expected_regexp: {
+        encoding: "US-ASCII", fixed_encoding: false, no_encoding: true, options: 32
+      },
+      subjects: [["A", "ASCII-8BIT", true], ["B", "ASCII-8BIT", false]]
+    },
+    {
+      label: "noencoding_nonascii_scalar_conflict",
+      pattern: "([\\u{100}])",
+      source_encoding: "US-ASCII",
+      options: ["NOENCODING"],
+      expected_error: {
+        regexp_error: true,
+        message: "incompatible character encoding: /([\\u{100}])/"
+      }
+    }
+  ].freeze
+
+  UNICODE_CLASS_SYNTAX_IDENTITY_CASES = [
+    ["two_escaped_ampersands", "[\\u{26}\\u{26}]", [], %w[& A], [true, false]],
+    ["mixed_raw_escaped_ampersand", "[\\u{26}&]", [], %w[& A], [true, false]],
+    ["escaped_hyphen_is_literal", "[A\\u{2D}Z]", [], %w[A - Z M],
+     [true, true, true, false]],
+    ["escaped_close_bracket_is_literal", "[\\u{5D}]", [], ["]", "["], [true, false]],
+    ["escaped_caret_is_literal", "[\\u{5E}a]", [], %w[^ a b], [true, true, false]],
+    ["escaped_backslash_is_literal", "[\\u{5C}]", [], ["\\", "/"], [true, false]],
+    ["raw_intersection_syntax_control", "[a-z&&[^aeiou]]", [], %w[b a z e],
+     [true, false, true, false]]
+  ].freeze
+
+  INCOMPLETE_CASEFOLD_CLASS_FLAG = 2
   def test_common_control_character_escapes_match_their_literal_characters
     { "n" => "\n", "r" => "\r", "t" => "\t", "f" => "\f", "v" => "\v", "a" => "\a",
       "e" => "\e" }.each do |escape, character|
@@ -110,6 +231,61 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
 
     assert regexp.match?("s")
     assert regexp.match?("S")
+  end
+
+  def test_unicode_escaped_class_ranges_match_mri
+    failures = []
+
+    UNICODE_CLASS_RANGE_CASES.each do |test_case|
+      compare_unicode_class_range_results(failures, *test_case)
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
+  def test_unicode_escaped_class_range_routes_preserve_fold_policy
+    failures = []
+
+    UNICODE_CLASS_RANGE_ROUTE_CASES.each do |test_case|
+      compare_unicode_class_range_route(failures, *test_case)
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
+  def test_unicode_escaped_class_range_errors_match_mri
+    failures = []
+
+    UNICODE_CLASS_RANGE_ERROR_CASES.each do |label, pattern, expected_message|
+      mri_error = regexp_error_snapshot(::Regexp, pattern)
+      expected = { regexp_error: true, message: expected_message }
+      failures << "#{label}: frozen MRI error changed" unless mri_error == expected
+
+      onibi_error = regexp_error_snapshot(Onibi::Regexp, pattern)
+      failures << "#{label}: Onibi error differs from MRI" unless onibi_error == mri_error
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
+  def test_unicode_escaped_class_encoding_matches_mri
+    failures = []
+
+    UNICODE_ESCAPE_CLASS_ENCODING_CASES.each do |test_case|
+      compare_unicode_class_encoding_case(failures, test_case)
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
+  def test_unicode_escaped_class_scalars_keep_literal_syntax_identity
+    failures = []
+
+    UNICODE_CLASS_SYNTAX_IDENTITY_CASES.each do |test_case|
+      compare_unicode_class_range_results(failures, *test_case)
+    end
+
+    assert_empty failures, failures.join("\n")
   end
 
   def test_ignorecase_range_does_not_fold_turkish_dotless_i
@@ -233,5 +409,176 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     assert regexp.match?("")
     assert regexp.match?("aaa")
     refute regexp.match?("aaaa")
+  end
+
+  private
+
+  def compare_unicode_class_range_results(failures, label, class_pattern, option_names,
+                                          subjects, expected_matches)
+    pattern = "(#{class_pattern})"
+    mri_options = option_bits(option_names, ::Regexp)
+    onibi_options = option_bits(option_names, Onibi::Regexp)
+    mri_regexp = ::Regexp.new(pattern, mri_options)
+
+    begin
+      onibi_regexp = Onibi::Regexp.new(pattern, onibi_options)
+    rescue StandardError => e
+      failures << "#{label}: Onibi compile raised #{e.class}: #{e.message}"
+      subjects.each_index do |index|
+        compare_unicode_class_range_subject(
+          failures, label, mri_regexp, nil, subjects[index], expected_matches[index]
+        )
+      end
+      return
+    end
+
+    subjects.each_index do |index|
+      compare_unicode_class_range_subject(
+        failures, label, mri_regexp, onibi_regexp, subjects[index], expected_matches[index]
+      )
+    end
+  rescue StandardError => e
+    failures << "#{label}: MRI compile raised #{e.class}: #{e.message}"
+  end
+
+  def compare_unicode_class_range_subject(failures, label, mri_regexp, onibi_regexp,
+                                          subject, expected_match)
+    mri_result = unicode_class_match_snapshot(mri_regexp, subject)
+    failures << "#{label}: frozen MRI result changed for #{subject.inspect}" unless
+      mri_result.fetch(:match_q) == expected_match
+    return unless onibi_regexp
+
+    onibi_result = unicode_class_match_snapshot(onibi_regexp, subject)
+    failures << "#{label}: Onibi differs from MRI for #{subject.inspect}" unless
+      onibi_result == mri_result
+  rescue StandardError => e
+    failures << "#{label}: #{e.class} for #{subject.inspect}: #{e.message}"
+  end
+
+  def compare_unicode_class_encoding_case(failures, test_case)
+    label = test_case.fetch(:label)
+    source_encoding = Encoding.find(test_case.fetch(:source_encoding))
+    pattern = test_case.fetch(:pattern).dup.force_encoding(source_encoding)
+    mri_options = option_bits(test_case.fetch(:options), ::Regexp)
+    onibi_options = option_bits(test_case.fetch(:options), Onibi::Regexp)
+    expected_error = test_case[:expected_error]
+    mri_error = regexp_error_snapshot(::Regexp, pattern, mri_options)
+
+    if expected_error
+      failures << "#{label}: frozen MRI error changed" unless mri_error == expected_error
+      onibi_error = regexp_error_snapshot(Onibi::Regexp, pattern, onibi_options)
+      failures << "#{label}: Onibi error differs from MRI: #{onibi_error.inspect}" unless
+        onibi_error == mri_error
+      return
+    end
+
+    failures << "#{label}: MRI compile raised #{mri_error.inspect}" if mri_error[:regexp_error]
+    return if mri_error[:regexp_error]
+
+    mri_regexp = ::Regexp.new(pattern, mri_options)
+    begin
+      onibi_regexp = Onibi::Regexp.new(pattern, onibi_options)
+    rescue StandardError => e
+      failures << "#{label}: Onibi compile raised #{e.class}: #{e.message}"
+      test_case.fetch(:subjects).each do |value, encoding_name, expected_match|
+        subject = value.dup.force_encoding(Encoding.find(encoding_name))
+        compare_unicode_class_range_subject(
+          failures, label, mri_regexp, nil, subject, expected_match
+        )
+      end
+      return
+    end
+    mri_metadata = regexp_encoding_snapshot(mri_regexp, ::Regexp)
+    expected_metadata = test_case.fetch(:expected_regexp)
+    failures << "#{label}: frozen MRI encoding changed" unless mri_metadata == expected_metadata
+
+    onibi_metadata = regexp_encoding_snapshot(onibi_regexp, Onibi::Regexp)
+    failures << "#{label}: Onibi encoding differs from MRI: #{onibi_metadata.inspect}" unless
+      onibi_metadata == mri_metadata
+
+    test_case.fetch(:subjects).each do |value, encoding_name, expected_match|
+      subject = value.dup.force_encoding(Encoding.find(encoding_name))
+      compare_unicode_class_range_subject(
+        failures, label, mri_regexp, onibi_regexp, subject, expected_match
+      )
+    end
+  rescue StandardError => e
+    failures << "#{label}: #{e.class}: #{e.message}"
+  end
+
+  def regexp_encoding_snapshot(regexp, regexp_class)
+    {
+      encoding: regexp.encoding.name,
+      fixed_encoding: regexp.fixed_encoding?,
+      no_encoding: (regexp.options & regexp_class.const_get(:NOENCODING)) != 0,
+      options: regexp.options
+    }
+  end
+
+  def compare_unicode_class_range_route(failures, label, pattern, option_names,
+                                        subjects, expected_route)
+    onibi_options = option_bits(option_names, Onibi::Regexp)
+    subjects.each do |subject|
+      compare_unicode_class_range_route_subject(
+        failures, label, pattern, onibi_options, subject, expected_route
+      )
+    end
+  end
+
+  def compare_unicode_class_range_route_subject(failures, label, pattern, options,
+                                                subject, expected_route)
+    regexp = Onibi::Regexp.new(pattern, options)
+    diagnostics = regexp.send(:__onibi_diagnostics__, subject)
+    expected = if expected_route == :native
+                 {
+                   rseq: true, regular_capable: true, exec_kind: 0,
+                   regular: 1, tagged: 0, dynamic: 0, fallback: 0,
+                   fallback_reason: :none, compile_error_kind: :ok,
+                   unsupported_reason: :none, executor_error_kind: :none,
+                   class_kinds: [:codepoint_ranges], class_flags: [0]
+                 }
+               else
+                 {
+                   rseq: true, regular_capable: true, exec_kind: 0,
+                   regular: 0, tagged: 0, dynamic: 0, fallback: 1,
+                   fallback_reason: :input_ineligible, compile_error_kind: :ok,
+                   unsupported_reason: :none, executor_error_kind: :none,
+                   class_kinds: [:codepoint_ranges],
+                   class_flags: [INCOMPLETE_CASEFOLD_CLASS_FLAG]
+                 }
+               end
+    expected.each do |key, value|
+      failures << "#{label}: #{key} differs for #{subject.inspect}" unless
+        diagnostics.fetch(key) == value
+    end
+  rescue StandardError => e
+    failures << "#{label}: #{e.class} for #{subject.inspect}: #{e.message}"
+  end
+
+  def option_bits(option_names, regexp_class)
+    option_names.reduce(0) do |bits, name|
+      bits | regexp_class.const_get(name)
+    end
+  end
+
+  def unicode_class_match_snapshot(regexp, subject)
+    match = regexp.match(subject)
+    {
+      match_q: regexp.match?(subject),
+      values: match&.to_a,
+      character_ranges: match && match.to_a.each_index.map do |index|
+        [match.begin(index), match.end(index)]
+      end,
+      byte_ranges: match && match.to_a.each_index.map do |index|
+        match.byteoffset(index)
+      end
+    }
+  end
+
+  def regexp_error_snapshot(regexp_class, pattern, options = nil)
+    regexp_class.new(pattern, options)
+    { regexp_error: false, message: nil }
+  rescue StandardError => e
+    { regexp_error: e.is_a?(::RegexpError), message: e.message }
   end
 end

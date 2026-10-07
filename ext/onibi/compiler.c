@@ -1054,19 +1054,11 @@ static unsigned int
 onibi_name_key_read_hex(const unsigned char *bytes, size_t length,
 			size_t *cursor, size_t limit)
 {
-    if (*cursor > length || limit > length - *cursor || limit == 0 || limit > 6)
+    uint32_t codepoint = 0;
+    if (onibi_unicode_scalar_read_hex(bytes, length, cursor, limit,
+				      &codepoint) != ONIBI_UNICODE_SCALAR_OK)
 	rb_raise(eRegexpError, "invalid Unicode capture name escape");
-    unsigned int value = 0;
-    for (size_t i = 0; i < limit; i++) {
-	int digit = onibi_name_hex_value(bytes[*cursor + i]);
-	if (digit < 0)
-	    rb_raise(eRegexpError, "invalid Unicode capture name escape");
-	value = value * 16 + (unsigned int)digit;
-    }
-    *cursor += limit;
-    if (value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff))
-	rb_raise(eRegexpError, "invalid Unicode capture name escape");
-    return value;
+    return (unsigned int)codepoint;
 }
 
 static void

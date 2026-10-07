@@ -156,7 +156,7 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 27 | TASK-BASE02-ASSERTION-GREEDY | Accepted | BASE02 | A greedy dot respects terminal assertion priority. |
 | 28 | TASK-BASE02-CLASS-RANGE | Accepted | BASE02 | The access-log class compiles and matches MRI. |
 | 29 | TASK-BASE02-REVERSE-FOLD | Accepted | BASE02 | Reverse Unicode folds preserve native and fallback routes. |
-| 30 | TASK-BASE02-UNICODE-CLASS-FOLD | Waiting | BASE02 | Ignore-case range closure follows MRI encoding folds. |
+| 30 | TASK-BASE02-UNICODE-CLASS-FOLD | Accepted | BASE02 | Ignore-case range closure follows MRI encoding folds. |
 | 31 | TASK-BASE02-ABSENCE-AUDIT | Waiting | BASE02 | The 25 absence failures have a bounded root-cause map. |
 | 32 | TASK-BASE02-INLINE-M | Waiting | BASE02 | Inline multiline changes stay inside their scopes. |
 | 33 | TASK-BASE02-LINE-ANCHOR | Waiting | BASE02 | Line-start behavior matches MRI after a final newline. |
@@ -577,7 +577,9 @@ Candidate C owners: `ext/onibi/compiler.c:onibi_class_expr_apply_casefold`,
 `ext/onibi/compiler.c:onibi_compiler_normalize_class`, and `ext/onibi/exec_dynamic.c:onibi_rseq_class_hit`.
 Dependency: accepted BASE02 mapping. Use the MRI encoding fold table and keep class data immutable.
 Run the existing E2E method. Compare both subjects with MRI 4.0.6.
-Record the class route. Require native execution and zero fallback for the supported class.
+Record the class route. Complete one-to-one fold classes use native execution and zero fallback.
+Wide incomplete-fold classes retain explicit input-ineligible fallback.
+Escaped scalar endpoints and encoding/punctuation controls are accepted.
 Done: the range and its one-character fold closure match MRI.
 
 ### TASK-BASE02-ABSENCE-AUDIT — Absence failure root cause

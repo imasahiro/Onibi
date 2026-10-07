@@ -116,9 +116,10 @@ onibi_c_parse_class_part(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	    continue;
 	}
 	if (depth == 0 && token->kind == ONIBI_TOKEN_LITERAL &&
-	    token->byte == '&' &&
+	    token->byte == '&' && !token->from_escape &&
 	    onibi_token_at(tokens, i + 1)->kind == ONIBI_TOKEN_LITERAL &&
-	    onibi_token_at(tokens, i + 1)->byte == '&') {
+	    onibi_token_at(tokens, i + 1)->byte == '&' &&
+	    !onibi_token_at(tokens, i + 1)->from_escape) {
 	    intersection = i;
 	    break;
 	}
