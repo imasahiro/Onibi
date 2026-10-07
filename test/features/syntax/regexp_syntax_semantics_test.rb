@@ -28,6 +28,20 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
      %w[A B C D], [true, true, true, false]]
   ].freeze
 
+  UNICODE_CLASS_SCALAR_BOUNDARY_CASES = [
+    ["braced_minimum_scalar", "[\\u{0}]", [], ["\u0000", "\u0001"], [true, false]],
+    ["fixed_width_minimum_scalar", "[\\u0000]", [], ["\u0000", "\u0001"],
+     [true, false]],
+    ["pre_surrogate_scalar", "[\\u{D7FF}]", [], ["\u{D7FF}", "\u{D7FE}"],
+     [true, false]],
+    ["post_surrogate_scalar", "[\\u{E000}]", [], ["\u{E000}", "\u{E001}"],
+     [true, false]],
+    ["fixed_width_bmp_maximum", "[\\uFFFF]", [], ["\uFFFF", "\uFFFE"],
+     [true, false]],
+    ["braced_unicode_maximum", "[\\u{10FFFF}]", [], ["\u{10FFFF}", "\u{10FFFE}"],
+     [true, false]]
+  ].freeze
+
   UNICODE_CLASS_RANGE_ROUTE_CASES = [
     ["native_long_s_braced_range", "[\\u{17F}-\\u{17F}]", ["IGNORECASE"],
      %w[s S ſ], :native],
@@ -42,8 +56,20 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
      "invalid Unicode list: /[\\u{12Z}-\\u{200}]/"],
     ["surrogate_scalar", "[\\u{D800}-Z]",
      "invalid Unicode range: /[\\u{D800}-Z]/"],
+    ["surrogate_start_scalar", "[\\u{D800}]",
+     "invalid Unicode range: /[\\u{D800}]/"],
+    ["surrogate_end_scalar", "[\\u{DFFF}]",
+     "invalid Unicode range: /[\\u{DFFF}]/"],
+    ["fixed_width_surrogate_scalar", "[\\uD800]",
+     "invalid Unicode range: /[\\uD800]/"],
     ["codepoint_above_unicode_max", "[\\u{110000}-Z]",
      "invalid Unicode range: /[\\u{110000}-Z]/"],
+    ["scalar_above_unicode_max", "[\\u{110000}]",
+     "invalid Unicode range: /[\\u{110000}]/"],
+    ["braced_scalar_over_six_digits", "[\\u{1234567}]",
+     "invalid Unicode range: /[\\u{1234567}]/"],
+    ["fixed_width_escape_too_short", "[\\u000]",
+     "invalid Unicode escape: /[\\u000]/"],
     ["descending_escaped_range", "[\\u{200}-\\u{100}]",
      "empty range in char class: /[\\u{200}-\\u{100}]/"]
   ].freeze
@@ -238,6 +264,29 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
 
     UNICODE_CLASS_RANGE_CASES.each do |test_case|
       compare_unicode_class_range_results(failures, *test_case)
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
+  def test_unicode_class_scalar_boundaries_match_mri
+    failures = []
+
+    UNICODE_CLASS_SCALAR_BOUNDARY_CASES.each do |test_case|
+      compare_unicode_class_range_results(failures, *test_case)
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
+  def test_unicode_class_scalar_boundaries_use_native_execution
+    failures = []
+
+    UNICODE_CLASS_SCALAR_BOUNDARY_CASES.each do |test_case|
+      label, pattern, option_names, subjects = test_case
+      compare_unicode_class_scalar_boundary_route(
+        failures, label, pattern, option_names, [subjects.first]
+      )
     end
 
     assert_empty failures, failures.join("\n")
@@ -553,6 +602,28 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     end
   rescue StandardError => e
     failures << "#{label}: #{e.class} for #{subject.inspect}: #{e.message}"
+  end
+
+  def compare_unicode_class_scalar_boundary_route(failures, label, pattern, option_names,
+                                                  subjects)
+    regexp = Onibi::Regexp.new(pattern, option_bits(option_names, Onibi::Regexp))
+    subjects.each do |subject|
+      diagnostics = regexp.send(:__onibi_diagnostics__, subject)
+      expected = {
+        rseq: true, regular_capable: true, exec_kind: 0,
+        regular: 1, tagged: 0, dynamic: 0, fallback: 0,
+        fallback_reason: :none, compile_error_kind: :ok,
+        unsupported_reason: :none, executor_error_kind: :none
+      }
+      expected.each do |key, value|
+        failures << "#{label}: #{key} differs for #{subject.inspect}" unless
+          diagnostics.fetch(key) == value
+      end
+    rescue StandardError => e
+      failures << "#{label}: #{e.class} for #{subject.inspect}: #{e.message}"
+    end
+  rescue StandardError => e
+    failures << "#{label}: #{e.class}: #{e.message}"
   end
 
   def option_bits(option_names, regexp_class)
