@@ -1025,6 +1025,7 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 				   "validated direct-fold profile");
     }
     VALUE blob = rb_str_dup(obj->rseq_blob);
+    rb_str_modify(blob);
     OnibiRSeqHeader *header = (OnibiRSeqHeader *)RSTRING_PTR(blob);
     OnibiRState *states =
 	(OnibiRState *)(RSTRING_PTR(blob) + header->states_offset);
@@ -1112,6 +1113,52 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	    rb_raise(rb_eArgError, "direct-fold diagnostic requires a compiled "
 				   "direct-fold profile");
     }
+    else if (scenario == rb_intern("capture_rollback_old_version"))
+	header->version = 6;
+    else if (scenario == rb_intern("capture_rollback_feature_missing"))
+	header->features &= ~ONIBI_RSEQ_FEATURE_CAPTURE_ROLLBACK;
+    else if (scenario == rb_intern("capture_rollback_open_flag_missing")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++) {
+	    if (actions[i].op != ONIBI_RA_CAPTURE ||
+		(actions[i].flags & ONIBI_RA_CAPTURE_CLOSE) != 0 ||
+		(actions[i].flags & ONIBI_RA_CAPTURE_OPEN_START_PUSH) == 0)
+		continue;
+	    actions[i].flags &= (uint8_t)~ONIBI_RA_CAPTURE_OPEN_START_PUSH;
+	    changed = 1;
+	}
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "capture-rollback diagnostic requires a pushed open");
+    }
+    else if (scenario == rb_intern("capture_rollback_feature_orphan"))
+	header->features |= ONIBI_RSEQ_FEATURE_CAPTURE_ROLLBACK;
+    else if (scenario == rb_intern("capture_rollback_close_flag")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_CAPTURE &&
+		actions[i].flags == ONIBI_RA_CAPTURE_CLOSE) {
+		actions[i].flags |= ONIBI_RA_CAPTURE_OPEN_START_PUSH;
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "capture-rollback diagnostic requires a capture close");
+    }
+    else if (scenario == rb_intern("capture_rollback_open_unknown_flag")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_CAPTURE &&
+		(actions[i].flags & ONIBI_RA_CAPTURE_CLOSE) == 0) {
+		actions[i].flags |= UINT8_C(0x08);
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "capture-rollback diagnostic requires a capture open");
+    }
     else if (scenario == rb_intern("casefold_direct_old_version"))
 	header->version = 5;
     else if (scenario ==
@@ -1188,7 +1235,9 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
     else if (scenario == rb_intern("casefold_direct_capture_open_missing")) {
 	int changed = 0;
 	for (uint32_t i = 0; i < header->action_count; i++)
-	    if (actions[i].op == ONIBI_RA_CAPTURE && actions[i].flags == 0 &&
+	    if (actions[i].op == ONIBI_RA_CAPTURE &&
+		(actions[i].flags == 0 ||
+		 actions[i].flags == ONIBI_RA_CAPTURE_OPEN_START_PUSH) &&
 		actions[i].arg16 == 0) {
 		actions[i] = (OnibiRAction){ONIBI_RA_ORDER, 0, 0, 0};
 		changed = 1;

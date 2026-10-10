@@ -6,6 +6,8 @@
 static onibi_fragment_t onibi_compile_node(OnibiAstId node_id,
 					   onibi_gir_builder_t *builder);
 
+enum { ONIBI_SEMANTIC_CAPTURE_START_PUSH = 1U << 8 };
+
 #define ONIBI_FRAGMENT_EXIT_LAZY 1
 #define ONIBI_FRAGMENT_NULLABLE_LAZY 2
 #define ONIBI_FRAGMENT_LAZY_BOTH                                               \
@@ -1581,6 +1583,109 @@ onibi_assign_lookaround_subprograms(OnibiParsed *parsed,
     }
 }
 
+enum {
+    ONIBI_CAPTURE_PUSH_IN_ALT = 1U << 0,
+    ONIBI_CAPTURE_PUSH_IN_VAR_REPEAT = 1U << 1,
+    ONIBI_CAPTURE_PUSH_IN_NEGATIVE = 1U << 2
+};
+
+static void
+onibi_capture_start_push_mark_capture(OnibiParsed *parsed, OnibiAstId id)
+{
+    if (id == ONIBI_AST_NONE || (size_t)id >= parsed->arena.count) return;
+    const OnibiAstNode *node = onibi_ast_node_const(&parsed->arena, id);
+    if (node->kind == ONIBI_AST_CAPTURE &&
+	parsed->semantics.nodes[id].capture_id >= 0)
+	parsed->semantics.nodes[id].flags |= ONIBI_SEMANTIC_CAPTURE_START_PUSH;
+}
+
+static void
+onibi_capture_start_push_mark_tree(OnibiParsed *parsed, OnibiAstId id)
+{
+    if (id == ONIBI_AST_NONE || (size_t)id >= parsed->arena.count) return;
+    const OnibiAstNode *node = onibi_ast_node_const(&parsed->arena, id);
+    onibi_capture_start_push_mark_capture(parsed, id);
+    if (node->body != ONIBI_AST_NONE)
+	onibi_capture_start_push_mark_tree(parsed, node->body);
+    if (node->atom != ONIBI_AST_NONE)
+	onibi_capture_start_push_mark_tree(parsed, node->atom);
+    if (node->yes != ONIBI_AST_NONE)
+	onibi_capture_start_push_mark_tree(parsed, node->yes);
+    if (node->no != ONIBI_AST_NONE)
+	onibi_capture_start_push_mark_tree(parsed, node->no);
+    for (size_t i = 0; i < node->child_count; i++)
+	onibi_capture_start_push_mark_tree(parsed, node->children[i]);
+}
+
+static void
+onibi_capture_start_push_analyze_node(OnibiParsed *parsed, OnibiAstId id,
+				      uint8_t context)
+{
+    if (id == ONIBI_AST_NONE || (size_t)id >= parsed->arena.count) return;
+    const OnibiAstNode *node = onibi_ast_node_const(&parsed->arena, id);
+    OnibiResolvedNode *semantic = &parsed->semantics.nodes[id];
+    if (node->kind == ONIBI_AST_CAPTURE && semantic->capture_id >= 0 &&
+	context != 0)
+	semantic->flags |= ONIBI_SEMANTIC_CAPTURE_START_PUSH;
+    if (node->kind == ONIBI_AST_BACKREF &&
+	semantic->reference_target != ONIBI_AST_NONE) {
+	if (node->name.present) {
+	    OnibiNameIndexEntry *entry = onibi_name_index_find(
+		&parsed->semantics, &parsed->arena, node->name,
+		rb_enc_from_index(parsed->encoding_index));
+	    if (entry != NULL && entry->used)
+		for (size_t i = 0; i < entry->definition_count; i++)
+		    onibi_capture_start_push_mark_capture(
+			parsed, entry->definitions[i]);
+	}
+	else
+	    onibi_capture_start_push_mark_capture(parsed,
+						  semantic->reference_target);
+    }
+    if (node->kind == ONIBI_AST_SUBROUTINE &&
+	semantic->reference_target != ONIBI_AST_NONE)
+	onibi_capture_start_push_mark_tree(parsed, semantic->reference_target);
+
+    if (node->kind == ONIBI_AST_ALTERNATIVE) {
+	for (size_t i = 0; i < node->child_count; i++)
+	    onibi_capture_start_push_analyze_node(
+		parsed, node->children[i], context | ONIBI_CAPTURE_PUSH_IN_ALT);
+	return;
+    }
+    if (node->kind == ONIBI_AST_QUANTIFIER) {
+	uint8_t repeat_context = context;
+	if (!(node->flags & ONIBI_AST_NODE_HAS_MAX) || node->min != node->max)
+	    repeat_context |= ONIBI_CAPTURE_PUSH_IN_VAR_REPEAT;
+	onibi_capture_start_push_analyze_node(parsed, node->atom,
+					      repeat_context);
+	return;
+    }
+    uint8_t child_context = context;
+    if ((node->kind == ONIBI_AST_LOOKAHEAD ||
+	 node->kind == ONIBI_AST_LOOKBEHIND) &&
+	!(node->flags & ONIBI_AST_NODE_POSITIVE))
+	child_context |= ONIBI_CAPTURE_PUSH_IN_NEGATIVE;
+    if (node->body != ONIBI_AST_NONE)
+	onibi_capture_start_push_analyze_node(parsed, node->body,
+					      child_context);
+    if (node->atom != ONIBI_AST_NONE)
+	onibi_capture_start_push_analyze_node(parsed, node->atom,
+					      child_context);
+    if (node->yes != ONIBI_AST_NONE)
+	onibi_capture_start_push_analyze_node(parsed, node->yes, child_context);
+    if (node->no != ONIBI_AST_NONE)
+	onibi_capture_start_push_analyze_node(parsed, node->no, child_context);
+    for (size_t i = 0; i < node->child_count; i++)
+	onibi_capture_start_push_analyze_node(parsed, node->children[i],
+					      child_context);
+}
+
+static void
+onibi_capture_start_push_analyze(OnibiParsed *parsed)
+{
+    onibi_capture_start_push_analyze_node(parsed, parsed->arena.root, 0);
+}
+
 static OnibiResolveOutput
 onibi_compiler_pass_resolve(OnibiParseOutput parse, OnibiCompilerOwner *owner)
 {
@@ -1633,6 +1738,7 @@ onibi_compiler_pass_resolve(OnibiParseOutput parse, OnibiCompilerOwner *owner)
     uint32_t subprograms = 1;
     (void)onibi_resolve_semantic_node(parsed, parsed->arena.root,
 				      (uint32_t)parse.options, &subprograms);
+    onibi_capture_start_push_analyze(parsed);
     for (size_t i = 0; i < parsed->semantics.name_index_capacity; i++) {
 	OnibiNameIndexEntry *entry = &parsed->semantics.name_entries[i];
 	if (entry->used && entry->definition_count != 0)
@@ -2058,15 +2164,18 @@ onibi_compile_resolved_subprogram(OnibiAstId capture_id,
     onibi_fragment_t fragment = onibi_compile_node(capture->body, builder);
     long capture_slot = capture_semantic->capture_id;
     if (capture_slot >= 0) {
-	OnibiGAction open = {ONIBI_GA_CAPTURE_OPEN,
-			     0,
-			     0,
-			     1,
-			     onibi_capture_boundary_slot(capture_slot, 0),
-			     0,
-			     0,
-			     0,
-			     0};
+	OnibiGAction open = {
+	    ONIBI_GA_CAPTURE_OPEN,
+	    (capture_semantic->flags & ONIBI_SEMANTIC_CAPTURE_START_PUSH)
+		? ONIBI_GA_CAPTURE_OPEN_START_PUSH
+		: 0,
+	    0,
+	    1,
+	    onibi_capture_boundary_slot(capture_slot, 0),
+	    0,
+	    0,
+	    0,
+	    0};
 	OnibiGAction close = {ONIBI_GA_CAPTURE_CLOSE,
 			      0,
 			      0,
@@ -2963,6 +3072,9 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	}
 	open.has_slot = 1;
 	open.slot = onibi_capture_boundary_slot(capture_id, 0);
+	open.set = (resolved_node->flags & ONIBI_SEMANTIC_CAPTURE_START_PUSH)
+		       ? ONIBI_GA_CAPTURE_OPEN_START_PUSH
+		       : 0;
 	close.code = ONIBI_GA_CAPTURE_CLOSE;
 	close.has_slot = 1;
 	close.slot = onibi_capture_boundary_slot(capture_id, 1);
@@ -3320,6 +3432,10 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 		break;                                                         \
 	    default: break;                                                    \
 	    }                                                                  \
+	    if ((_action->code == ONIBI_GA_CAPTURE_OPEN ||                     \
+		 _action->code == ONIBI_GA_CAPTURE_OPEN_UNSCOPED) &&           \
+		_action->set == ONIBI_GA_CAPTURE_OPEN_START_PUSH)              \
+		result.rseq_features |= ONIBI_RSEQ_FEATURE_CAPTURE_ROLLBACK;   \
 	    if (_action->code == ONIBI_GA_PROGRESS ||                          \
 		_action->code == ONIBI_GA_COUNTER_INIT ||                      \
 		_action->code == ONIBI_GA_COUNTER_INCREMENT ||                 \

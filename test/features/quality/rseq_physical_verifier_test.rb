@@ -36,6 +36,43 @@ class RseqPhysicalVerifierTest < Minitest::Test
     end
   end
 
+  def test_rejects_invalid_capture_rollback_metadata
+    pushed = Onibi::Regexp.new("(?~((a|b){2,}))(?(2)z|a)")
+    direct = Onibi::Regexp.new("(a)")
+    cases = [
+      [pushed, :capture_rollback_old_version, "invalid Onibi RSeq blob"],
+      [pushed, :capture_rollback_feature_missing,
+       "inconsistent Onibi RSeq execution contract"],
+      [pushed, :capture_rollback_open_flag_missing,
+       "inconsistent Onibi RSeq execution contract"],
+      [direct, :capture_rollback_feature_orphan,
+       "inconsistent Onibi RSeq execution contract"],
+      [pushed, :capture_rollback_close_flag,
+       "invalid Onibi RSeq capture action"],
+      [pushed, :capture_rollback_open_unknown_flag,
+       "invalid Onibi RSeq capture action"]
+    ]
+    failures = []
+
+    cases.each do |regexp, scenario, expected_message|
+      error = begin
+        regexp.send(:__onibi_rseq_verifier_diagnostics__, scenario)
+        nil
+      rescue StandardError => e
+        e
+      end
+      if error.nil?
+        failures << "#{scenario}: accepted corrupted blob"
+      elsif !error.is_a?(ArgumentError)
+        failures << "#{scenario}: raised #{error.class}"
+      elsif error.message != expected_message
+        failures << "#{scenario}: got #{error.message.inspect}"
+      end
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
   def test_rejects_bad_class_and_literal_descriptors
     assert_invalid("[a]", :class_descriptor)
     assert_invalid("\\p{Alpha}", :class_ctype)

@@ -575,3 +575,25 @@ Internal end-only push modes and new recursion cases are outside this proof.
 Keep the fixed-three range error separate.
 Exact source references, probes, and limits:
 `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-mri-rollback-contract-01/worker/correction-02/completion.json`.
+
+
+TASK-BASE02-ABSENCE PUSHED CAPTURE ROLLBACK ACCEPT (2026-10-11): parent `c089b3e2`.
+The compiler derives pushed capture starts before normalization. GIR and RSeq
+v7 carry and validate the flag. Absence restores prior output and condition
+pairs for pushed captures. Direct capture writes remain visible.
+Frozen public and physical-verifier E2Es pass. The full absence file reports
+73 tests, 474 assertions, and 7 known failures. Three prior methods now pass.
+Two retained failures improve one capture; the other five details are unchanged.
+Six of seven prior matrix capture mismatches resolve across 27 repeated rows.
+The nested-alternation row and separate fixed-three RangeError remain open.
+Native DYNAMIC routes use zero fallback. Shared execution, GIR, syntax, and
+RSeq checks pass. Root subprogram check passes 6 tests and 46 assertions.
+Root compiler exception-safety check passes 1 test and 312 assertions.
+An existing subprogram E2E expected obsolete capture flag 0. Root changed that
+expectation to the required v7 flag 4. Both pre-code frozen test hashes remain
+unchanged. Source, patch, direct artifacts, and log hashes were verified.
+Warning builds report two existing warnings. Format, lint, diff, and cleanup
+checks pass. No full suite ran. Remote publication remains pending.
+Exact worker evidence:
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-rollback-implementation-01/worker/implementation-completion.json`.
+Root evidence: `root-acceptance.json` and `root-review/checks-02.json` under that unit.

@@ -267,9 +267,14 @@ onibi_rseq_direct_fold_action_valid(const OnibiRSeqView *view,
     uint32_t count = 0;
     const OnibiRAction *actions =
 	onibi_rseq_action_program(view, action_offset, &count);
-    return count == 1 && actions != NULL && actions[0].op == op &&
-	   actions[0].flags == flags && actions[0].arg16 == arg16 &&
-	   actions[0].arg32 == arg32;
+    if (count != 1 || actions == NULL || actions[0].op != op ||
+	actions[0].arg16 != arg16 || actions[0].arg32 != arg32)
+	return 0;
+    if (actions[0].flags == flags) return 1;
+    return op == ONIBI_RA_CAPTURE && (flags & ONIBI_RA_CAPTURE_CLOSE) == 0 &&
+	   (actions[0].flags & ONIBI_RA_CAPTURE_OPEN_START_PUSH) != 0 &&
+	   (actions[0].flags & (uint8_t)~ONIBI_RA_CAPTURE_OPEN_START_PUSH) ==
+	       flags;
 }
 
 static int
@@ -1017,7 +1022,8 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND |
 	ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP |
 	ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM |
-	ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE;
+	ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE |
+	ONIBI_RSEQ_FEATURE_CAPTURE_ROLLBACK;
     int has_class_tail_map =
 	(header->features & ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP) != 0;
     int has_direct_fold_capture =
@@ -1290,12 +1296,19 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 		    rb_raise(rb_eArgError, "invalid Onibi RSeq action end");
 		goto action_program_done;
 	    case ONIBI_RA_CAPTURE:
-		if (action->flags > ONIBI_RA_CAPTURE_OPEN_UNSCOPED ||
-		    action->arg32 != 0 ||
+		if (action->arg32 != 0 ||
 		    action->arg16 >= header->capture_count * 2U ||
+		    (action->flags != 0 &&
+		     action->flags != ONIBI_RA_CAPTURE_CLOSE &&
+		     action->flags != ONIBI_RA_CAPTURE_OPEN_UNSCOPED &&
+		     action->flags != ONIBI_RA_CAPTURE_OPEN_START_PUSH &&
+		     action->flags != (ONIBI_RA_CAPTURE_OPEN_UNSCOPED |
+				       ONIBI_RA_CAPTURE_OPEN_START_PUSH)) ||
 		    ((action->arg16 & 1U) !=
 		     (action->flags == ONIBI_RA_CAPTURE_CLOSE)))
 		    rb_raise(rb_eArgError, "invalid Onibi RSeq capture action");
+		if ((action->flags & ONIBI_RA_CAPTURE_OPEN_START_PUSH) != 0)
+		    action_features |= ONIBI_RSEQ_FEATURE_CAPTURE_ROLLBACK;
 		break;
 	    case ONIBI_RA_MATCH_RESET:
 		if (action->flags != 0 || action->arg16 != 0 ||
@@ -1695,7 +1708,7 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	if (view.actions[i].op == ONIBI_RA_TEST_CAPTURE)
 	    execution_requirements |= ONIBI_EXEC_REQUIRE_DYNAMIC;
 	else if (view.actions[i].op == ONIBI_RA_CAPTURE &&
-		 view.actions[i].flags >= ONIBI_RA_CAPTURE_OPEN_UNSCOPED)
+		 (view.actions[i].flags & ONIBI_RA_CAPTURE_OPEN_UNSCOPED) != 0)
 	    execution_requirements |= ONIBI_EXEC_REQUIRE_TAGGED;
     if (!root_consuming)
 	expected_features |= ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY;
@@ -1723,7 +1736,8 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND |
 	ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP |
 	ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM |
-	ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE;
+	ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE |
+	ONIBI_RSEQ_FEATURE_CAPTURE_ROLLBACK;
     unsigned char expected_bitmap[sizeof(header->first_bitmap)];
     int bitmap_valid = 1, bitmap_have = 0;
     memset(expected_bitmap, 0, sizeof(expected_bitmap));

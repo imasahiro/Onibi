@@ -116,7 +116,7 @@ runtime validator does not compare the blob with the Ruby semantic mirror.
 One narrow UTF-8 form has a scoped ignorecase capture around one direct scalar,
 one case-sensitive reference to that capture, and a final `\z`. The compiler
 uses encoding fold data to prove MRI's expansion-overflow case. It stores the
-normalized widths and end-search distances in RSeq v6. This form uses native
+normalized widths and end-search distances in RSeq v7. This form uses native
 `DYNAMIC` execution.
 
 The matcher compares `Dmin` with the full subject length. It applies `Dmax` to

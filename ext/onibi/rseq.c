@@ -10,7 +10,10 @@ onibi_g_action_flags(const OnibiGAction *action)
 {
     if (action->code == ONIBI_GA_CAPTURE_CLOSE) return ONIBI_RA_CAPTURE_CLOSE;
     if (action->code == ONIBI_GA_CAPTURE_OPEN_UNSCOPED)
-	return ONIBI_RA_CAPTURE_OPEN_UNSCOPED;
+	return ONIBI_RA_CAPTURE_OPEN_UNSCOPED |
+	       (action->set ? ONIBI_RA_CAPTURE_OPEN_START_PUSH : 0);
+    if (action->code == ONIBI_GA_CAPTURE_OPEN && action->set)
+	return ONIBI_RA_CAPTURE_OPEN_START_PUSH;
     if (action->code == ONIBI_GA_TEST_CAPTURE)
 	return action->set ? ONIBI_RA_TEST_CAPTURE_SET
 			   : ONIBI_RA_TEST_CAPTURE_UNSET;

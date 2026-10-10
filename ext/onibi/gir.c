@@ -1079,12 +1079,9 @@ onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
 		action->code == ONIBI_GA_CAPTURE_CLOSE
 		    ? "capture-close payload is invalid"
 		    : "capture-open payload is invalid");
-	if (action->set != 0)
-	    onibi_gir_verification_error(
-		action->code == ONIBI_GA_CAPTURE_CLOSE
-		    ? "capture-close payload is invalid"
-		    : "capture-open payload is invalid");
 	int close = action->code == ONIBI_GA_CAPTURE_CLOSE;
+	if (close && action->set != 0)
+	    onibi_gir_verification_error("capture-close payload is invalid");
 	if (action->slot >= capture_slots ||
 	    ((action->slot & 1U) != (close ? 1U : 0U)))
 	    onibi_gir_verification_error("capture slot is invalid");

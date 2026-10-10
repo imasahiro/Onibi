@@ -103,6 +103,44 @@ class AbsenceOperatorTest < Minitest::Test
     assert_nil actual
   end
 
+  def test_absence_restores_pushed_capture_for_suffix_condition
+    pattern = "\\A(?~((a|b){2,}))(?(2)z|a)"
+    expected = ::Regexp.new(pattern).match("ab")
+    actual = Onibi::Regexp.new(pattern).match("ab")
+
+    assert_equal ["a", "ab", nil], expected.to_a
+    expected_ranges = (0...expected.length).map do |index|
+      [expected.begin(index), expected.end(index)]
+    end
+    assert_equal [[0, 1], [0, 2], [nil, nil]], expected_ranges
+    assert_equal expected.to_a, actual&.to_a
+    assert_equal expected.offset(0), actual&.offset(0)
+    assert_equal expected.offset(1), actual&.offset(1)
+    assert_nil actual&.begin(2)
+    assert_nil actual&.end(2)
+  end
+
+  def test_absence_restores_non_nil_call_capture_snapshot
+    pattern = "\\A(?<x>a|b)(?~\\g<x>)"
+    expected = ::Regexp.new(pattern).match("ab")
+    actual = Onibi::Regexp.new(pattern).match("ab")
+
+    assert_equal %w[a a], expected.to_a
+    assert_equal expected.to_a, actual&.to_a
+    assert_equal expected.offset(1), actual&.offset(1)
+  end
+
+  def test_absence_rollback_covers_unused_backreference_branch
+    pattern = "\\A(?~(a))(?:a|\\1)"
+    expected = ::Regexp.new(pattern).match("ab")
+    actual = Onibi::Regexp.new(pattern).match("ab")
+
+    assert_equal ["a", nil], expected.to_a
+    assert_equal expected.to_a, actual&.to_a
+    assert_nil actual&.begin(1)
+    assert_nil actual&.end(1)
+  end
+
   def test_repeated_absence_capture_uses_the_zero_width_endpoint
     pattern = "((?~a))*+"
     expected = ::Regexp.new(pattern).match("b")
@@ -542,6 +580,15 @@ class AbsenceOperatorTest < Minitest::Test
   end
 
   def test_absence_operator_does_not_export_quantifier_body_captures
+    fixed_pattern = "(?~(a|b){2})"
+    fixed_expected = ::Regexp.new(fixed_pattern).match("xabab")
+    fixed_actual = Onibi::Regexp.new(fixed_pattern).match("xabab")
+
+    assert_equal %w[xa b], fixed_expected.to_a
+    assert_equal fixed_expected.to_a, fixed_actual&.to_a
+    assert_equal fixed_expected.offset(0), fixed_actual&.offset(0)
+    assert_equal fixed_expected.offset(1), fixed_actual&.offset(1)
+
     match = Onibi::Regexp.new("(?~(a|b){2,})").match("xabab")
 
     assert_equal "xab", match[0]

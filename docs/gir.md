@@ -1179,7 +1179,7 @@ struct OnibiRAction {
 ```
 
 RSeq uses checked 16-bit capture and counter/progress slots.
-The eight-byte action record remains unchanged in version 2.
+The eight-byte action record stays unchanged.
 
 ```text
 capture count                    0..32768
@@ -1214,6 +1214,10 @@ enum OnibiRActionOp {
 ```
 
 `RA_CAPTURE.flags` is `0` for scoped open, `1` for close, or `2` for `RA_CAPTURE_OPEN_UNSCOPED`.
+Bit `0x04` marks a capture open that uses pushed start storage.
+Value `6` combines this bit with an unscoped open.
+The pushed bit is valid only on open actions.
+RSeq v7 requires its capture-rollback feature when any action uses this bit.
 `arg16` stores the capture boundary slot; `arg32` remains zero.
 Unscoped open MUST NOT weaken the transaction rule in Section 20.
 
@@ -1735,6 +1739,17 @@ starts at that endpoint. The endpoint keeps semantic capture registers from
 before the body for later backreferences. This prevents body captures from
 changing a later backreference.
 
+The compiler scans the resolved tree before normalization removes its context.
+It marks capture opens inside alternatives, variable repeats, negative
+assertions, or called groups. It also marks every referenced capture, even when
+its reference branch is not selected. The scan uses each capture's exact tree
+position. A capture around an alternative does not inherit the alternative's
+flag.
+
+For a marked capture, absence restores both boundary slots and condition values
+from the endpoint state before the body. It preserves an unset pair, a prior
+range, or a pending open. Direct writes to unmarked captures remain visible.
+
 A live nullable-repeat owner identifies a capture by its tag-event node. A
 forced replay can make new nodes for the same tag history. The capture filter
 compares node identity while the owner is live. It compares tag-history values
@@ -2242,7 +2257,7 @@ full scalar with `ONIGENC_MBC_CASE_FOLD`. Its output buffer capacity is
 `B` and `N` values from one through seven. `B` is normalized bytes. `N` is
 normalized UTF-8 codepoints. Also require `N <= B <= 4*N`.
 
-RSeq v6 stores a separate feature bit and the fields `B`, `N`, `Dmin`, and
+RSeq v7 stores a separate feature bit and the fields `B`, `N`, `Dmin`, and
 `Dmax`. The compiler uses checked arithmetic: `Dmin = 2*B` and
 `Dmax = 4*N+B`. The compiler proves source scope, fold eligibility, and full
 normalization. The physical verifier checks field bounds, equations, feature
@@ -2323,7 +2338,7 @@ typedef struct {
 The current RSeq version is:
 
 ```text
-6
+7
 ```
 
 Version 2 added `end_search_bound_bytes` to the physical header. Its feature
@@ -2345,6 +2360,13 @@ Version 5 adds the MRI-compatible minimum end-distance fields from section
 46. Its feature bit requires positive total, repeat, and source-width values.
 The total must equal the repeat value plus the source-width value. A clear
 feature bit requires zero values in all three fields.
+
+Version 6 adds the fold-derived end-range fields from section 46.
+
+Version 7 adds capture-start rollback metadata. Feature bit 15 is present
+exactly when a capture action has the pushed-open bit. The verifier reconstructs
+the feature from decoded actions. It rejects old versions, unknown capture
+flags, and the pushed-open bit on a close action.
 
 All sections must have four-byte alignment.
 
