@@ -505,3 +505,19 @@ this integration at the user request.
 Exact logs, source and frozen-input hashes, baseline comparison, and final
 patches are in
 /Users/masa/.codex/relay/01a0e063-df14-7243-a0a6-56dc68a1d838/task-absence-endpoint-implementation-01/worker/final-04.
+
+
+TASK-BASE02-ABSENCE RETAINED AUDIT ACCEPT (2026-10-10): source `8451ebe7`.
+The Bundler run with seed 41060 reproduces 70 tests, 421 assertions, and
+13 known failures. All failure details match the accepted endpoint run.
+Two fresh public probes have identical output. Case 44,
+`(?~(a+))(?(1)a|b)` on `a`, returns no native match; MRI returns `['a', 'a']`.
+The endpoint and repeated-capture controls pass. Native diagnostics report
+DYNAMIC and zero fallback. The initial endpoint skips body condition and tag
+publication in C. This remains a cause hypothesis. No repair is accepted.
+Next: freeze all conditional-method inputs, then repair this bounded invariant.
+Root verified source and artifact hashes. One packet correction selected the
+accepted Bundler runner. No repository source or test changed during the audit.
+Evidence and exact commands:
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-retained-causes-01/worker/attempt-02/result.md`.
+Root review: `task-absence-retained-causes-01/root-review-02.json` under that relay root.
