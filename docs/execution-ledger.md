@@ -539,3 +539,23 @@ Exact commands and results:
 `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-conditional-repair-01/worker/completion.json`.
 Root evidence: `task-absence-conditional-repair-01/root-acceptance.json` under that relay root.
 Next: inspect one retained capture-state cause. Remote publication remains pending.
+
+
+TASK-BASE02-ABSENCE QUANTIFIER AUDIT ACCEPT (2026-10-10): source `a381d458`.
+The target capture filter sets no clear bits for cases 25 and 26.
+Final tag materialization writes their leaked captures. Event chains do not
+restore them. The trace was removed; original source hashes match.
+A 27-row MRI matrix repeats with identical semantic records. Seven rows have
+capture mismatches. The `fixed_three` row separately raises a public RangeError.
+Its diagnostic pair is normalized; it does not prove valid public raw ranges.
+All diagnostic routes use DYNAMIC with zero fallback. The build passes with
+two known warnings; cleanup and source restoration pass. No tests changed.
+The matrix rejects global liveness and event identity alone as export rules.
+Capture lifetime remains unresolved. A new state field is not yet justified.
+Root verified 28 direct artifacts, source hashes, and paired case records.
+No production repair or representation change is accepted.
+Exact commands, matrix, and reports:
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-quantifier-capture-audit-01/worker/contract-03/completion.json`.
+Trace evidence is in the sibling `worker/trace-02` directory.
+Next: define the MRI rollback rule for the frozen pairs, then map native state.
+Keep `fixed_three` as a separate range-error finding.
