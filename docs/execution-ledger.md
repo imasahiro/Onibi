@@ -559,3 +559,19 @@ Exact commands, matrix, and reports:
 Trace evidence is in the sibling `worker/trace-02` directory.
 Next: define the MRI rollback rule for the frozen pairs, then map native state.
 Keep `fixed_three` as a separate range-error finding.
+
+
+TASK-BASE02-ABSENCE MRI ROLLBACK CONTRACT ACCEPT (2026-10-11): source `0f8780b5`.
+Pinned MRI source selects direct or pushed capture writes during compilation.
+An absence pop restores both registers saved by each pushed record in reverse
+order. Direct writes remain. Conditions read the restored pair too.
+The default frozen subset uses pushed starts where rollback is required.
+A called-capture probe confirms restoration of an earlier non-nil value.
+The condition probes remain inconclusive; their rule follows source review.
+Root verified source and artifact hashes. No Onibi build or code change ran.
+Next: freeze E2E and physical verifier cases for compile-derived rollback
+metadata, then implement the reviewed state rule. No implementation is accepted.
+Internal end-only push modes and new recursion cases are outside this proof.
+Keep the fixed-three range error separate.
+Exact source references, probes, and limits:
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-mri-rollback-contract-01/worker/correction-02/completion.json`.
