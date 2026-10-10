@@ -1,6 +1,25 @@
 module Onibi
   VERSION: String
 
+  interface _ToInt
+    def to_int: () -> Integer
+  end
+
+  interface _ToStr
+    def to_str: () -> String
+  end
+
+  interface _ToHash
+    def to_hash: () -> Hash[untyped, untyped]
+  end
+
+  type integer_coercible = Integer | _ToInt
+  type string_coercible = String | _ToStr
+  type hash_coercible = Hash[untyped, untyped] | _ToHash
+  type matchdata_result = MatchData | ::MatchData
+  type capture_selector = integer_coercible | String | Symbol
+  type values_at_selector = capture_selector | Range[integer_coercible]
+
   class Error < StandardError
   end
 
@@ -38,12 +57,17 @@ module Onibi
                   | (String pattern, ?(String | Symbol | bool) options, ?timeout: Numeric?) -> void
                   | (::Regexp pattern, ?timeout: Numeric?) -> void
                   | (Regexp pattern, ?timeout: Numeric?) -> void
-    def match?: (String input, ?Numeric position) -> bool
-    def match: (String input, ?Numeric position) -> MatchData?
-    def scan: (String input) { (String | Array[String?]) -> untyped } -> String | Array[String | Array[String?]]
-             | (String input) -> Array[String | Array[String?]]
-    def gsub: (String input, String replacement) -> String
-             | (String input) { (String) -> String } -> String
+    def match?: (string_coercible | Symbol | nil input, ?integer_coercible position) -> bool
+    def match: (string_coercible | Symbol | nil input, ?integer_coercible position) -> matchdata_result?
+             | (string_coercible | Symbol | nil input, ?integer_coercible position) { (matchdata_result) -> untyped } -> untyped
+    def scan: (string_coercible input) -> Array[String | Array[String?]]
+             | (string_coercible input) { (String | Array[String?]) -> untyped } -> String
+    def gsub: (string_coercible input) -> Enumerator[String, String]
+             | (string_coercible input, string_coercible replacement) -> String
+             | (string_coercible input, hash_coercible replacement) -> String
+             | (string_coercible input) { (String) -> untyped } -> String
+             | (string_coercible input, string_coercible replacement) { (String) -> untyped } -> String
+             | (string_coercible input, hash_coercible replacement) { (String) -> untyped } -> String
     def timeout: () -> Float?
     def =~: (String input) -> Integer?
     def ===: (String input) -> bool
@@ -63,32 +87,34 @@ module Onibi
   end
 
   class MatchData
-    def []: (Integer index) -> String?
-          | (Range[Integer] index) -> Array[String?]
-          | (String | Symbol index) -> String?
-    def match: (Integer | String | Symbol index) -> String?
+    def []: (capture_selector index) -> String?
+          | (Range[integer_coercible] index) -> Array[String?]?
+          | (Range[integer_coercible] index, nil length) -> Array[String?]?
+          | (integer_coercible index, integer_coercible length) -> Array[String?]?
+          | (capture_selector index, nil length) -> String?
+    def match: (capture_selector index) -> String?
     def captures: () -> Array[String?]
-    def offset: (Integer | String | Symbol index) -> [Integer, Integer]?
-    def begin: (Integer | String | Symbol index) -> Integer?
-    def end: (Integer | String | Symbol index) -> Integer?
+    def offset: (capture_selector index) -> [Integer?, Integer?]
+    def begin: (capture_selector index) -> Integer?
+    def end: (capture_selector index) -> Integer?
     def to_a: () -> Array[String?]
     def length: () -> Integer
     def size: () -> Integer
-    def values_at: (*untyped indices) -> Array[String?]
-    def string: () -> String?
-    def regexp: () -> Regexp?
-    def pre_match: () -> String?
-    def post_match: () -> String?
-    def bytebegin: (Integer | String | Symbol index) -> Integer?
-    def byteend: (Integer | String | Symbol index) -> Integer?
-    def byteoffset: (Integer | String | Symbol index) -> [Integer, Integer]?
-    def match_length: (Integer | String | Symbol index) -> Integer?
-    def named_captures: () -> Hash[String, String?]
+    def values_at: (*values_at_selector selectors) -> Array[String?]
+    def string: () -> String
+    def regexp: () -> Regexp
+    def pre_match: () -> String
+    def post_match: () -> String
+    def bytebegin: (capture_selector index) -> Integer?
+    def byteend: (capture_selector index) -> Integer?
+    def byteoffset: (capture_selector index) -> [Integer?, Integer?]
+    def match_length: (capture_selector index) -> Integer?
+    def named_captures: (?symbolize_names: untyped) -> Hash[String | Symbol, String?]
     def names: () -> Array[String]
     def deconstruct: () -> Array[String?]
     def deconstruct_keys: (Array[Symbol] keys) -> Hash[Symbol, String?]
       | (nil keys) -> Hash[Symbol, String?]
-    def to_s: () -> String?
+    def to_s: () -> String
     def inspect: () -> String
     def ==: (untyped other) -> bool
     def eql?: (untyped other) -> bool

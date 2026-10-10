@@ -126,6 +126,54 @@ onibi_search_candidate_next(VALUE str, OnibiBytePos *start,
     return 0;
 }
 
+/* With fixed byte distances 1/1, a MAP hit can admit only the candidate
+ * immediately before it.  Visit those candidates in the normal forward
+ * character order.  This is the same inclusive [low, high] interval that
+ * MRI forms after its character-head adjustment of low. */
+static int
+onibi_search_class_tail_map_candidate(VALUE str, const OnibiRSeqHeader *header,
+				      OnibiBytePos candidate,
+				      rb_encoding *encoding)
+{
+    uint64_t length = (uint64_t)RSTRING_LEN(str);
+    if (candidate < 0 || (uint64_t)candidate > length) return 0;
+    uint64_t candidate_offset = (uint64_t)candidate;
+    uint64_t dmin = header->class_tail_map_dmin_bytes;
+    uint64_t dmax = header->class_tail_map_dmax_bytes;
+    if (dmin > length - candidate_offset) return 0;
+
+    uint64_t hit = candidate_offset + dmin;
+    uint64_t hit_limit = length;
+    if ((header->class_tail_map_flags &
+	 ONIBI_RSEQ_CLASS_TAIL_MAP_FLAG_ANCHORED) != 0) {
+	if (candidate_offset != 0) return 0;
+	/* MRI scans one candidate byte plus dmax bytes for an anchored MAP. */
+	uint64_t anchored_limit = dmax + 1U;
+	if (anchored_limit < hit_limit) hit_limit = anchored_limit;
+    }
+
+    /* MAP search treats its upper hit bound as exclusive. */
+    if (hit >= hit_limit || hit >= length ||
+	!onibi_character_boundary(str, (OnibiBytePos)hit))
+	return 0;
+    const unsigned char *bytes = (const unsigned char *)RSTRING_PTR(str);
+    if (bytes[hit] != header->class_tail_map_byte) return 0;
+
+    /* Rebuild the byte candidate interval.  MRI leaves high raw and moves
+     * only low to the next character head.  Saturate before subtraction. */
+    uint64_t low = hit < dmax ? 0 : hit - dmax;
+    uint64_t high = hit < dmin ? 0 : hit - dmin;
+    if (!onibi_character_boundary(str, (OnibiBytePos)low)) {
+	const char *begin = RSTRING_PTR(str);
+	const char *end = begin + (size_t)length;
+	const char *adjusted =
+	    rb_enc_right_char_head(begin, begin + (size_t)low, end, encoding);
+	if (adjusted < begin || adjusted > end) return 0;
+	low = (uint64_t)(adjusted - begin);
+    }
+    return candidate_offset >= low && candidate_offset <= high;
+}
+
 static void
 onibi_frontier_release(OnibiFrontier *frontier)
 {
@@ -180,7 +228,7 @@ onibi_public_capture_count(const onibi_regexp_t *obj)
 
 static OnibiExecStatus
 onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
-		     OnibiRawMatch *raw_match)
+		     OnibiRawMatch *raw_match, OnibiBytePos *attempt_start_out)
 {
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
@@ -258,9 +306,73 @@ onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
 	    onibi_semantic_live_captures_prepare(&exec_ctx.semantic_arena,
 						 &obj->rseq_view);
 	OnibiBytePos start = search_origin;
+	OnibiBytePos maximum_start = RSTRING_LEN(str);
+	uint64_t subject_length = (uint64_t)RSTRING_LEN(str);
+	if ((obj->rseq_view.header->features &
+	     ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND) != 0) {
+	    uint64_t bound = obj->rseq_view.header->end_search_bound_bytes;
+	    uint64_t minimum_start =
+		subject_length > bound ? subject_length - bound : 0;
+	    if (minimum_start > (uint64_t)start)
+		start = (OnibiBytePos)minimum_start;
+	}
+	if ((obj->rseq_view.header->features &
+	     ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND) != 0) {
+	    uint64_t origin = (uint64_t)search_origin;
+	    uint64_t delta =
+		obj->rseq_view.header->search_origin_bound_delta_bytes;
+	    uint64_t remaining = subject_length - origin;
+	    if (delta > remaining) delta = remaining;
+	    maximum_start = (OnibiBytePos)(origin + delta);
+	}
+	int has_end_search_fold_direct_capture =
+	    (obj->rseq_view.header->features &
+	     ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE) != 0;
+	uint64_t direct_fold_range = 0;
+	if (has_end_search_fold_direct_capture) {
+	    uint64_t dmax = obj->rseq_view.header->end_search_fold_dmax_bytes;
+	    uint64_t dmin = obj->rseq_view.header->end_search_fold_dmin_bytes;
+	    uint64_t minimum_start =
+		subject_length > dmax ? subject_length - dmax : 0;
+	    if (minimum_start > (uint64_t)start)
+		start = (OnibiBytePos)minimum_start;
+	    if (subject_length >= dmin)
+		direct_fold_range = subject_length - dmin + 1U;
+	}
 	int candidate_valid = onibi_search_candidate_origin(
 	    str, &start, exec_ctx.encoding, exec_ctx.encoding_mode);
-	for (; candidate_valid;
+	if (has_end_search_fold_direct_capture) {
+	    uint64_t dmin = obj->rseq_view.header->end_search_fold_dmin_bytes;
+	    uint64_t adjusted_start = (uint64_t)start;
+	    if (subject_length < dmin || adjusted_start > direct_fold_range)
+		candidate_valid = 0;
+	    else if (adjusted_start == direct_fold_range)
+		maximum_start = (OnigPosition)direct_fold_range;
+	    else
+		maximum_start = (OnigPosition)(direct_fold_range - 1U);
+	}
+	else if ((obj->rseq_view.header->features &
+		  ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM) != 0) {
+	    uint64_t minimum_distance =
+		obj->rseq_view.header->end_search_minimum_bytes;
+	    uint64_t origin = (uint64_t)search_origin;
+	    if (subject_length < minimum_distance) {
+		candidate_valid = 0;
+	    }
+	    else {
+		uint64_t range = subject_length - minimum_distance + 1U;
+		if (origin > range)
+		    candidate_valid = 0;
+		else if (origin == range)
+		    maximum_start = (OnibiBytePos)range;
+		else
+		    maximum_start = (OnibiBytePos)(range - 1U);
+	    }
+	}
+	int use_class_tail_map = (obj->rseq_view.header->features &
+				  ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP) != 0 &&
+				 exec_ctx.encoding == rb_utf8_encoding();
+	for (; candidate_valid && start <= maximum_start;
 	     candidate_valid = onibi_search_candidate_next(
 		 str, &start, exec_ctx.encoding, exec_ctx.encoding_mode)) {
 	    exec_ctx.attempt_start = start;
@@ -271,6 +383,10 @@ onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
 	    exec_ctx.rseq = obj->rseq;
 	    exec_ctx.view = &obj->rseq_view;
 	    if (!onibi_character_boundary(str, start)) continue;
+	    if (use_class_tail_map &&
+		!onibi_search_class_tail_map_candidate(
+		    str, obj->rseq_view.header, start, exec_ctx.encoding))
+		continue;
 	    if (obj->rseq_view.regular_capable &&
 		(exec_ctx.program->features &
 		 ONIBI_RSEQ_FEATURE_FIRST_BITMAP) != 0 &&
@@ -292,6 +408,7 @@ onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
 	    onibi_check_deadline();
 	    OnibiExecStatus result = onibi_execute(&exec_ctx);
 	    if (result == ONIBI_EXEC_STATUS_MATCH) {
+		if (attempt_start_out != NULL) *attempt_start_out = start;
 		onibi_exec_ctx_release(&exec_ctx);
 		onibi_deadline_ns = 0;
 		onibi_active_exec_ctx = NULL;
@@ -315,6 +432,7 @@ typedef struct {
     VALUE self, subject;
     OnibiBytePos origin;
     OnibiRawMatch *raw_match;
+    OnibiBytePos *attempt_start_out;
     OnibiExecCtx *previous_ctx;
     uint64_t previous_deadline;
 } OnibiSearchEnsure;
@@ -324,7 +442,8 @@ onibi_vm_search_ensure_call(VALUE opaque)
 {
     OnibiSearchEnsure *call = (OnibiSearchEnsure *)(uintptr_t)opaque;
     return INT2NUM(onibi_vm_search_body(call->self, call->subject, call->origin,
-					call->raw_match));
+					call->raw_match,
+					call->attempt_start_out));
 }
 
 static VALUE
@@ -339,19 +458,33 @@ onibi_vm_search_ensure_cleanup(VALUE opaque)
 }
 
 static OnibiExecStatus
-onibi_vm_search(VALUE self, VALUE str, OnibiBytePos search_origin,
-		OnibiRawMatch *raw_match)
+onibi_vm_search_with_attempt_start(VALUE self, VALUE str,
+				   OnibiBytePos search_origin,
+				   OnibiRawMatch *raw_match,
+				   OnibiBytePos *attempt_start_out)
 {
-    OnibiSearchEnsure call = {self,
-			      str,
-			      search_origin,
-			      raw_match,
-			      onibi_active_exec_ctx,
-			      onibi_deadline_ns};
+    if (attempt_start_out != NULL) *attempt_start_out = -1;
+    OnibiSearchEnsure call = {
+	.self = self,
+	.subject = str,
+	.origin = search_origin,
+	.raw_match = raw_match,
+	.attempt_start_out = attempt_start_out,
+	.previous_ctx = onibi_active_exec_ctx,
+	.previous_deadline = onibi_deadline_ns,
+    };
     VALUE result =
 	rb_ensure(onibi_vm_search_ensure_call, (VALUE)(uintptr_t)&call,
 		  onibi_vm_search_ensure_cleanup, (VALUE)(uintptr_t)&call);
     return NUM2INT(result);
+}
+
+static OnibiExecStatus
+onibi_vm_search(VALUE self, VALUE str, OnibiBytePos search_origin,
+		OnibiRawMatch *raw_match)
+{
+    return onibi_vm_search_with_attempt_start(self, str, search_origin,
+					      raw_match, NULL);
 }
 
 typedef struct {
@@ -540,7 +673,9 @@ onibi_match_operator(VALUE self, VALUE input)
     if (SYMBOL_P(input)) input = rb_sym2str(input);
     StringValue(input);
     OnibiRawMatch raw_match = {.begin_byte = -1, .end_byte = -1};
-    OnibiExecStatus status = onibi_vm_search(self, input, 0, &raw_match);
+    OnibiBytePos attempt_start = -1;
+    OnibiExecStatus status = onibi_vm_search_with_attempt_start(
+	self, input, 0, &raw_match, &attempt_start);
     if (status == ONIBI_EXEC_STATUS_NO_MATCH) {
 	rb_backref_set(Qnil);
 	return Qnil;
@@ -552,7 +687,9 @@ onibi_match_operator(VALUE self, VALUE input)
 	TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
 	return rb_reg_match(obj->regexp, input);
     }
-    return LONG2NUM(onibi_ruby_character_position(input, raw_match.begin_byte));
+    if (attempt_start < 0 || attempt_start > RSTRING_LEN(input))
+	rb_raise(eRegexpError, "Onibi match attempt start is unavailable");
+    return LONG2NUM(onibi_ruby_character_position(input, attempt_start));
 }
 static VALUE
 onibi_tilde(VALUE self)
@@ -560,7 +697,9 @@ onibi_tilde(VALUE self)
     VALUE input = rb_gv_get("$_");
     if (!RB_TYPE_P(input, T_STRING)) return Qnil;
     OnibiRawMatch raw_match = {.begin_byte = -1, .end_byte = -1};
-    OnibiExecStatus status = onibi_vm_search(self, input, 0, &raw_match);
+    OnibiBytePos attempt_start = -1;
+    OnibiExecStatus status = onibi_vm_search_with_attempt_start(
+	self, input, 0, &raw_match, &attempt_start);
     if (status == ONIBI_EXEC_STATUS_NO_MATCH) {
 	rb_backref_set(Qnil);
 	return Qnil;
@@ -577,7 +716,9 @@ onibi_tilde(VALUE self)
 			 input, NUM2LONG(rb_funcall(match, id_bytebegin, 1,
 						    INT2NUM(0)))));
     }
-    return LONG2NUM(onibi_ruby_character_position(input, raw_match.begin_byte));
+    if (attempt_start < 0 || attempt_start > RSTRING_LEN(input))
+	rb_raise(eRegexpError, "Onibi match attempt start is unavailable");
+    return LONG2NUM(onibi_ruby_character_position(input, attempt_start));
 }
 
 typedef enum {

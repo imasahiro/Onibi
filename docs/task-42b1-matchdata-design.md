@@ -140,7 +140,7 @@ Implement these methods first, with MRI 4.0.6 behavior as the oracle:
 
 | Group | Methods and required behavior |
 | --- | --- |
-| Indexing | `[]`, `match`, `values_at`; integer-like indices use MRI coercion, negative indices count from the end, out-of-range values return `nil`, ranges return slices, and unknown names raise `IndexError`. |
+| Indexing | `[]` uses MRI slice rules. `match` and `values_at` use their own MRI selector rules below. |
 | Captures | `captures`, `to_a`, `length`, `size`; preserve `nil` for an unmatched capture and `""` for an empty capture. |
 | Positions | `begin`, `end`, `offset`, `bytebegin`, `byteend`, `byteoffset`, `match_length`; names and symbols resolve through the copied duplicate-name index. Character results are lazy. |
 | Context | `string`, `regexp`, `pre_match`, `post_match`, `to_s`; all strings derive from the frozen snapshot. `regexp` returns the owning `Onibi::Regexp`. |
@@ -334,3 +334,19 @@ git diff --check
 
 The probe output is saved beside the script. No extension build is required for
 this design-only task.
+
+## API01 selector clarification (2026-09-28)
+
+This clarification replaces the generic indexing rule for `match` and `values_at`.
+`match` requires one selector. Negative and oversized integer indices raise `IndexError`.
+Ranges raise `TypeError`. Named selectors use MRI name lookup and duplicate-name rules.
+Integer-like objects use `to_int`. Objects with only `to_str` or `to_i` are not integer selectors.
+Wrong conversion results raise `TypeError`. Conversion exceptions propagate.
+`values_at` expands ranges and retains MRI nil padding. It does not flatten repeated `[]` slices.
+Selectors are evaluated from left to right. Repeated objects undergo conversion for each occurrence.
+These rules are required gem behavior, not deferred MRI integration.
+The accepted API01 matrices define exact values, encodings, errors, and conversion events for subsequent E2E checks.
+The corrected coercion matrix supersedes the original overlapping-method descriptors.
+Binary capture-name encoding requires a separate gem follow-up.
+API04 disproved the symbol-key defect: the API01 serializer changed keys to strings.
+Both checked ASCII fixtures return Symbol keys with `symbolize_names: true`.

@@ -693,10 +693,98 @@ onibi_rseq_lower_body(VALUE opaque)
 	subprogram_records.count > UINT32_MAX ||
 	lookbehind_width_records.count > UINT32_MAX ||
 	physical_size > UINT32_MAX) {
-	rb_raise(eRegexpError, "RSeq program exceeds the v1 size limit");
+	rb_raise(eRegexpError, "RSeq program exceeds the v4 size limit");
     }
     VerifiedGIRAnalysis analysis = compiled_data->analysis;
     uint32_t features = analysis.rseq_features;
+    if (compiled_data->has_end_search_bound) {
+	if (compiled_data->end_search_bound_bytes == 0)
+	    rb_raise(eRegexpError, "invalid compiled RSeq end search bound");
+	features |= ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND;
+    }
+    else if (compiled_data->end_search_bound_bytes != 0) {
+	rb_raise(eRegexpError, "invalid compiled RSeq end search bound");
+    }
+    if (compiled_data->has_end_search_minimum) {
+	uint64_t expected_minimum =
+	    (uint64_t)compiled_data->end_search_minimum_repeat_bytes +
+	    compiled_data->end_search_minimum_capture_source_bytes;
+	if (compiled_data->end_search_minimum_bytes == 0 ||
+	    compiled_data->end_search_minimum_repeat_bytes == 0 ||
+	    compiled_data->end_search_minimum_capture_source_bytes == 0 ||
+	    expected_minimum != compiled_data->end_search_minimum_bytes ||
+	    compiled_data->has_end_search_bound ||
+	    compiled_data->has_search_origin_bound ||
+	    compiled_data->has_class_tail_map ||
+	    compiled_data->has_end_search_fold_direct_capture)
+	    rb_raise(eRegexpError, "invalid compiled RSeq end search minimum");
+	features |= ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM;
+    }
+    else if (compiled_data->end_search_minimum_bytes != 0 ||
+	     compiled_data->end_search_minimum_repeat_bytes != 0 ||
+	     compiled_data->end_search_minimum_capture_source_bytes != 0) {
+	rb_raise(eRegexpError, "invalid compiled RSeq end search minimum");
+    }
+    if (compiled_data->has_end_search_fold_direct_capture) {
+	uint64_t expected_dmin =
+	    (uint64_t)compiled_data->end_search_fold_normalized_bytes * 2U;
+	uint64_t expected_dmax =
+	    (uint64_t)compiled_data->end_search_fold_normalized_codepoints *
+		4U +
+	    compiled_data->end_search_fold_normalized_bytes;
+	if (compiled_data->end_search_fold_normalized_bytes == 0 ||
+	    compiled_data->end_search_fold_normalized_bytes >
+		ONIBI_RSEQ_DIRECT_FOLD_WIDTH_LIMIT ||
+	    compiled_data->end_search_fold_normalized_codepoints == 0 ||
+	    compiled_data->end_search_fold_normalized_codepoints >
+		ONIBI_RSEQ_DIRECT_FOLD_WIDTH_LIMIT ||
+	    compiled_data->end_search_fold_normalized_codepoints >
+		compiled_data->end_search_fold_normalized_bytes ||
+	    (uint64_t)compiled_data->end_search_fold_normalized_bytes >
+		(uint64_t)compiled_data->end_search_fold_normalized_codepoints *
+		    4U ||
+	    expected_dmin != compiled_data->end_search_fold_dmin_bytes ||
+	    expected_dmax != compiled_data->end_search_fold_dmax_bytes ||
+	    compiled_data->has_end_search_bound ||
+	    compiled_data->has_search_origin_bound ||
+	    compiled_data->has_class_tail_map ||
+	    compiled_data->has_end_search_minimum)
+	    rb_raise(eRegexpError,
+		     "invalid compiled RSeq direct-fold end search range");
+	features |= ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE;
+    }
+    else if (compiled_data->end_search_fold_normalized_bytes != 0 ||
+	     compiled_data->end_search_fold_normalized_codepoints != 0 ||
+	     compiled_data->end_search_fold_dmin_bytes != 0 ||
+	     compiled_data->end_search_fold_dmax_bytes != 0) {
+	rb_raise(eRegexpError,
+		 "invalid unused RSeq direct-fold end search range fields");
+    }
+    if (compiled_data->has_search_origin_bound) {
+	if (compiled_data->search_origin_bound_delta_bytes > 1)
+	    rb_raise(eRegexpError, "invalid compiled RSeq search origin bound");
+	features |= ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND;
+    }
+    else if (compiled_data->search_origin_bound_delta_bytes != 0) {
+	rb_raise(eRegexpError, "invalid compiled RSeq search origin bound");
+    }
+    if (compiled_data->has_class_tail_map) {
+	if ((compiled_data->class_tail_map_flags &
+	     ~ONIBI_RSEQ_CLASS_TAIL_MAP_FLAG_ANCHORED) != 0 ||
+	    compiled_data->class_tail_map_byte >= 0x80 ||
+	    compiled_data->class_tail_map_dmin_bytes != 1 ||
+	    compiled_data->class_tail_map_dmax_bytes != 1 ||
+	    compiled_data->has_end_search_bound ||
+	    compiled_data->has_search_origin_bound)
+	    rb_raise(eRegexpError, "invalid compiled RSeq class-tail map");
+	features |= ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP;
+    }
+    else if (compiled_data->class_tail_map_byte != 0 ||
+	     compiled_data->class_tail_map_flags != 0 ||
+	     compiled_data->class_tail_map_dmin_bytes != 0 ||
+	     compiled_data->class_tail_map_dmax_bytes != 0) {
+	rb_raise(eRegexpError, "invalid unused RSeq class-tail map fields");
+    }
     uint32_t counter_count = analysis.counter_count;
     OnibiRSeqHeader physical;
     memset(&physical, 0, sizeof(physical));
@@ -772,6 +860,28 @@ onibi_rseq_lower_body(VALUE opaque)
     physical.features = features;
     physical.prefix_length = 0;
     memset(physical.prefix, 0, sizeof(physical.prefix));
+    physical.end_search_bound_bytes = compiled_data->end_search_bound_bytes;
+    physical.search_origin_bound_delta_bytes =
+	compiled_data->search_origin_bound_delta_bytes;
+    physical.class_tail_map_byte = compiled_data->class_tail_map_byte;
+    physical.class_tail_map_flags = compiled_data->class_tail_map_flags;
+    physical.class_tail_map_dmin_bytes =
+	compiled_data->class_tail_map_dmin_bytes;
+    physical.class_tail_map_dmax_bytes =
+	compiled_data->class_tail_map_dmax_bytes;
+    physical.end_search_minimum_bytes = compiled_data->end_search_minimum_bytes;
+    physical.end_search_minimum_repeat_bytes =
+	compiled_data->end_search_minimum_repeat_bytes;
+    physical.end_search_minimum_capture_source_bytes =
+	compiled_data->end_search_minimum_capture_source_bytes;
+    physical.end_search_fold_normalized_bytes =
+	compiled_data->end_search_fold_normalized_bytes;
+    physical.end_search_fold_normalized_codepoints =
+	compiled_data->end_search_fold_normalized_codepoints;
+    physical.end_search_fold_dmin_bytes =
+	compiled_data->end_search_fold_dmin_bytes;
+    physical.end_search_fold_dmax_bytes =
+	compiled_data->end_search_fold_dmax_bytes;
     if ((physical.features & ONIBI_RSEQ_FEATURE_FIRST_BITMAP) == 0)
 	memset(physical.first_bitmap, 0, sizeof(physical.first_bitmap));
     onibi_allocation_owner_set_phase(&owner->allocations, 7);
@@ -1093,6 +1203,7 @@ onibi_compile_outcome_select_fallback(onibi_regexp_t *obj,
 typedef struct {
     VALUE source;
     int extended;
+    rb_encoding *effective_encoding;
     OnibiTokenVector *tokens;
 } OnibiTokenizeArgs;
 
@@ -1100,7 +1211,8 @@ static VALUE
 onibi_tokenize_protected(VALUE argument)
 {
     OnibiTokenizeArgs *args = (OnibiTokenizeArgs *)(uintptr_t)argument;
-    onibi_tokenize_internal(args->source, args->extended, args->tokens);
+    onibi_tokenize_internal(args->source, args->extended,
+			    args->effective_encoding, args->tokens);
     return Qnil;
 }
 
@@ -1194,6 +1306,8 @@ onibi_token_features(const OnibiTokenVector *feature_tokens,
 	  ONIBI_FEATURE_INLINE_IGNORECASE);
     obj->ast_flags = 0;
     obj->feature_flags = 0;
+    if (feature_tokens->has_unicode_escape)
+	obj->feature_flags |= ONIBI_FEATURE_UNICODE_ESCAPE;
     for (size_t i = 0; i < feature_tokens->count; i++) {
 	const OnibiTokenRecord *token = &feature_tokens->items[i];
 	OnibiTokenKind kind_code = token->kind;
@@ -1262,7 +1376,7 @@ onibi_token_features(const OnibiTokenVector *feature_tokens,
 	}
 	if (in_class && previous && previous->kind == ONIBI_TOKEN_LITERAL &&
 	    kind_code == ONIBI_TOKEN_LITERAL && previous->byte == '&' &&
-	    token->byte == '&')
+	    token->byte == '&' && !previous->from_escape && !token->from_escape)
 	    obj->feature_flags |= ONIBI_FEATURE_CLASS_INTERSECTION;
 	if (kind_code == ONIBI_TOKEN_SUBROUTINE) {
 	    obj->feature_flags |= ONIBI_FEATURE_SUBROUTINE;
@@ -1485,10 +1599,6 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     int source_ascii_only = rb_enc_str_asciionly_p(source);
     obj->source_encoding_index = source_encoding_index;
     obj->source_ascii_only = source_ascii_only;
-    if ((opts & 32) && source_encoding_index != rb_ascii8bit_encindex() &&
-	!source_ascii_only)
-	rb_raise(eRegexpError, "non-ASCII pattern with no encoding");
-    if (!(opts & 32) && !source_ascii_only && !(opts & 16)) opts |= 16;
     obj->options = opts;
     obj->source = rb_str_dup(source);
     rb_obj_freeze(obj->source);
@@ -1499,7 +1609,30 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     obj->rseq_view_valid = 0;
     OnibiTokenVector tokens;
     onibi_token_vector_init(&tokens);
-    OnibiTokenizeArgs tokenize_args = {source, (opts & 2) != 0, &tokens};
+
+    /* Let MRI validate the original bytes and options before the tokenizer
+     * reads them. Its regexp carries the effective encoding and option bits. */
+    OnibiProgramArgs regexp_args = {source, INT2NUM(opts), NULL, NULL, NULL};
+    int regexp_state = 0;
+    obj->regexp = rb_protect(onibi_make_mri_regexp,
+			     (VALUE)(uintptr_t)&regexp_args, &regexp_state);
+    if (regexp_state) {
+	VALUE error = rb_errinfo();
+	VALUE message = rb_funcall(error, id_message, 0);
+	VALUE wrapped_error;
+	rb_set_errinfo(Qnil);
+	onibi_token_vector_free(&tokens);
+	wrapped_error = rb_exc_new_str(eRegexpError, message);
+	rb_exc_raise(wrapped_error);
+    }
+    opts = rb_reg_options(obj->regexp);
+    obj->options = opts;
+    obj->names = rb_funcall(obj->regexp, id_names, 0);
+    obj->named_captures = rb_funcall(obj->regexp, id_named_captures, 0);
+    onibi_freeze_metadata(obj);
+
+    OnibiTokenizeArgs tokenize_args = {source, (opts & 2) != 0,
+				       rb_enc_get(obj->regexp), &tokens};
     int tokenize_state = 0;
     rb_protect(onibi_tokenize_protected, (VALUE)(uintptr_t)&tokenize_args,
 	       &tokenize_state);
@@ -1508,41 +1641,6 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 	rb_jump_tag(tokenize_state);
     }
     onibi_token_features(&tokens, obj);
-    if (!(opts & 32) && source_encoding_index == rb_utf8_encindex() &&
-	ONIBI_FEATURE_P(obj, ONIBI_FEATURE_PROPERTY_ESCAPE))
-	opts |= 16;
-    if (((opts & 32) && source_ascii_only &&
-	 (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_NON_ASCII_LITERAL) ||
-	  ONIBI_FEATURE_P(obj, ONIBI_FEATURE_PROPERTY_ESCAPE))) ||
-	(!(opts & 32) && source_encoding_index != rb_utf8_encindex() &&
-	 source_encoding_index != rb_usascii_encindex() &&
-	 (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_NON_ASCII_LITERAL) ||
-	  ONIBI_FEATURE_P(obj, ONIBI_FEATURE_PROPERTY_ESCAPE))))
-	opts |= 16;
-    obj->options = opts;
-    VALUE regexp_source = source;
-    if (source_encoding_index != rb_utf8_encindex() &&
-	(obj->feature_flags & ONIBI_FEATURE_UNICODE_ESCAPE)) {
-	regexp_source = rb_funcall(source, id_encode, 1,
-				   rb_enc_from_encoding(rb_utf8_encoding()));
-	opts |= 16;
-	obj->options = opts;
-    }
-    OnibiProgramArgs regexp_args = {regexp_source, INT2NUM(opts), NULL, NULL,
-				    NULL};
-    int regexp_state = 0;
-    obj->regexp = rb_protect(onibi_make_mri_regexp,
-			     (VALUE)(uintptr_t)&regexp_args, &regexp_state);
-    if (regexp_state) {
-	VALUE error = rb_errinfo();
-	VALUE message = rb_funcall(error, id_message, 0);
-	rb_set_errinfo(Qnil);
-	onibi_token_vector_free(&tokens);
-	rb_raise(eRegexpError, "%s", StringValueCStr(message));
-    }
-    obj->names = rb_funcall(obj->regexp, id_names, 0);
-    obj->named_captures = rb_funcall(obj->regexp, id_named_captures, 0);
-    onibi_freeze_metadata(obj);
     VALUE compilation_source = rb_str_dup(source);
     rb_enc_associate(compilation_source, rb_enc_get(obj->regexp));
     memset(&obj->lowering_work, 0, sizeof(obj->lowering_work));

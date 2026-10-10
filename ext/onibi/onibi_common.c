@@ -435,6 +435,39 @@ onibi_hex_digit(unsigned char c)
 		      : (c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1));
 }
 
+typedef enum {
+    ONIBI_UNICODE_SCALAR_OK,
+    ONIBI_UNICODE_SCALAR_MALFORMED,
+    ONIBI_UNICODE_SCALAR_INVALID
+} OnibiUnicodeScalarStatus;
+
+/* Read exactly `digits` ASCII hex digits and validate one Unicode scalar.
+ * Check each multiply and add before it can overflow. */
+static OnibiUnicodeScalarStatus
+onibi_unicode_scalar_read_hex(const unsigned char *bytes, size_t length,
+			      size_t *cursor, size_t digits,
+			      uint32_t *codepoint)
+{
+    if (!cursor || !codepoint || *cursor > length || digits == 0 ||
+	digits > 6 || digits > length - *cursor)
+	return ONIBI_UNICODE_SCALAR_MALFORMED;
+
+    uint32_t value = 0;
+    for (size_t i = 0; i < digits; i++) {
+	int digit = onibi_hex_digit(bytes[*cursor + i]);
+	if (digit < 0) return ONIBI_UNICODE_SCALAR_MALFORMED;
+	if (value > (UINT32_MAX - (uint32_t)digit) / 16U)
+	    return ONIBI_UNICODE_SCALAR_INVALID;
+	value = value * 16U + (uint32_t)digit;
+    }
+    if (value > 0x10ffffU || (value >= 0xd800U && value <= 0xdfffU))
+	return ONIBI_UNICODE_SCALAR_INVALID;
+
+    *cursor += digits;
+    *codepoint = value;
+    return ONIBI_UNICODE_SCALAR_OK;
+}
+
 static OnibiRepeatCount
 onibi_parse_count(const char *text, char **end)
 {
