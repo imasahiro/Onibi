@@ -1729,9 +1729,11 @@ input bound local to each absence call. It records each allowed endpoint with
 its own semantic state. Endpoint cursors stay on encoded-character boundaries.
 Nested calls restore their active bound and prior cursor when they return.
 
-An absence endpoint keeps body result tags and condition values. It keeps
-semantic capture registers from before the body for later backreferences.
-This prevents body captures from changing a later backreference.
+When the forbidden expression matches, DYNAMIC publishes its result tags and
+condition values to the saved endpoint. This also applies when the expression
+starts at that endpoint. The endpoint keeps semantic capture registers from
+before the body for later backreferences. This prevents body captures from
+changing a later backreference.
 
 A live nullable-repeat owner identifies a capture by its tag-event node. A
 forced replay can make new nodes for the same tag history. The capture filter

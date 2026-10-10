@@ -521,3 +521,21 @@ accepted Bundler runner. No repository source or test changed during the audit.
 Evidence and exact commands:
 `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-retained-causes-01/worker/attempt-02/result.md`.
 Root review: `task-absence-retained-causes-01/root-review-02.json` under that relay root.
+
+
+TASK-BASE02-ABSENCE CONDITIONAL CAPTURES ACCEPT (2026-10-10): parent `ce89a095`.
+DYNAMIC now publishes body condition and result history to the initial absence
+endpoint. Semantic capture registers remain unchanged for backreferences.
+The frozen 25-case MRI artifact passes in two fresh processes with identical
+output. The conditional method passes 1 test and 31 assertions. The full
+absence file reports 70 tests, 455 assertions, and 10 known failures.
+Three baseline methods now pass. All ten retained failure details are unchanged.
+DYNAMIC differential passes 10 tests and 19,023 assertions. Calls, atomic,
+lookahead, and physical RSeq checks pass. Warning build, format, diff, and
+cleanup checks pass. Two warnings remain in unchanged files. No tests changed.
+Root reviewed the C state transfer and verified source, patch, artifact, and
+log hashes. Root full-file formatting passed. No full suite ran.
+Exact commands and results:
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-conditional-repair-01/worker/completion.json`.
+Root evidence: `task-absence-conditional-repair-01/root-acceptance.json` under that relay root.
+Next: inspect one retained capture-state cause. Remote publication remains pending.

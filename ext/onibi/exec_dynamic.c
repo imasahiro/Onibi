@@ -3738,17 +3738,14 @@ onibi_dynamic_absence_consume(
 								 &body_result));
 	    OnibiSemanticState *saved =
 		&arena->absence_endpoints[endpoint_index].semantic;
-	    /* Keep captures available to results and conditionals, not
-	     * backrefs. */
-	    if (probe != absent_start) {
-		saved->condition_captures = body_result.condition_captures;
-		saved->tag_history = body_result.tag_history;
-		saved->capture_event_history =
-		    body_result.capture_event_history;
-		saved->capture_event_dependency =
-		    body_result.capture_event_dependency;
-		saved->order = body_result.order;
-	    }
+	    /* Keep result and condition captures, but retain pre-body registers
+	     * for backreferences. */
+	    saved->condition_captures = body_result.condition_captures;
+	    saved->tag_history = body_result.tag_history;
+	    saved->capture_event_history = body_result.capture_event_history;
+	    saved->capture_event_dependency =
+		body_result.capture_event_dependency;
+	    saved->order = body_result.order;
 	    OnibiBytePos scan_reported_start = scan_state.reported_start;
 	    scan_state.condition_captures = body_result.condition_captures;
 	    scan_state.tag_history = body_result.tag_history;
