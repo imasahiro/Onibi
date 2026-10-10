@@ -584,6 +584,10 @@ Done: the range and its one-character fold closure match MRI.
 
 ### TASK-BASE02-ABSENCE-AUDIT — Absence failure root cause
 
+Status note (2026-10-10): the accepted nested-endpoint repair now passes its
+six frozen endpoint controls. The full absence E2E still has 13 baseline
+failure methods. This audit remains open.
+
 Cases: `#21–45`. Reproduce all 25 methods in `AbsenceOperatorTest`:
 `test_absence_operator_restores_deep_nested_repeat_captures`,
 `test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix`,

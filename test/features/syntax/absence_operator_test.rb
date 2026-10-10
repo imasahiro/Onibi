@@ -675,4 +675,145 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal ["", nil, nil], regexp.match("b").to_a
     assert_equal %w[a a], regexp.match("baaa").to_a.first(2)
   end
+
+  def test_absence_endpoint_matches_empty_input
+    assert_absence_endpoint_control(
+      label: "empty input",
+      pattern: "(?~a)",
+      subject: "",
+      start: 0,
+      expected_values: [""],
+      expected_char_ranges: [[0, 0]],
+      expected_byte_ranges: [[0, 0]],
+      diagnostics: true
+    )
+  end
+
+  def test_absence_endpoint_preserves_start_zero
+    assert_absence_endpoint_control(
+      label: "start zero",
+      pattern: "(?~(?:b(?~(?=a))))",
+      subject: "xba",
+      start: 0,
+      expected_values: ["xba"],
+      expected_char_ranges: [[0, 3]],
+      expected_byte_ranges: [[0, 3]],
+      diagnostics: true
+    )
+  end
+
+  def test_absence_endpoint_preserves_nonzero_search_start
+    assert_absence_endpoint_control(
+      label: "start one",
+      pattern: "(?~(?:b(?~(?=a))))",
+      subject: "xba",
+      start: 1,
+      expected_values: ["ba"],
+      expected_char_ranges: [[1, 3]],
+      expected_byte_ranges: [[1, 3]],
+      diagnostics: false
+    )
+  end
+
+  def test_absence_endpoint_retries_for_required_suffix
+    assert_absence_endpoint_control(
+      label: "required suffix",
+      pattern: "(?~(?:b(?~(?=a))))a",
+      subject: "ba",
+      start: 0,
+      expected_values: ["ba"],
+      expected_char_ranges: [[0, 2]],
+      expected_byte_ranges: [[0, 2]],
+      diagnostics: true
+    )
+  end
+
+  def test_absence_endpoint_keeps_match_reset_start_separate
+    assert_absence_endpoint_control(
+      label: "match reset",
+      pattern: "(?~(?:b(?~(?=a))))\\K",
+      subject: "ba",
+      start: 0,
+      expected_values: [""],
+      expected_char_ranges: [[2, 2]],
+      expected_byte_ranges: [[2, 2]],
+      diagnostics: true
+    )
+  end
+
+  def test_absence_endpoint_uses_utf8_character_boundaries
+    assert_absence_endpoint_control(
+      label: "UTF-8 boundaries",
+      pattern: "(?~(?:λ(?~(?=α))))",
+      subject: "λα",
+      start: 0,
+      expected_values: ["λα"],
+      expected_char_ranges: [[0, 2]],
+      expected_byte_ranges: [[0, 4]],
+      diagnostics: true
+    )
+  end
+
+  private
+
+  def assert_absence_endpoint_control(**control)
+    label = control.fetch(:label)
+    pattern = control.fetch(:pattern)
+    subject = control.fetch(:subject)
+    start = control.fetch(:start)
+    expected_values = control.fetch(:expected_values)
+    expected_char_ranges = control.fetch(:expected_char_ranges)
+    expected_byte_ranges = control.fetch(:expected_byte_ranges)
+    diagnostics = control.fetch(:diagnostics)
+    onibi_regexp = Onibi::Regexp.new(pattern)
+    expected = ::Regexp.new(pattern).match(subject, start)
+    actual = onibi_regexp.match(subject, start)
+
+    if expected.nil?
+      assert_nil actual, label
+      return
+    end
+
+    assert_equal expected_values, expected.to_a, "#{label}: frozen MRI values"
+    assert_equal expected_char_ranges, absence_match_char_ranges(expected),
+                 "#{label}: frozen MRI character ranges"
+    assert_equal expected_byte_ranges, absence_match_byte_ranges(expected),
+                 "#{label}: frozen MRI byte ranges"
+    assert_instance_of Onibi::MatchData, actual, "#{label}: native result type"
+    assert_equal absence_match_snapshot(expected), absence_match_snapshot(actual),
+                 label
+
+    return unless diagnostics
+
+    info = onibi_regexp.send(:__onibi_diagnostics__, subject)
+    assert_equal 2, info[:exec_kind], "#{label}: DYNAMIC execution class"
+    assert_operator info[:dynamic], :>, 0, "#{label}: DYNAMIC executor ran"
+    assert_equal 0, info[:fallback], "#{label}: MRI fallback count"
+    assert_equal 1, info[:status], "#{label}: diagnostic match status"
+    assert_equal expected.bytebegin(0), info[:match_start],
+                 "#{label}: diagnostic byte start"
+    assert_equal expected.byteend(0), info[:match_end],
+                 "#{label}: diagnostic byte end"
+    expected_capture_ranges = (1...expected_values.length).map do |index|
+      expected.byteoffset(index).map { |position| position || -1 }
+    end
+    assert_equal expected_capture_ranges, info[:captures],
+                 "#{label}: diagnostic capture byte ranges"
+  end
+
+  def absence_match_char_ranges(match)
+    match.to_a.each_index.map { |index| match.offset(index) }
+  end
+
+  def absence_match_byte_ranges(match)
+    match.to_a.each_index.map { |index| match.byteoffset(index) }
+  end
+
+  def absence_match_snapshot(match)
+    {
+      values: match.to_a,
+      character_ranges: absence_match_char_ranges(match),
+      byte_ranges: absence_match_byte_ranges(match)
+    }
+  end
 end

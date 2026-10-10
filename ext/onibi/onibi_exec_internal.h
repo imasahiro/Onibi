@@ -143,13 +143,22 @@ typedef struct {
     OnibiBytePos position;
     OnibiSemanticState semantic;
     uint64_t hash;
+    /* Used by DYNAMIC. Tagged execution ignores this field. */
+    OnibiBytePos previous_position;
 } OnibiDynamicThreadKey;
 typedef struct {
     uint32_t state;
     OnibiBytePos position;
     OnibiSemanticState semantic;
     uint32_t cycle_root;
+    /* Preceding encoded-character offset; zero at input start. */
+    OnibiBytePos previous_position;
 } OnibiDynamicFrame;
+typedef struct {
+    OnibiBytePos position;
+    OnibiBytePos previous_position;
+    OnibiSemanticState semantic;
+} OnibiDynamicAbsenceEndpoint;
 typedef struct {
     uint32_t parent;
     OnibiDynamicThreadKey key;
@@ -217,6 +226,8 @@ typedef struct {
     size_t future_capture_bitmap_capacity;
     OnibiDynamicFrame *frames;
     size_t frame_count, frame_capacity;
+    OnibiDynamicAbsenceEndpoint *absence_endpoints;
+    size_t absence_endpoint_count, absence_endpoint_capacity;
     OnibiDynamicCycleNode *cycles;
     size_t cycle_count, cycle_capacity;
     OnibiDynamicKeyBucket *key_buckets;
@@ -243,6 +254,8 @@ typedef struct OnibiExecCtx {
     OnibiBytePos attempt_start;
     OnibiBytePos reported_start;
     OnibiBytePos current_position;
+    OnibiBytePos current_previous_position;
+    OnibiBytePos active_bound;
     OnibiFrontier current;
     OnibiFrontier next;
     OnibiFrontier *assertion_frontiers;

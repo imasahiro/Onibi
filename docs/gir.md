@@ -1723,6 +1723,21 @@ The tested capture becomes semantic capture state.
 
 The absence operator has a dedicated dynamic subprogram state.
 
+The DYNAMIC executor keeps the input cursor, the prior encoded-character
+cursor, and the reported match start as separate values. It keeps the active
+input bound local to each absence call. It records each allowed endpoint with
+its own semantic state. Endpoint cursors stay on encoded-character boundaries.
+Nested calls restore their active bound and prior cursor when they return.
+
+An absence endpoint keeps body result tags and condition values. It keeps
+semantic capture registers from before the body for later backreferences.
+This prevents body captures from changing a later backreference.
+
+A live nullable-repeat owner identifies a capture by its tag-event node. A
+forced replay can make new nodes for the same tag history. The capture filter
+compares node identity while the owner is live. It compares tag-history values
+outside that state.
+
 Example:
 
 ```regex

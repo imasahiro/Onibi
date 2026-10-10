@@ -479,3 +479,29 @@ TASK-BASE02-FOLD-END-NESTED-RESTORE ACCEPT (2026-10-06): parent54b66b73. Exact n
 TASK-BASE02-UNICODE-CLASS-FOLD ACCEPT (2026-10-07): parent7b4f430e. Native tokenizer decodes class Unicode scalar lists and preserves escaped punctuation provenance. Shared scalar validation keeps name-parser errors. Existing MRI constructor validation now precedes tokenization and supplies effective encoding/options; native compilation and matching stay in C. Complete one-to-one fold ranges run natively; wide incomplete-fold ranges retain explicit input-ineligible fallback. Frozen six-method Unicode E2E passes12 assertions. Constructor/encoding/copy/timeout/name/error consumers pass. The70-row public differential repeats byte-identically. Warning build, syntax, changed-file lint/format, diff and distclean pass; two unchanged warnings remain. Root reviewed all C changes and verified evidence plus final source/test hashes. Exact evidence: `/Users/masa/.codex/relay/01a0e063-df14-7243-a0a6-56dc68a1d838/task-unicode-class-decode-implementation-01/worker/final-01/manifest-01.json`. Nested subtraction `[a-[b]]` remains the separate queued issue. No full suite ran.
 
 TASK-BASE02-UNICODE-CLASS-SCALAR-BOUNDARIES ACCEPT (2026-10-07): Public E2E compares valid scalar edges with MRI. Cases cover U+0000, U+D7FF, U+E000, U+FFFF, and U+10FFFF. Matching inputs also confirm native execution. Error cases cover both surrogate limits, U+110000, seven hex digits, and a short fixed-width escape. Exact command: `DEVELOPER_DIR=/Library/Developer/CommandLineTools bundle exec ruby -Itest test/features/syntax/regexp_syntax_semantics_test.rb --name '/test_unicode_class_scalar_boundaries|test_unicode_escaped_class_range_errors_match_mri/' --seed 41060` — 3 runs, 6 assertions, zero failures or errors. `bundle exec rubocop test/features/syntax/regexp_syntax_semantics_test.rb`, `ruby -c test/features/syntax/regexp_syntax_semantics_test.rb`, and `git diff --check` pass. The C extension builds with warning flags; two existing warnings remain. Test source SHA-256: `b5def57e6f3445fbbc942073dd4e35f86f3b4552d988fdc1928a1c1eead82fe8`.
+## Nested absence endpoint repair (2026-10-10)
+
+Status: ACCEPTED. Relay: task-absence-endpoint-implementation-01.
+
+The DYNAMIC executor now stores a prior cursor and one semantic state for each
+nested absence endpoint. The active bound stays local to the absence call.
+The capture filter uses event identity while a nullable-repeat owner is live.
+Outside that case, it compares tag-history contents. The isolated pre-C build
+returned ["b", nil] for (?~(?<q>a))* on ba. The final build returns the same
+result on native DYNAMIC with zero fallback.
+
+The six frozen endpoint controls pass. The full absence E2E ran 70 tests and
+421 assertions. It reports 13 failures. All 13 methods also fail in the pre-C
+baseline. The method comparison found zero new failures and 17 resolved
+baseline methods. The DYNAMIC differential passes 10 tests and 19,023
+assertions. The 12-row public MRI artifact passes twice with identical output.
+The call, atomic, lookahead, and physical RSeq checks pass. The warning build
+reports two warnings in unchanged GIR and RSeq files.
+Root verified the final patch and source hashes. A fresh root warning build
+passed. Endpoint checks passed 8 tests and 77 assertions. The DYNAMIC
+differential passed 10 tests and 19,023 assertions. Work is suspended after
+this integration at the user request.
+
+Exact logs, source and frozen-input hashes, baseline comparison, and final
+patches are in
+/Users/masa/.codex/relay/01a0e063-df14-7243-a0a6-56dc68a1d838/task-absence-endpoint-implementation-01/worker/final-04.
