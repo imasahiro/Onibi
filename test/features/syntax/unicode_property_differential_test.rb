@@ -3,6 +3,36 @@
 require "test_helper"
 
 class UnicodePropertyDifferentialTest < Minitest::Test
+  CLASS_TAIL_SEARCH_CASES = [
+    ["long-s-class-tail-s", "(?i:[s])s", "ſs", [], 0, nil],
+    ["long-s-class-tail-s-anchored", "\\A(?i:[s])s", "ſs", [], 0, nil],
+    ["long-s-class-tail-x", "(?i:[s])x", "ſx", [], 0, nil],
+    ["long-s-class-tail-x-anchored", "\\A(?i:[s])x", "ſx", [], 0, nil],
+    ["kelvin-class-tail-x", "(?i:[K])x", "Kx", [], 0, nil],
+    ["kelvin-class-tail-x-anchored", "\\A(?i:[K])x", "Kx", [], 0, nil],
+    ["ascii-long-s-tail-s", "(?i:[s])s", "ss", [], 0, { values: ["ss"], character_ranges: [[0, 2]], byte_ranges: [[0, 2]] }],
+    ["ascii-long-s-tail-x", "(?i:[s])x", "sx", [], 0, { values: ["sx"], character_ranges: [[0, 2]], byte_ranges: [[0, 2]] }],
+    ["ascii-kelvin-tail-x", "(?i:[K])x", "kx", [], 0, { values: ["kx"], character_ranges: [[0, 2]], byte_ranges: [[0, 2]] }],
+    ["standalone-long-s-class", "(?i:[s])", "ſs", [], 0, { values: ["ſ"], character_ranges: [[0, 1]], byte_ranges: [[0, 2]] }],
+    ["standalone-kelvin-class", "(?i:[K])", "Kx", [], 0, { values: ["K"], character_ranges: [[0, 1]], byte_ranges: [[0, 3]] }],
+    ["repeat-map-hit-after-long-s", "(?i:[s])s", "ſs ss", [], 0, { values: ["ss"], character_ranges: [[3, 5]], byte_ranges: [[4, 6]] }],
+    ["two-ascii-starts-origin-zero", "(?i:[s])s", "sss", [], 0, { values: ["ss"], character_ranges: [[0, 2]], byte_ranges: [[0, 2]] }],
+    ["two-ascii-starts-origin-one", "(?i:[s])s", "sss", [], 1, { values: ["ss"], character_ranges: [[1, 3]], byte_ranges: [[1, 3]] }],
+    ["class-tail-empty-subject", "(?i:[s])s", "", [], 0, nil],
+    ["class-tail-end-origin", "(?i:[s])s", "ss", [], 2, nil],
+    ["s-tail-low-score", "(?i:[s])\\x01", "ſ\u0001", [], :omitted, nil],
+    ["s-tail-high-score", "(?i:[s]) ", "ſ ", [], :omitted, { values: ["ſ "], character_ranges: [[0, 2]], byte_ranges: [[0, 3]] }],
+    ["upper-s-source", "(?i:[S])x", "ſx", [], :omitted, nil],
+    ["upper-k-source", "(?i:[K])x", "Kx", [], :omitted, nil],
+    ["lower-k-source", "(?i:[k])x", "Kx", [], :omitted, nil],
+    ["long-s-source-width", "(?i:[ſ])x", "ſx", [], :omitted, nil],
+    ["ordinary-a-source", "(?i:[a])x", "ax", [], :omitted, { values: ["ax"], character_ranges: [[0, 2]], byte_ranges: [[0, 2]] }],
+    ["ordinary-upper-a-source", "(?i:[A])x", "Ax", [], :omitted, { values: ["Ax"], character_ranges: [[0, 2]], byte_ranges: [[0, 2]] }],
+    ["ascii-source-fixed-option", "(?i:[s])x", "ſx", ["FIXEDENCODING"], :omitted, nil],
+    ["anchored-ascii-success", "\\A(?i:[s])s", "ss", [], 0, { values: ["ss"], character_ranges: [[0, 2]], byte_ranges: [[0, 2]] }],
+    ["origin-omitted", "(?i:[s])s", "sss", [], :omitted, { values: ["ss"], character_ranges: [[0, 2]], byte_ranges: [[0, 2]] }]
+  ].freeze
+
   CASES = [
     ["\\p{Alpha}", %w[A あ], %w[1]],
     ["\\p{Alphabetic}", %w[A あ Ω], %w[1 😀]],
@@ -188,6 +218,41 @@ class UnicodePropertyDifferentialTest < Minitest::Test
       matching_inputs.each { |input| assert_same_outcome(pattern, input, true) }
       non_matching_inputs.each { |input| assert_same_outcome(pattern, input, false) }
     end
+  end
+
+  def test_scoped_singleton_class_tail_search_matches_mri
+    failures = []
+
+    CLASS_TAIL_SEARCH_CASES.each do |case_row|
+      label, pattern, subject, option_names, origin, expected = case_row
+      mri_options = option_names.reduce(0) do |value, name|
+        value | ::Regexp.const_get(name)
+      end
+      onibi_options = option_names.reduce(0) do |value, name|
+        value | Onibi::Regexp.const_get(name)
+      end
+      mri_regexp = ::Regexp.new(pattern, mri_options)
+      onibi_regexp = Onibi::Regexp.new(pattern, onibi_options)
+      mri_match = class_tail_match(mri_regexp, subject, origin)
+      onibi_match = class_tail_match(onibi_regexp, subject, origin)
+      mri_result = class_tail_match_snapshot(mri_match)
+      onibi_result = class_tail_match_snapshot(onibi_match)
+
+      failures << "#{label}: pinned MRI result changed" unless mri_result == expected
+      failures << "#{label}: Onibi differs from MRI" unless onibi_result == mri_result
+
+      diagnostics = onibi_regexp.send(:__onibi_diagnostics__, subject)
+      failures << "#{label}: no native RSeq" unless diagnostics.fetch(:rseq)
+      failures << "#{label}: no native executor" if diagnostics.fetch(:exec_kind).nil?
+      failures << "#{label}: fallback count is not zero" unless diagnostics.fetch(:fallback).zero?
+      %i[fallback_reason unsupported_reason executor_error_kind].each do |key|
+        failures << "#{label}: #{key} is not none" unless diagnostics.fetch(key) == :none
+      end
+    rescue StandardError => e
+      failures << "#{label}: #{e.class}: #{e.message}"
+    end
+
+    assert_empty failures, failures.join("\n")
   end
 
   def test_invalid_unicode_property_errors_match_mri
@@ -1040,6 +1105,24 @@ class UnicodePropertyDifferentialTest < Minitest::Test
   end
 
   private
+
+  def class_tail_match(regexp, subject, origin)
+    origin == :omitted ? regexp.match(subject) : regexp.match(subject, origin)
+  end
+
+  def class_tail_match_snapshot(match)
+    return nil unless match
+
+    {
+      values: match.to_a,
+      character_ranges: match.to_a.each_index.map do |index|
+        [match.begin(index), match.end(index)]
+      end,
+      byte_ranges: match.to_a.each_index.map do |index|
+        match.byteoffset(index)
+      end
+    }
+  end
 
   def assert_same_outcome(pattern, input, expected, options = 0)
     mri = outcome(Regexp, pattern, input, options)

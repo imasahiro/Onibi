@@ -174,8 +174,17 @@ enum {
     ONIBI_RSEQ_FEATURE_FIRST_BITMAP = 1u << 6,
     ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD = 1u << 7,
     ONIBI_RSEQ_FEATURE_LITERAL_CASEFOLD = 1u << 8,
-    ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY = 1u << 9
+    ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY = 1u << 9,
+    ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND = 1u << 10,
+    ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND = 1u << 11,
+    ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP = 1u << 12,
+    ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM = 1u << 13,
+    ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE = 1u << 14
 };
+
+#define ONIBI_RSEQ_DIRECT_FOLD_WIDTH_LIMIT 7U
+
+#define ONIBI_RSEQ_CLASS_TAIL_MAP_FLAG_ANCHORED UINT8_C(1)
 
 typedef enum {
     ONIBI_G_ACCEPT = 0,
@@ -342,7 +351,7 @@ typedef struct {
 
 #define ONIBI_ACCEPT_STATE UINT32_MAX
 #define ONIBI_RSEQ_MAGIC UINT32_C(0x4f4e5251) /* "ONRQ" */
-#define ONIBI_RSEQ_VERSION UINT16_C(1)
+#define ONIBI_RSEQ_VERSION UINT16_C(6)
 
 typedef struct {
     uint32_t magic;
@@ -376,6 +385,20 @@ typedef struct {
     uint8_t first_bitmap[32];
     uint8_t prefix_length;
     uint8_t prefix[31];
+    uint32_t end_search_bound_bytes;
+    uint32_t search_origin_bound_delta_bytes;
+    uint8_t class_tail_map_byte;
+    uint8_t class_tail_map_flags;
+    uint16_t class_tail_map_reserved;
+    uint32_t class_tail_map_dmin_bytes;
+    uint32_t class_tail_map_dmax_bytes;
+    uint32_t end_search_minimum_bytes;
+    uint32_t end_search_minimum_repeat_bytes;
+    uint32_t end_search_minimum_capture_source_bytes;
+    uint32_t end_search_fold_normalized_bytes;
+    uint32_t end_search_fold_normalized_codepoints;
+    uint32_t end_search_fold_dmin_bytes;
+    uint32_t end_search_fold_dmax_bytes;
 } OnibiRSeqHeader;
 
 /* Read-only view over a published RSeq blob.  The VM uses this view for

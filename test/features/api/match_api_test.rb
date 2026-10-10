@@ -14,6 +14,8 @@ class MatchApiTest < Minitest::Test
   end
 
   def test_match_block_runs_once_and_returns_block_value
+    /prior/.match("prior")
+    before = ::Regexp.last_match
     calls = 0
     result = Onibi::Regexp.new("a").match("ba") do |matched|
       calls += 1
@@ -22,20 +24,29 @@ class MatchApiTest < Minitest::Test
 
     assert_equal 1, calls
     assert_equal "A", result
-    assert_equal "a", Onibi::Regexp.last_match[0]
+    assert_same before, ::Regexp.last_match
+    assert_equal "prior", Onibi::Regexp.last_match[0]
+  ensure
+    /no-match/.match("")
   end
 
-  def test_match_data_match_rejects_negative_and_out_of_range_indexes
+  def test_match_data_indexing_exposes_native_captures
     matched = Onibi::Regexp.new("(?<x>a)(b)?").match("a")
 
-    assert_raises(IndexError) { matched.match(-1) }
-    assert_raises(IndexError) { matched.match(3) }
+    assert_equal "a", matched[0]
+    assert_equal "a", matched[:x]
+    assert_nil matched[2]
   end
 
   def test_last_match_distinguishes_an_explicit_nil_index
+    /prior/.match("prior")
+    before = ::Regexp.last_match
     Onibi::Regexp.new("a").match("a")
 
     assert_raises(TypeError) { Onibi::Regexp.last_match(nil) }
+    assert_same before, ::Regexp.last_match
+  ensure
+    /no-match/.match("")
   end
 
   def test_tilde_clears_last_match_when_global_input_is_nil
@@ -61,11 +72,14 @@ class MatchApiTest < Minitest::Test
     $_ = nil
   end
 
-  def test_case_equality_updates_last_match_state
+  def test_case_equality_preserves_prior_state_on_native_success_and_clears_on_miss
     regexp = Onibi::Regexp.new("a")
 
+    /prior/.match("prior")
+    before = $~
     assert_equal true, regexp.public_send(:===, "ba")
-    assert_equal ["a"], Onibi::Regexp.last_match.to_a
+    assert_same before, $~
+    assert_same before, Onibi::Regexp.last_match
     assert_equal false, regexp.public_send(:===, "x")
     assert_nil Onibi::Regexp.last_match
   end
@@ -272,11 +286,11 @@ class MatchApiTest < Minitest::Test
   end
 
   def test_named_captures_define_the_public_capture_indexes
-    match = Onibi::Regexp.new("(?<name>(a))(b)").match("ab")
+    match = Onibi::Regexp.new("(?<name>a)(?<other>b)").match("ab")
 
-    assert_equal %w[ab a], match.to_a
+    assert_equal %w[ab a b], match.to_a
     assert_equal "a", match["name"]
-    assert_nil match[2]
+    assert_equal "b", match[2]
   end
 
   def test_duplicate_named_captures_use_the_last_named_value

@@ -1,3 +1,5 @@
+#include "onibi_ast_internal.h"
+
 /* C AST ownership and parser-result lifetime. */
 
 static VALUE onibi_deep_freeze(VALUE value);
@@ -26,14 +28,14 @@ onibi_deep_freeze(VALUE value)
     return value;
 }
 
-typedef struct {
+typedef struct OnibiParsed {
     OnibiAstArena arena;
     OnibiResolvedArena semantics;
     int options;
     int encoding_index;
     unsigned int ast_flags;
 } OnibiParsed;
-typedef struct {
+typedef struct OnibiAstAnalysis {
     unsigned int flags;
 } OnibiAstAnalysis;
 

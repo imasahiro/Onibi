@@ -44,6 +44,19 @@ class ScanGsubTest < Minitest::Test
     assert_equal "a-b", regexp.gsub("ab", '\\k<first>-\\k<second>')
   end
 
+  def test_native_replacement_expands_special_and_long_numeric_references
+    regexp = Onibi::Regexp.new("(a)(b)?")
+    input = "ab"
+    {"\\&" => "ab", "\\0" => "ab", "\\+" => "b",
+     "\\`" => "", "\\'" => ""}.each do |replacement, expected|
+      assert_equal expected, regexp.gsub(input, replacement)
+    end
+    assert_equal "a0", Onibi::Regexp.new("(a)").gsub("a", '\\10')
+    assert_raises(IndexError) do
+      Onibi::Regexp.new("(a)").gsub("a", '\\k<missing>')
+    end
+  end
+
   def test_absence_scan_uses_the_common_vm_match_path
     assert_equal ["xxEN", "Dyy", ""], Onibi::Regexp.new("(?~END)").scan("xxENDyy")
   end

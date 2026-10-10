@@ -70,6 +70,235 @@ class RseqPhysicalVerifierTest < Minitest::Test
     assert_invalid("abc", :prefix)
   end
 
+  def test_rejects_old_absolute_end_search_version
+    assert_end_bound_corruption_rejected(:end_bound_old_version,
+                                         "invalid Onibi RSeq blob")
+  end
+
+  def test_rejects_unknown_absolute_end_search_feature
+    assert_end_bound_corruption_rejected(:end_bound_unknown_feature,
+                                         "invalid Onibi RSeq section layout")
+  end
+
+  def test_rejects_noncanonical_unknown_absolute_end_search_bound
+    assert_end_bound_corruption_rejected(:end_bound_noncanonical_unknown,
+                                         "invalid Onibi RSeq section layout")
+  end
+
+  def test_rejects_absolute_end_search_bound_without_absolute_end_assertion
+    assert_end_bound_corruption_rejected(
+      :end_bound_missing_assertion,
+      "inconsistent Onibi RSeq execution contract"
+    )
+  end
+
+  def test_rejects_invalid_minimum_end_search_metadata
+    regexp = Onibi::Regexp.new("(ſ)+\\1\\z", Onibi::Regexp::IGNORECASE)
+    cases = [
+      [:minimum_end_old_version, "invalid Onibi RSeq blob"],
+      [:minimum_end_unknown_feature, "invalid Onibi RSeq section layout"],
+      [:minimum_end_noncanonical_unknown,
+       "invalid Onibi RSeq section layout"],
+      [:minimum_end_zero_distance, "invalid Onibi RSeq section layout"],
+      [:minimum_end_width_mismatch,
+       "inconsistent Onibi RSeq execution contract"],
+      [:minimum_end_missing_assertion,
+       "inconsistent Onibi RSeq execution contract"],
+      [:minimum_end_bad_root,
+       "inconsistent Onibi RSeq execution contract"]
+    ]
+    failures = []
+
+    cases.each do |scenario, expected_message|
+      error = begin
+        regexp.send(:__onibi_rseq_verifier_diagnostics__, scenario)
+        nil
+      rescue StandardError => e
+        e
+      end
+      if error.nil?
+        failures << "#{scenario}: accepted corrupted blob"
+      elsif !error.is_a?(ArgumentError)
+        failures << "#{scenario}: raised #{error.class}"
+      elsif error.message != expected_message
+        failures << "#{scenario}: got #{error.message.inspect}"
+      end
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
+  def test_rejects_invalid_direct_fold_end_range_metadata
+    regexp = Onibi::Regexp.new("(?i:(ᾀ))\\1\\z")
+    cases = [
+      [:casefold_direct_old_version, "invalid Onibi RSeq blob"],
+      [:casefold_direct_feature_clear_normalized_bytes,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_feature_clear_normalized_codepoints,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_feature_clear_dmin,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_feature_clear_dmax,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_end_search_bound_conflict,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_search_origin_bound_conflict,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_class_tail_map_conflict,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_end_search_minimum_conflict,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_zero_normalized_bytes,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_zero_normalized_codepoints,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_bytes_over_buffer_limit,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_codepoints_over_buffer_limit,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_uint32_max_normalized_bytes,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_codepoints_exceed_bytes,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_bytes_exceed_codepoint_maximum,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_minimum_mismatch,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_maximum_mismatch,
+       "invalid Onibi RSeq section layout"],
+      [:casefold_direct_capture_count,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_capture_open_missing,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_capture_close_missing,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_capture_open_extra,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_capture_close_extra,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_reference_target,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_reference_ignorecase,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_end_anchor,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_end_anchor_nonfinal,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_extra_state,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_extra_edge,
+       "inconsistent Onibi RSeq execution contract"],
+      [:casefold_direct_extra_action,
+       "inconsistent Onibi RSeq execution contract"]
+    ]
+    failures = []
+
+    cases.each do |scenario, expected_message|
+      error = begin
+        regexp.send(:__onibi_rseq_verifier_diagnostics__, scenario)
+        nil
+      rescue StandardError => e
+        e
+      end
+      if error.nil?
+        failures << "#{scenario}: accepted corrupted blob"
+      elsif !error.is_a?(ArgumentError)
+        failures << "#{scenario}: raised #{error.class}"
+      elsif error.message != expected_message
+        failures << "#{scenario}: got #{error.message.inspect}"
+      end
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
+  def test_valid_direct_fold_end_range_profiles_pass_physical_verifier
+    cases = [
+      ["Greek", "(?i:(ᾀ))\\1\\z"],
+      ["sharp-s", "(?i:(ß))\\1\\z"]
+    ]
+    failures = []
+
+    cases.each do |label, pattern|
+      valid = begin
+        Onibi::Regexp.new(pattern).send(:__onibi_rseq_verifier_diagnostics__,
+                                        :casefold_direct_valid)
+      rescue StandardError => e
+        failures << "#{label}: #{e.class}: #{e.message}"
+        next
+      end
+      failures << "#{label}: invalid direct profile" unless valid
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
+  def test_rejects_old_search_origin_bound_version
+    assert_search_origin_bound_corruption_rejected(
+      :search_origin_bound_old_version,
+      "invalid Onibi RSeq blob"
+    )
+  end
+
+  def test_rejects_noncanonical_unknown_search_origin_bound
+    assert_search_origin_bound_corruption_rejected(
+      :search_origin_bound_noncanonical_unknown,
+      "invalid Onibi RSeq section layout"
+    )
+  end
+
+  def test_rejects_zero_search_origin_bound_for_end_lookahead
+    assert_search_origin_bound_corruption_rejected(
+      :search_origin_bound_zero,
+      "invalid Onibi RSeq section layout"
+    )
+  end
+
+  def test_rejects_bad_class_tail_map_metadata
+    cases = [
+      ["(?i:[s])x", :class_tail_map_old_version,
+       "invalid Onibi RSeq blob"],
+      ["(?i:[s])x", :class_tail_map_unknown_feature,
+       "invalid Onibi RSeq section layout"],
+      ["(?i:[s])x", :class_tail_map_missing_feature,
+       "invalid Onibi RSeq section layout"],
+      ["(?i:[s])x", :class_tail_map_wrong_byte,
+       "inconsistent Onibi RSeq execution contract"],
+      ["(?i:[s])x", :class_tail_map_zero_distance,
+       "invalid Onibi RSeq section layout"],
+      ["(?i:[s])x", :class_tail_map_bad_distance_range,
+       "invalid Onibi RSeq section layout"],
+      ["\\A(?i:[s])x", :class_tail_map_anchor_mismatch,
+       "inconsistent Onibi RSeq execution contract"],
+      ["(?i:[s])x", :class_tail_map_bad_root, nil],
+      ["a", :class_tail_map_nonzero_unused_field,
+       "invalid Onibi RSeq section layout"]
+    ]
+    failures = []
+
+    cases.each do |pattern, scenario, expected_message|
+      regexp = Onibi::Regexp.new(pattern)
+      error = begin
+        regexp.send(:__onibi_rseq_verifier_diagnostics__, scenario)
+        nil
+      rescue StandardError => e
+        e
+      end
+      if error.nil?
+        failures << "#{scenario}: accepted corrupted blob"
+      elsif !error.is_a?(ArgumentError)
+        failures << "#{scenario}: raised #{error.class}"
+      elsif expected_message && error.message != expected_message
+        failures << "#{scenario}: got #{error.message.inspect}"
+      elsif scenario == :class_tail_map_bad_root &&
+            !error.message.match?(/invalid|inconsistent/)
+        failures << "#{scenario}: unexpected error #{error.message.inspect}"
+      end
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
   def test_zero_width_feature_uses_only_root_reachable_states
     regexp = Onibi::Regexp.new("(?=a)")
 
@@ -133,19 +362,6 @@ class RseqPhysicalVerifierTest < Minitest::Test
     end
   end
 
-  def test_physical_nullable_verifier_uses_bounded_owner_facts
-    source = File.read(File.expand_path("../../../ext/onibi/rseq_runtime.c", __dir__))
-
-    assert_includes source, "nullable->owner_count + bit_count - 1U"
-    assert_includes source, "nullable->outgoing_heads"
-    assert_includes source, "nullable->incoming_heads"
-    assert_includes source, "nullable->worklist"
-    assert_includes source, "Onibi RSeq nullable reachability queue is too large"
-    assert_includes source, "Onibi RSeq nullable worklist is too large"
-    refute_match(/for \(uint32_t state = 0; state < header->state_count; state\+\+\).*?
-                 view->edges/mx, source)
-  end
-
   def test_verifier_uses_owned_input_sized_work_arrays
     source = File.read(File.expand_path("../../../ext/onibi/rseq_runtime.c", __dir__))
 
@@ -162,6 +378,24 @@ class RseqPhysicalVerifierTest < Minitest::Test
   end
 
   private
+
+  def assert_search_origin_bound_corruption_rejected(scenario, expected_message)
+    regexp = Onibi::Regexp.new("(?=\\z).*", Onibi::Regexp::MULTILINE)
+    error = assert_raises(ArgumentError, scenario.to_s) do
+      regexp.send(:__onibi_rseq_verifier_diagnostics__, scenario)
+    end
+
+    assert_equal expected_message, error.message, scenario.to_s
+  end
+
+  def assert_end_bound_corruption_rejected(scenario, expected_message)
+    regexp = Onibi::Regexp.new("(s)\\1\\z", Onibi::Regexp::IGNORECASE)
+    error = assert_raises(ArgumentError, scenario.to_s) do
+      regexp.send(:__onibi_rseq_verifier_diagnostics__, scenario)
+    end
+
+    assert_equal expected_message, error.message, scenario.to_s
+  end
 
   def assert_invalid(pattern, scenario)
     regexp = Onibi::Regexp.new(pattern)

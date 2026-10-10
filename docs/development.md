@@ -16,10 +16,15 @@ The PoC must not depend on ZJIT or MRI source-tree changes.
 
 The current C pipeline includes tokenization, parsing, a tagged epsilon-NFA,
 epsilon elimination, ordered G-IR states and edges, RSeq lowering, and three VM
-entry points for a tested ASCII subset. The
-VM covers literals, alternation, character classes, wildcard sequences, wildcard
-repeats, bounded repeats, captures, boundary assertions, and match reset.
-Other syntax remains outside this subset.
+entry points. The compiler and runtime checks select which patterns and inputs
+can use native execution. Do not read a feature name as proof that every form is
+supported.
+
+The wrapper uses the retained MRI regexp only for an explicit fallback. The
+compiler records unsupported features. Runtime checks can also reject an input.
+These compile and input checks run before the native executor starts.
+`gsub` can also use MRI when its replacement parser rejects a form.
+A malformed RSeq or native executor error raises an error; it does not select fallback.
 
 The C source is split into pipeline modules. `onibi.c` is an amalgamated entry
 unit. It includes the current implementation files in dependency order.
@@ -40,17 +45,55 @@ Each class has one C interpreter.
 | `DYNAMIC` | Backreferences, calls, conditions, and other runtime semantic state |
 
 All interpreters execute RSeq and return one common raw match result.
-The public API converts that result to `Onibi` objects.
+Native `match` builds `Onibi::MatchData` from the raw byte ranges.
+Native `scan` builds strings or capture arrays from those ranges.
+Native `gsub` builds its result from native ranges and replacement rules.
+An explicit fallback uses the retained MRI regexp.
 
-### MatchData migration debt
+### Public API subset
 
-The native matcher produces raw byte ranges before any Ruby `MatchData`
-materialization. MRI 4.0.6 does not provide a supported extension API to create
-an `RMatch` from external `re_registers`; its public header also prohibits
-manual construction. Until such an API is available, `match` and capture-aware
-`scan` use MRI only as a temporary materialization adapter. Native diagnostics
-and capture tests compare the raw Onibi ranges with MRI before this adapter is
-used. The adapter must not decide match existence or match priority.
+The declared public method subset is in [`../sig/onibi.rbs`](../sig/onibi.rbs).
+It includes the current `Onibi::Regexp` and `Onibi::MatchData` signatures.
+The accepted MatchData subset contains 27 public methods.
+
+For a supported native result, `Onibi::Regexp#match` returns
+`Onibi::MatchData`. An explicit fallback can return MRI `::MatchData`.
+The custom object is C typed data. It is not an MRI `MatchData` object.
+It does not pass MRI type checks for `RUBY_T_MATCH` or `RMATCH_REGS`.
+Its `regexp` method returns the owning `Onibi::Regexp`.
+
+RBS 4.1.2 checked syntax, names, and type arity.
+Steep was not installed, so no static source type check is claimed.
+Source review maps all 27 accepted MatchData methods to C registrations.
+
+### MRI caller and backreference limits
+
+MRI `String#=~` delegates to `Onibi::Regexp#=~`.
+The tested `String#match`, `match?`, `scan`, `split`, `[]`, `sub`, and `gsub`
+methods reject `Onibi::Regexp`. Onibi does not patch these String methods.
+StringScanner and other MRI C callers remain outside this gem boundary.
+
+A native match result does not enter MRI backreference storage.
+Native `Onibi::Regexp#match` success leaves the prior MRI `$~` unchanged.
+`Onibi::Regexp.last_match` reads MRI backreference state.
+Explicit MRI fallbacks can use MRI's own state.
+Onibi does not promise full caller-local backreference behavior.
+
+### Ractor limit
+
+The current contract is main-Ractor only.
+Onibi objects are not shareable. Calls to the extension from child Ractors
+fail because the methods are Ractor-unsafe. MRI 4.0.6 reports
+`Ractor::UnsafeError` as the cause.
+The extension does not enable the Ractor-safe boundary.
+
+### Open acceptance work
+
+Binary `MatchData#names` encoding remains open.
+The explicit fallback path for `~` with `\K` and match reset remains untested.
+Public caller, GC, timeout, interrupt, Ractor, CI, and package gates remain open.
+See [`remaining-work.md`](remaining-work.md) for the current task order.
+The gem has not passed all eight PoC conditions in GIR section 133.1.
 
 Compilation is an initialization-time operation. The tokenizer reads the
 source once. The parser, GIR compiler, and RSeq lowerer consume that token
@@ -68,9 +111,27 @@ RSeq publication validates section offsets, state ranges, edge destinations,
 action offsets, opcodes, and payload descriptors directly from the blob. The
 runtime validator does not compare the blob with the Ruby semantic mirror.
 
+### Folded capture and sensitive backreference search
+
+One narrow UTF-8 form has a scoped ignorecase capture around one direct scalar,
+one case-sensitive reference to that capture, and a final `\z`. The compiler
+uses encoding fold data to prove MRI's expansion-overflow case. It stores the
+normalized widths and end-search distances in RSeq v6. This form uses native
+`DYNAMIC` execution.
+
+The matcher compares `Dmin` with the full subject length. It applies `Dmax` to
+the lower candidate bound and keeps MRI's raw exclusive upper range and its
+equal-origin case. It does not compare the remaining suffix with `Dmin`.
+
+The physical verifier checks the certificate fields, equations, feature
+conflicts, and exact RSeq shape. It cannot prove the source fold or normalized
+text. The compiler proves those source-level facts. Other AST forms stay
+outside this native profile.
+
 The native interpreters execute ordered actions, cycles, classes, wildcards,
 graphemes, position assertions, captures, bounded-repeat counters,
-backreferences, conditions, calls, atomic groups, absence, and lookarounds.
+backreferences, conditions, calls, atomic groups, absence, and lookarounds for
+patterns that pass the native support checks.
 The DYNAMIC interpreter keeps semantic state in each explicit C stack frame.
 
 ## Milestones
@@ -81,7 +142,7 @@ The DYNAMIC interpreter keeps semantic state in each explicit C stack frame.
 - Load the extension through `lib/onibi.rb`.
 - Define `Onibi::Regexp`.
 - Replace cross-runtime CI with an MRI-only extension build.
-- Add unit tests for loading, allocation, initialization, and errors.
+- Verify loading, allocation, initialization, and errors through the public API.
 
 ### 2. Regular compiler and interpreter
 
@@ -120,12 +181,15 @@ The DYNAMIC interpreter keeps semantic state in each explicit C stack frame.
 
 ## Test policy
 
-Test-driven development is not required.
-Developers can write tests before or after the first implementation.
+Prefer tests that run the public API through the C compiler and native engine.
+Use existing E2E and MRI differential coverage before adding another test.
+Do not write unit tests after implementation.
+If an isolated test is necessary, first list its failure cases, then write code.
 
-Every completed behavior needs a focused test before review.
-Start with unit tests that isolate one C API or one compiler operation.
-Add exact G-IR and RSeq tests when these formats become stable.
+Keep isolated tests when they catch failures that E2E tests cannot reach.
+Examples include malformed RSeq, allocation failure, integer limits, and state collisions.
+Do not test source spelling, file placement, or obsolete Ruby compiler objects.
+Record repeatable commands and results with each test review.
 
 Use MRI differential tests for public behavior.
 Compare success, errors, byte offsets, captures, encodings, and option handling.
@@ -158,7 +222,7 @@ Add ASAN and UBSAN jobs when the extension scaffold can run them.
 ## Legacy prototype
 
 Git history retains the previous Pure Ruby implementation.
-The legacy tests remain useful for historical comparison.
+Git history also retains the legacy tests for historical comparison.
 Git history retains the old documents.
 Neither source defines the new production architecture.
 
@@ -166,8 +230,8 @@ Do not restore the Ruby matcher as production code.
 
 ## Current architecture audit
 
-Only `Onibi::Regexp` is public. Tokenizer, parser, compiler, GIR, RSeq, and
-VM types stay inside the C extension.
+`Onibi::Regexp` and `Onibi::MatchData` are public. Tokenizer, parser, compiler,
+GIR, RSeq, and VM types stay inside the C extension.
 
 The active ownership rules are:
 

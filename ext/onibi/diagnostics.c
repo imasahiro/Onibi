@@ -1,3 +1,12 @@
+#include "onibi_ast_internal.h"
+#include "onibi_compiler_internal.h"
+#include "onibi_exec_internal.h"
+#include "onibi_gir_internal.h"
+#include "onibi_matchdata_internal.h"
+#include "onibi_rseq_internal.h"
+
+#include <string.h>
+
 static int
 onibi_unicode_ctype_id(ID property)
 {
@@ -40,6 +49,174 @@ static const char *const onibi_compile_error_names[] = {
 static const char *const onibi_unsupported_reason_names[] = {
     "none",  "meta_escape", "escape",	  "grapheme",
     "class", "limit",	    "possessive", "zero_width_repeat"};
+
+typedef struct {
+    VALUE self;
+    VALUE subject;
+    VALUE ranges;
+    OnibiBytePos *storage;
+    uint32_t num_regs;
+} OnibiMatchDataDiagnosticCall;
+
+static VALUE
+onibi_matchdata_payload_body(VALUE opaque)
+{
+    OnibiMatchDataDiagnosticCall *call =
+	(OnibiMatchDataDiagnosticCall *)(uintptr_t)opaque;
+    StringValue(call->subject);
+    if (NIL_P(call->ranges)) {
+	onibi_regexp_t *obj;
+	TypedData_Get_Struct(call->self, onibi_regexp_t, &onibi_type, obj);
+	if (NIL_P(obj->rseq) || !obj->rseq_view_valid ||
+	    obj->rseq_view.header == NULL)
+	    rb_raise(eRegexpError,
+		     "Onibi cannot build MatchData for an unsupported regexp");
+	uint32_t capture_count = obj->rseq_view.header->capture_count;
+	if (capture_count == UINT32_MAX)
+	    rb_raise(rb_eRangeError, "Onibi capture count is too large");
+	call->num_regs = capture_count + 1U;
+	if ((size_t)call->num_regs > SIZE_MAX / sizeof(OnibiBytePos) / 2U)
+	    rb_raise(rb_eRangeError, "Onibi capture ranges are too large");
+	call->storage =
+	    ruby_xmalloc((size_t)call->num_regs * sizeof(OnibiBytePos) * 2U);
+	OnibiBytePos *beg = call->storage;
+	OnibiBytePos *end = beg + call->num_regs;
+	OnibiRawMatch raw_match = {.begin_byte = -1,
+				   .end_byte = -1,
+				   .num_regs = call->num_regs,
+				   .beg = beg,
+				   .end = end};
+	if (!onibi_raw_match_reset(&raw_match))
+	    rb_raise(eRegexpError, "Onibi raw match setup failed");
+	int status = onibi_vm_search(call->self, call->subject, 0, &raw_match);
+	if (status != ONIBI_EXEC_STATUS_MATCH)
+	    rb_raise(eRegexpError, "Onibi did not produce a native match");
+	return onibi_matchdata_new(call->self, call->subject, &raw_match);
+    }
+
+    if (!RB_TYPE_P(call->ranges, T_ARRAY) || RARRAY_LEN(call->ranges) == 0)
+	rb_raise(rb_eArgError, "Onibi raw ranges must be a non-empty array");
+    long count = RARRAY_LEN(call->ranges);
+    if ((uint64_t)count > UINT32_MAX)
+	rb_raise(rb_eRangeError, "Onibi raw range count is too large");
+    call->num_regs = (uint32_t)count;
+    if ((size_t)call->num_regs > SIZE_MAX / sizeof(OnibiBytePos) / 2U)
+	rb_raise(rb_eRangeError, "Onibi capture ranges are too large");
+    call->storage =
+	ruby_xmalloc((size_t)call->num_regs * sizeof(OnibiBytePos) * 2U);
+    OnibiBytePos *beg = call->storage;
+    OnibiBytePos *end = beg + call->num_regs;
+    for (uint32_t i = 0; i < call->num_regs; i++) {
+	VALUE pair = rb_ary_entry(call->ranges, (long)i);
+	if (!RB_TYPE_P(pair, T_ARRAY) || RARRAY_LEN(pair) != 2)
+	    rb_raise(rb_eArgError, "Onibi raw ranges must contain pairs");
+	beg[i] = NUM2LONG(rb_ary_entry(pair, 0));
+	end[i] = NUM2LONG(rb_ary_entry(pair, 1));
+    }
+    OnibiRawMatch raw_match = {.begin_byte = beg[0],
+			       .end_byte = end[0],
+			       .num_regs = call->num_regs,
+			       .beg = beg,
+			       .end = end};
+    return onibi_matchdata_new(call->self, call->subject, &raw_match);
+}
+
+static VALUE
+onibi_matchdata_payload_cleanup(VALUE opaque)
+{
+    OnibiMatchDataDiagnosticCall *call =
+	(OnibiMatchDataDiagnosticCall *)(uintptr_t)opaque;
+    ruby_xfree(call->storage);
+    call->storage = NULL;
+    return Qnil;
+}
+
+static VALUE
+onibi_matchdata_payload_from_diagnostics(int argc, VALUE *argv, VALUE self)
+{
+    VALUE subject, ranges = Qnil;
+    rb_scan_args(argc, argv, "11", &subject, &ranges);
+    OnibiMatchDataDiagnosticCall call = {self, subject, ranges, NULL, 0};
+    return rb_ensure(onibi_matchdata_payload_body, (VALUE)(uintptr_t)&call,
+		     onibi_matchdata_payload_cleanup, (VALUE)(uintptr_t)&call);
+}
+
+static VALUE
+onibi_matchdata_payload_diagnostics(int argc, VALUE *argv, VALUE self)
+{
+    VALUE payload = onibi_matchdata_payload_from_diagnostics(argc, argv, self);
+    return onibi_matchdata_summary(payload);
+}
+
+static VALUE
+onibi_matchdata_payload_new(int argc, VALUE *argv, VALUE self)
+{
+    return onibi_matchdata_payload_from_diagnostics(argc, argv, self);
+}
+
+typedef struct {
+    VALUE self;
+    VALUE subject;
+    VALUE ranges;
+} OnibiMatchDataFailureProbe;
+
+static VALUE
+onibi_matchdata_failure_probe_body(VALUE opaque)
+{
+    OnibiMatchDataFailureProbe *probe =
+	(OnibiMatchDataFailureProbe *)(uintptr_t)opaque;
+    VALUE args[2] = {probe->subject, probe->ranges};
+    return onibi_matchdata_payload_new(2, args, probe->self);
+}
+
+static VALUE
+onibi_matchdata_failure_diagnostics(int argc, VALUE *argv, VALUE self)
+{
+    VALUE subject, ranges, stage_value;
+    rb_scan_args(argc, argv, "21", &subject, &ranges, &stage_value);
+    int stage = NUM2INT(stage_value);
+    size_t before = onibi_matchdata_live_allocations();
+    OnibiMatchDataFailureProbe probe = {self, subject, ranges};
+    int previous_stage = onibi_matchdata_failure_stage();
+    onibi_matchdata_set_failure_stage(stage);
+    int state = 0;
+    VALUE payload = rb_protect(onibi_matchdata_failure_probe_body,
+			       (VALUE)(uintptr_t)&probe, &state);
+    onibi_matchdata_set_failure_stage(previous_stage);
+    VALUE result = rb_hash_new();
+    rb_hash_aset(result, ID2SYM(rb_intern("stage")), INT2NUM(stage));
+    rb_hash_aset(result, ID2SYM(rb_intern("before")),
+		 ULL2NUM((unsigned long long)before));
+    rb_hash_aset(
+	result, ID2SYM(rb_intern("after")),
+	ULL2NUM((unsigned long long)onibi_matchdata_live_allocations()));
+    rb_hash_aset(result, ID2SYM(rb_intern("raised")),
+		 state == 0 ? Qfalse : Qtrue);
+    if (state != 0) {
+	VALUE error = rb_errinfo();
+	rb_hash_aset(result, ID2SYM(rb_intern("error")), rb_obj_class(error));
+	rb_set_errinfo(Qnil);
+    }
+    else {
+	rb_hash_aset(result, ID2SYM(rb_intern("payload")),
+		     onibi_matchdata_summary(payload));
+    }
+    return result;
+}
+
+static VALUE
+onibi_matchdata_factory(int argc, VALUE *argv, VALUE klass)
+{
+    (void)klass;
+    if (argc < 2 || argc > 3)
+	rb_raise(rb_eArgError,
+		 "wrong number of arguments (given %d, expected 2..3)", argc);
+    VALUE regexp = argv[0];
+    if (!rb_obj_is_kind_of(regexp, cRegexp))
+	rb_raise(rb_eTypeError, "expected an Onibi::Regexp");
+    VALUE args[2] = {argv[1], argc == 3 ? argv[2] : Qnil};
+    return onibi_matchdata_payload_new(2, args, regexp);
+}
 
 /* Internal test hook.  It reports the compiled contract and the executor
  * selected for one search.  The hook does not call MRI to obtain a result. */
@@ -355,8 +532,9 @@ onibi_nfa_diagnostic_call(VALUE opaque)
 {
     OnibiNfaDiagnosticCall *call = (OnibiNfaDiagnosticCall *)(uintptr_t)opaque;
     onibi_token_vector_init(&call->tokens);
-    onibi_tokenize_internal(
-	call->source, (call->options & ONIBI_OPT_EXTENDED) != 0, &call->tokens);
+    onibi_tokenize_internal(call->source,
+			    (call->options & ONIBI_OPT_EXTENDED) != 0,
+			    rb_enc_get(call->source), &call->tokens);
     VALUE parsed = onibi_parser_parse_internal(
 	call->source, INT2NUM(call->options), &call->tokens);
     return onibi_compiler_nfa_diagnostics(parsed);
@@ -375,7 +553,9 @@ onibi_pre_elimination_nfa_diagnostics(VALUE self)
 {
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    OnibiNfaDiagnosticCall call = {obj->source, obj->options, {0}};
+    VALUE diagnostic_source = rb_str_dup(obj->source);
+    rb_enc_associate(diagnostic_source, rb_enc_get(obj->regexp));
+    OnibiNfaDiagnosticCall call = {diagnostic_source, obj->options, {0}};
     return rb_ensure(onibi_nfa_diagnostic_call, (VALUE)(uintptr_t)&call,
 		     onibi_nfa_diagnostic_cleanup, (VALUE)(uintptr_t)&call);
 }
@@ -495,7 +675,7 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
     edges[0].to = 1;
     edges[1].from = 1;
     edges[1].to = 3;
-    starts[0].from = -1;
+    starts[0].from = ONIBI_GIR_STATE_NONE;
     starts[0].to = 0;
     subprograms[0] = (OnibiRSeqSubprogramEntry){0, 3, 0};
     OnibiGirStateVector state_vector = {states, 4, 4, NULL};
@@ -528,6 +708,10 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 
     if (scenario == rb_intern("state_ids"))
 	states[1].id = 2;
+    else if (scenario == rb_intern("state_id_reserved"))
+	states[1].id = ONIBI_GIR_STATE_NONE;
+    else if (scenario == rb_intern("state_id_exhaustion"))
+	view.next_id = ONIBI_GIR_STATE_NONE;
     else if (scenario == rb_intern("state_opcode_payload"))
 	states[0].literal_length = 0;
     else if (scenario == rb_intern("edge_state_range"))
@@ -606,7 +790,7 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_CAPTURE, 0, 0);
 	actions[1] =
 	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
-	starts[1].from = -1;
+	starts[1].from = ONIBI_GIR_STATE_NONE;
 	starts[1].to = 2;
 	starts[1].actions = (OnibiGActionVector){actions + 1, 1, 1, NULL};
 	start_vector.count = 2;
@@ -619,7 +803,7 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
 	starts[0].actions = (OnibiGActionVector){actions, 1, 8, NULL};
 	starts[1].to = 1;
-	starts[1].from = -1;
+	starts[1].from = ONIBI_GIR_STATE_NONE;
 	starts[1].actions = (OnibiGActionVector){NULL, 0, 0, NULL};
 	start_vector.count = 2;
 	start_vector.capacity = 2;
@@ -807,6 +991,14 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 
 /* This hook changes a private copy of a published blob. It exists only for
  * verifier tests. Normal construction validates the original blob once. */
+static int
+onibi_rseq_verifier_direct_fold_scenario(ID scenario)
+{
+    const char *name = rb_id2name(scenario);
+    static const char prefix[] = "casefold_direct_";
+    return name != NULL && strncmp(name, prefix, sizeof(prefix) - 1U) == 0;
+}
+
 static VALUE
 onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 {
@@ -815,6 +1007,23 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
     if (NIL_P(obj->rseq_blob))
 	rb_raise(rb_eArgError,
 		 "RSeq verifier diagnostic requires an RSeq blob");
+    ID scenario = rb_to_id(scenario_value);
+    if (onibi_rseq_verifier_direct_fold_scenario(scenario)) {
+	/* Validate the untouched published blob before a scenario reads its
+	 * direct-fold states, edges, actions, or backreference descriptors. */
+	onibi_rseq_blob_validate(obj->rseq_blob);
+	const OnibiRSeqHeader *source_header =
+	    (const OnibiRSeqHeader *)RSTRING_PTR(obj->rseq_blob);
+	if ((source_header->features &
+	     ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE) == 0 ||
+	    source_header->state_count != 3 || source_header->edge_count != 3 ||
+	    source_header->action_count != 6 ||
+	    source_header->backref_count != 1 ||
+	    source_header->capture_count != 1 ||
+	    source_header->semantic_capture_count != 1)
+	    rb_raise(rb_eArgError, "direct-fold diagnostic requires a "
+				   "validated direct-fold profile");
+    }
     VALUE blob = rb_str_dup(obj->rseq_blob);
     OnibiRSeqHeader *header = (OnibiRSeqHeader *)RSTRING_PTR(blob);
     OnibiRState *states =
@@ -833,8 +1042,329 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	(uint32_t *)(RSTRING_PTR(blob) + header->backref_lists_offset);
     OnibiSubprogramDesc *subprograms =
 	(OnibiSubprogramDesc *)(RSTRING_PTR(blob) + header->subprograms_offset);
-    ID scenario = rb_to_id(scenario_value);
-    if (scenario == rb_intern("section_order"))
+    if (scenario == rb_intern("end_bound_old_version"))
+	header->version = 1;
+    else if (scenario == rb_intern("end_bound_unknown_feature"))
+	header->features |= UINT32_C(1) << 31;
+    else if (scenario == rb_intern("end_bound_noncanonical_unknown")) {
+	header->features &= ~ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND;
+	header->end_search_bound_bytes = 1;
+    }
+    else if (scenario == rb_intern("end_bound_missing_assertion")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++) {
+	    if (actions[i].op == ONIBI_RA_ASSERT_POSITION &&
+		actions[i].arg16 == ONIBI_RAP_END_BUFFER) {
+		actions[i].arg16 = ONIBI_RAP_BEGIN_BUFFER;
+		changed = 1;
+		break;
+	    }
+	}
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "end-bound diagnostic requires an absolute-end assertion");
+    }
+    else if (scenario == rb_intern("minimum_end_old_version"))
+	header->version = 4;
+    else if (scenario == rb_intern("minimum_end_unknown_feature"))
+	header->features |= UINT32_C(1) << 31;
+    else if (scenario == rb_intern("minimum_end_noncanonical_unknown")) {
+	header->features &= ~ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM;
+	header->end_search_minimum_bytes = 1;
+    }
+    else if (scenario == rb_intern("minimum_end_zero_distance"))
+	header->end_search_minimum_bytes = 0;
+    else if (scenario == rb_intern("minimum_end_width_mismatch"))
+	header->end_search_minimum_bytes++;
+    else if (scenario == rb_intern("minimum_end_missing_assertion")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++) {
+	    if (actions[i].op == ONIBI_RA_ASSERT_POSITION &&
+		actions[i].arg16 == ONIBI_RAP_END_BUFFER) {
+		actions[i].arg16 = ONIBI_RAP_BEGIN_BUFFER;
+		changed = 1;
+		break;
+	    }
+	}
+	if (!changed)
+	    rb_raise(
+		rb_eRuntimeError,
+		"minimum-end diagnostic requires an absolute-end assertion");
+    }
+    else if (scenario == rb_intern("minimum_end_bad_root")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->state_count; i++) {
+	    if (states[i].op == ONIBI_RS_BACKREF) {
+		states[i].op = ONIBI_RS_CHAR;
+		states[i].payload = 0;
+		states[i].flags = literals[0].flags;
+		changed = 1;
+		break;
+	    }
+	}
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "minimum-end diagnostic requires a backreference state");
+    }
+    else if (scenario == rb_intern("casefold_direct_valid")) {
+	if ((header->features &
+	     ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE) == 0)
+	    rb_raise(rb_eArgError, "direct-fold diagnostic requires a compiled "
+				   "direct-fold profile");
+    }
+    else if (scenario == rb_intern("casefold_direct_old_version"))
+	header->version = 5;
+    else if (scenario ==
+	     rb_intern("casefold_direct_feature_clear_normalized_bytes")) {
+	header->features &= ~ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE;
+	header->end_search_fold_normalized_bytes = 1;
+	header->end_search_fold_normalized_codepoints = 0;
+	header->end_search_fold_dmin_bytes = 0;
+	header->end_search_fold_dmax_bytes = 0;
+    }
+    else if (scenario ==
+	     rb_intern("casefold_direct_feature_clear_normalized_codepoints")) {
+	header->features &= ~ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE;
+	header->end_search_fold_normalized_bytes = 0;
+	header->end_search_fold_normalized_codepoints = 1;
+	header->end_search_fold_dmin_bytes = 0;
+	header->end_search_fold_dmax_bytes = 0;
+    }
+    else if (scenario == rb_intern("casefold_direct_feature_clear_dmin")) {
+	header->features &= ~ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE;
+	header->end_search_fold_normalized_bytes = 0;
+	header->end_search_fold_normalized_codepoints = 0;
+	header->end_search_fold_dmin_bytes = 1;
+	header->end_search_fold_dmax_bytes = 0;
+    }
+    else if (scenario == rb_intern("casefold_direct_feature_clear_dmax")) {
+	header->features &= ~ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE;
+	header->end_search_fold_normalized_bytes = 0;
+	header->end_search_fold_normalized_codepoints = 0;
+	header->end_search_fold_dmin_bytes = 0;
+	header->end_search_fold_dmax_bytes = 1;
+    }
+    else if (scenario == rb_intern("casefold_direct_end_search_bound_conflict"))
+	header->features |= ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND;
+    else if (scenario ==
+	     rb_intern("casefold_direct_search_origin_bound_conflict"))
+	header->features |= ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND;
+    else if (scenario == rb_intern("casefold_direct_class_tail_map_conflict"))
+	header->features |= ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP;
+    else if (scenario ==
+	     rb_intern("casefold_direct_end_search_minimum_conflict"))
+	header->features |= ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM;
+    else if (scenario == rb_intern("casefold_direct_zero_normalized_bytes"))
+	header->end_search_fold_normalized_bytes = 0;
+    else if (scenario ==
+	     rb_intern("casefold_direct_zero_normalized_codepoints"))
+	header->end_search_fold_normalized_codepoints = 0;
+    else if (scenario == rb_intern("casefold_direct_bytes_over_buffer_limit"))
+	header->end_search_fold_normalized_bytes =
+	    ONIBI_RSEQ_DIRECT_FOLD_WIDTH_LIMIT + 1U;
+    else if (scenario ==
+	     rb_intern("casefold_direct_codepoints_over_buffer_limit"))
+	header->end_search_fold_normalized_codepoints =
+	    ONIBI_RSEQ_DIRECT_FOLD_WIDTH_LIMIT + 1U;
+    else if (scenario ==
+	     rb_intern("casefold_direct_uint32_max_normalized_bytes"))
+	header->end_search_fold_normalized_bytes = UINT32_MAX;
+    else if (scenario == rb_intern("casefold_direct_codepoints_exceed_bytes")) {
+	header->end_search_fold_normalized_bytes = 1;
+	header->end_search_fold_normalized_codepoints = 2;
+    }
+    else if (scenario ==
+	     rb_intern("casefold_direct_bytes_exceed_codepoint_maximum")) {
+	header->end_search_fold_normalized_bytes = 5;
+	header->end_search_fold_normalized_codepoints = 1;
+    }
+    else if (scenario == rb_intern("casefold_direct_minimum_mismatch"))
+	header->end_search_fold_dmin_bytes++;
+    else if (scenario == rb_intern("casefold_direct_maximum_mismatch"))
+	header->end_search_fold_dmax_bytes++;
+    else if (scenario == rb_intern("casefold_direct_capture_count")) {
+	header->capture_count = 2;
+    }
+    else if (scenario == rb_intern("casefold_direct_capture_open_missing")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_CAPTURE && actions[i].flags == 0 &&
+		actions[i].arg16 == 0) {
+		actions[i] = (OnibiRAction){ONIBI_RA_ORDER, 0, 0, 0};
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "direct-fold diagnostic requires a capture open");
+    }
+    else if (scenario == rb_intern("casefold_direct_capture_close_missing")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_CAPTURE &&
+		actions[i].flags == ONIBI_RA_CAPTURE_CLOSE &&
+		actions[i].arg16 == 1) {
+		actions[i] = (OnibiRAction){ONIBI_RA_ORDER, 0, 0, 0};
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "direct-fold diagnostic requires a capture close");
+    }
+    else if (scenario == rb_intern("casefold_direct_capture_open_extra")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_ASSERT_POSITION &&
+		actions[i].arg16 == ONIBI_RAP_END_BUFFER) {
+		actions[i] = (OnibiRAction){ONIBI_RA_CAPTURE, 0, 0, 0};
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(
+		rb_eRuntimeError,
+		"direct-fold diagnostic requires an absolute-end assertion");
+    }
+    else if (scenario == rb_intern("casefold_direct_capture_close_extra")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_ASSERT_POSITION &&
+		actions[i].arg16 == ONIBI_RAP_END_BUFFER) {
+		actions[i] = (OnibiRAction){ONIBI_RA_CAPTURE,
+					    ONIBI_RA_CAPTURE_CLOSE, 1, 0};
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(
+		rb_eRuntimeError,
+		"direct-fold diagnostic requires an absolute-end assertion");
+    }
+    else if (scenario == rb_intern("casefold_direct_reference_target")) {
+	uint32_t list_index =
+	    (backrefs[0].capture_list_off - header->backref_lists_offset) /
+	    (uint32_t)sizeof(uint32_t);
+	header->capture_count = 2;
+	header->semantic_capture_count = 2;
+	backref_capture_ids[list_index] = 1;
+    }
+    else if (scenario == rb_intern("casefold_direct_reference_ignorecase")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->state_count; i++)
+	    if (states[i].op == ONIBI_RS_BACKREF) {
+		states[i].flags = ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE;
+		backrefs[states[i].payload].flags |=
+		    ONIBI_BACKREF_FLAG_IGNORE_CASE;
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "direct-fold diagnostic requires a backreference state");
+    }
+    else if (scenario == rb_intern("casefold_direct_end_anchor")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_ASSERT_POSITION &&
+		actions[i].arg16 == ONIBI_RAP_END_BUFFER) {
+		actions[i].arg16 = ONIBI_RAP_BEGIN_BUFFER;
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(
+		rb_eRuntimeError,
+		"direct-fold diagnostic requires an absolute-end assertion");
+    }
+    else if (scenario == rb_intern("casefold_direct_end_anchor_nonfinal")) {
+	int end_changed = 0, close_changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_ASSERT_POSITION &&
+		actions[i].arg16 == ONIBI_RAP_END_BUFFER) {
+		actions[i].arg16 = ONIBI_RAP_BEGIN_BUFFER;
+		end_changed = 1;
+		break;
+	    }
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_CAPTURE &&
+		actions[i].flags == ONIBI_RA_CAPTURE_CLOSE &&
+		actions[i].arg16 == 1) {
+		actions[i] = (OnibiRAction){ONIBI_RA_ASSERT_POSITION, 0,
+					    ONIBI_RAP_END_BUFFER, 0};
+		close_changed = 1;
+		break;
+	    }
+	if (!end_changed || !close_changed)
+	    rb_raise(rb_eRuntimeError, "direct-fold diagnostic requires an end "
+				       "assertion and capture close");
+    }
+    else if (scenario == rb_intern("casefold_direct_extra_state")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->state_count; i++)
+	    if (states[i].op == ONIBI_RS_BACKREF) {
+		states[i].op = ONIBI_RS_CHAR;
+		states[i].flags = ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE;
+		states[i].payload = 0;
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "direct-fold diagnostic requires a backreference state");
+    }
+    else if (scenario == rb_intern("casefold_direct_extra_edge")) {
+	states[0].edge_count = 2;
+	states[1].edge_base = 2;
+	states[1].edge_count = 0;
+    }
+    else if (scenario == rb_intern("casefold_direct_extra_action")) {
+	int changed = 0;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_ASSERT_POSITION &&
+		actions[i].arg16 == ONIBI_RAP_END_BUFFER) {
+		actions[i] = (OnibiRAction){ONIBI_RA_ORDER, 0, 0, 0};
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(
+		rb_eRuntimeError,
+		"direct-fold diagnostic requires an absolute-end assertion");
+    }
+    else if (scenario == rb_intern("search_origin_bound_old_version"))
+	header->version = 2;
+    else if (scenario ==
+	     rb_intern("search_origin_bound_noncanonical_unknown")) {
+	header->features &= ~ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND;
+	header->search_origin_bound_delta_bytes = 1;
+    }
+    else if (scenario == rb_intern("search_origin_bound_zero"))
+	header->search_origin_bound_delta_bytes = 0;
+    else if (scenario == rb_intern("class_tail_map_old_version"))
+	header->version = 3;
+    else if (scenario == rb_intern("class_tail_map_unknown_feature"))
+	header->features |= UINT32_C(1) << 31;
+    else if (scenario == rb_intern("class_tail_map_missing_feature"))
+	header->features &= ~ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP;
+    else if (scenario == rb_intern("class_tail_map_wrong_byte"))
+	header->class_tail_map_byte ^= 1U;
+    else if (scenario == rb_intern("class_tail_map_zero_distance"))
+	header->class_tail_map_dmin_bytes = 0;
+    else if (scenario == rb_intern("class_tail_map_bad_distance_range"))
+	header->class_tail_map_dmax_bytes = 2;
+    else if (scenario == rb_intern("class_tail_map_anchor_mismatch"))
+	header->class_tail_map_flags ^= ONIBI_RSEQ_CLASS_TAIL_MAP_FLAG_ANCHORED;
+    else if (scenario == rb_intern("class_tail_map_bad_root")) {
+	header->features |= ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP;
+	header->class_tail_map_byte = 'x';
+	header->class_tail_map_dmin_bytes = 1;
+	header->class_tail_map_dmax_bytes = 1;
+	states[edges[header->start_edge_base].destination].op = ONIBI_RS_CHAR;
+    }
+    else if (scenario == rb_intern("class_tail_map_nonzero_unused_field"))
+	header->class_tail_map_reserved = 1;
+    else if (scenario == rb_intern("section_order"))
 	header->edges_offset = header->states_offset;
     else if (scenario == rb_intern("section_alignment"))
 	header->states_offset += 2;
@@ -1160,7 +1690,7 @@ onibi_compile_failure_diagnostic_call(VALUE opaque)
     int options = NUM2INT(call->options);
     onibi_token_vector_init(&call->tokens);
     onibi_tokenize_internal(call->source, (options & ONIBI_OPT_EXTENDED) != 0,
-			    &call->tokens);
+			    rb_enc_get(call->source), &call->tokens);
     call->parsed =
 	onibi_parser_parse_internal(call->source, call->options, &call->tokens);
     int compiler_phase = call->phase <= 8 ? call->phase : 0;
@@ -1189,8 +1719,10 @@ onibi_compile_failure_diagnostics(VALUE self, VALUE phase_value)
     int phase = NUM2INT(phase_value);
     if (phase < 1 || phase > 15)
 	rb_raise(rb_eArgError, "compiler failure phase is out of range");
+    VALUE diagnostic_source = rb_str_dup(obj->source);
+    rb_enc_associate(diagnostic_source, rb_enc_get(obj->regexp));
     OnibiCompileFailureDiagnostic call = {
-	obj->source, INT2NUM(obj->options), phase, {0}, Qnil, 0, {0}};
+	diagnostic_source, INT2NUM(obj->options), phase, {0}, Qnil, 0, {0}};
     size_t allocations_before = call.accounting.live_count;
     if (allocations_before != 0)
 	rb_raise(eRegexpError,
