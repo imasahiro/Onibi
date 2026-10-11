@@ -597,3 +597,49 @@ checks pass. No full suite ran. Remote publication remains pending.
 Exact worker evidence:
 `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-rollback-implementation-01/worker/implementation-completion.json`.
 Root evidence: `root-acceptance.json` and `root-review/checks-02.json` under that unit.
+
+
+## Failed absence-probe capture repair (2026-10-11)
+
+Status: ACCEPTED. Relay: `task-absence-failed-probe-repair-01`.
+The DYNAMIC absence scan now clears only direct captures that remain open
+after a failed probe. It writes the MRI condition pair as start and unset end.
+It keeps semantic registers and skips pushed captures.
+
+Four new MRI differential E2Es pass on the DYNAMIC route with zero fallback.
+The focused run reports 4 tests and 44 assertions. The frozen four-case
+comparison passes all values and ranges. The physical verifier reports 29 tests
+and 100 assertions. The subprogram check reports 6 tests and 46 assertions.
+RuboCop reports no offenses in the changed feature file.
+
+The full absence file reports 77 tests, 524 assertions, and five failures.
+All five failures match the prior 73-test, seven-failure baseline. Two baseline
+failures now pass. The repair adds no failure. The warning build reports two
+warnings in unchanged `gir.c` and `rseq.c`. Final `make distclean` passes.
+
+Exact commands, exits, source and bundle hashes, log hashes, and the repeated
+MRI comparison are in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-failed-probe-repair-01/worker/checks-final.json`,
+`comparison-final.json`, and `baseline-comparison.json`. No commit or publication
+was made during worker execution. Root accepted the repair and evidence.
+
+
+## Failed-probe repair: 27-row regression evidence (2026-10-11)
+
+Status: ACCEPTED. Relay attempt 2, phase `regression-evidence`.
+Two fresh processes compared the same 27 rows with frozen MRI output. Their
+results match each other. All rows use native DYNAMIC with zero fallback.
+
+All 25 rows that matched before still return the same values and ranges. The
+`nested_alternation_repeat_full` capture now matches MRI. No capture mismatch
+remains. The separate `fixed_three` row still raises the same `RangeError`.
+
+The warning-enabled build passes. It reports two warnings in unchanged `gir.c`
+and `rseq.c`. `git diff --check` and final `make distclean` pass. No feature or
+verifier suite ran again.
+
+Exact commands, current source and bundle hashes, and all 27 row comparisons are
+in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-failed-probe-repair-01/worker/regression-02/run-manifest.json`,
+`comparison.json`, and `row-comparison.json`. The adapted driver changes only
+the expected C source hash. Root verified source and evidence hashes.
+Root acceptance is recorded in `root-acceptance.json` under the relay unit.
+Remote publication remains pending.

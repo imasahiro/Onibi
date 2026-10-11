@@ -2020,6 +2020,100 @@ onibi_dynamic_absence_filter_incomplete_captures(OnibiSemanticArena *arena,
     return any;
 }
 
+typedef struct {
+    OnibiSemanticArena *arena;
+    OnibiSemanticState *target;
+    const OnibiSemanticState *failed;
+    const unsigned char *pushed_captures;
+    uint32_t capture_count;
+    uint32_t slots;
+    unsigned char *clear;
+    int changed;
+} OnibiDynamicAbsenceIncompleteCapturePublish;
+
+static VALUE
+onibi_dynamic_absence_publish_incomplete_direct_captures_body(VALUE opaque)
+{
+    OnibiDynamicAbsenceIncompleteCapturePublish *publish =
+	(OnibiDynamicAbsenceIncompleteCapturePublish *)(uintptr_t)opaque;
+    OnibiSemanticArena *arena = publish->arena;
+    OnibiSemanticState *target = publish->target;
+    const OnibiSemanticState *failed = publish->failed;
+    publish->slots = target->semantic_captures.slot_count;
+    if (target->condition_captures.slot_count != publish->slots ||
+	failed->semantic_captures.slot_count != publish->slots ||
+	failed->condition_captures.slot_count != publish->slots ||
+	(uint64_t)publish->capture_count * 2U > publish->slots)
+	rb_raise(eRegexpError, "absence capture slot range is invalid");
+    if (publish->slots == 0) return Qfalse;
+    publish->clear = ruby_xcalloc(publish->slots, 1);
+
+    for (uint32_t capture = 0; capture < publish->capture_count; capture++) {
+	uint32_t begin = capture * 2U;
+	uint32_t end = begin + 1U;
+	int incomplete = 0;
+	for (OnibiTagEventId id = failed->tag_history; id != UINT32_MAX;
+	     id = arena->tags[id].parent) {
+	    if (id >= arena->tag_count)
+		rb_raise(eRegexpError, "absence capture history is invalid");
+	    uint32_t slot = arena->tags[id].slot;
+	    if (slot == begin) {
+		incomplete = 1;
+		break;
+	    }
+	    if (slot == end) break;
+	}
+	if (!incomplete || (publish->pushed_captures != NULL &&
+			    publish->pushed_captures[capture]))
+	    continue;
+
+	publish->clear[begin] = 1;
+	publish->clear[end] = 1;
+	OnibiBytePos start = onibi_semantic_position_read(
+	    arena, failed->condition_captures.root, begin, -1);
+	onibi_semantic_condition_capture_write(
+	    arena, &target->condition_captures, begin, start);
+	/* A direct start clears its old end, as OP_MEMORY_START does in MRI. */
+	onibi_semantic_condition_capture_write(
+	    arena, &target->condition_captures, end, -1);
+	publish->changed = 1;
+    }
+
+    if (publish->changed) {
+	unsigned char *clear = publish->clear;
+	publish->clear = NULL;
+	onibi_dynamic_absence_filter_capture_slots(arena, target, clear,
+						   publish->slots, 0);
+	return Qtrue;
+    }
+    return Qfalse;
+}
+
+static VALUE
+onibi_dynamic_absence_publish_incomplete_direct_captures_ensure(VALUE opaque)
+{
+    OnibiDynamicAbsenceIncompleteCapturePublish *publish =
+	(OnibiDynamicAbsenceIncompleteCapturePublish *)(uintptr_t)opaque;
+    ruby_xfree(publish->clear);
+    publish->clear = NULL;
+    return Qnil;
+}
+
+static int
+onibi_dynamic_absence_publish_incomplete_direct_captures(
+    OnibiSemanticArena *arena, OnibiSemanticState *target,
+    const OnibiSemanticState *failed, const unsigned char *pushed_captures,
+    uint32_t capture_count)
+{
+    OnibiDynamicAbsenceIncompleteCapturePublish publish = {
+	arena, target, failed, pushed_captures, capture_count, 0, NULL, 0};
+    return RTEST(rb_ensure(
+	onibi_dynamic_absence_publish_incomplete_direct_captures_body,
+	(VALUE)(uintptr_t)&publish,
+	onibi_dynamic_absence_publish_incomplete_direct_captures_ensure,
+	(VALUE)(uintptr_t)&publish));
+}
+
 static int
 onibi_dynamic_absence_has_active_nullable_repeat(
     const OnibiRSeqView *view, OnibiSemanticArena *arena,
@@ -4038,6 +4132,17 @@ onibi_dynamic_absence_consume_run(
 	    }
 	    else if (body_previous_position < aend)
 		aend = body_previous_position;
+	}
+	else if (failed_end != aend && saw_positive) {
+	    OnibiSemanticState saved =
+		arena->absence_endpoints[endpoint_index].semantic;
+	    if (onibi_dynamic_absence_publish_incomplete_direct_captures(
+		    arena, &saved, &failed_result, pushed_captures,
+		    view->header->capture_count))
+		arena->absence_endpoints[endpoint_index].semantic = saved;
+	    (void)onibi_dynamic_absence_publish_incomplete_direct_captures(
+		arena, &scan_state, &failed_result, pushed_captures,
+		view->header->capture_count);
 	}
 	else if (failed_end == aend) {
 	    if (!saw_positive) {
