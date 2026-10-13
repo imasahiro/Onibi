@@ -744,7 +744,18 @@ class AbsenceOperatorTest < Minitest::Test
   end
 
   def test_absence_operator_restores_outer_quantifier_suffix_captures
-    regexp = Onibi::Regexp.new("(?~((a|b)+)c)")
+    pattern = "(?~((a|b)+)c)"
+    assert_absence_failed_probe_control(
+      label: "outer quantifier later bound failure",
+      pattern: pattern,
+      subject: "aac",
+      start: 0,
+      expected_values: ["aa", "a", nil],
+      expected_char_ranges: [[0, 2], [1, 2], [nil, nil]],
+      expected_byte_ranges: [[0, 2], [1, 2], [nil, nil]]
+    )
+
+    regexp = Onibi::Regexp.new(pattern)
 
     assert_equal ["a", nil, nil], regexp.match("a").to_a.first(3)
     assert_equal ["aa", "a", nil], regexp.match("aac").to_a.first(3)

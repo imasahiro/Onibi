@@ -643,3 +643,31 @@ in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-f
 the expected C source hash. Root verified source and evidence hashes.
 Root acceptance is recorded in `root-acceptance.json` under the relay unit.
 Remote publication remains pending.
+
+
+## Complete direct capture after a failed absence probe (2026-10-13)
+
+Status: ACCEPTED. Relay: `task-absence-complete-failed-capture-01`.
+At the active absence bound, a failed probe can close a direct capture. The
+DYNAMIC executor now updates changed complete direct pairs in the endpoint and
+scan state. It skips pushed captures. It keeps backreference registers,
+capture-event history, and endpoint order.
+
+The outer-quantifier E2E compares public MRI values and character and byte
+ranges. It checks DYNAMIC execution with zero fallback. The focused E2E passes
+with 1 test and 14 assertions. The full absence file reports 77 tests, 536
+assertions, and 4 known failures. The target failure is resolved. No new failure
+appears. The 12 added assertions check the differential result and route.
+
+The 27-row frozen matrix passes twice with identical output. All 26 prior
+correct rows stay unchanged. The separate `fixed_three` RangeError stays the
+same. All rows use DYNAMIC with zero fallback. The physical verifier passes
+29 tests and 100 assertions. The subprogram check passes 6 tests and 46
+assertions. The warning build passes with two known warnings in `gir.c` and
+`rseq.c`. Ruby syntax, RuboCop, clang-format, and `git diff --check` pass.
+The full project suite did not run.
+
+Exact commands, results, and hashes are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-complete-failed-capture-01/worker/implementation-01/`.
+Root verified the source and evidence hashes and accepted this repair.
+Remote publication remains pending.

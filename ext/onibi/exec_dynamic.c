@@ -2114,6 +2114,122 @@ onibi_dynamic_absence_publish_incomplete_direct_captures(
 	(VALUE)(uintptr_t)&publish));
 }
 
+typedef struct {
+    OnibiSemanticArena *arena;
+    OnibiSemanticState *endpoint;
+    OnibiSemanticState *scan_state;
+    const OnibiSemanticState *failed;
+    const OnibiSemanticState *initial;
+    const unsigned char *pushed_captures;
+    uint32_t capture_count;
+    uint32_t slots;
+    unsigned char *selected;
+    int changed;
+} OnibiDynamicAbsenceCompleteCapturePublish;
+
+/* A later failed probe can close a direct capture that an earlier positive
+ * probe left in the endpoint. Merge only changed complete direct pairs. */
+static VALUE
+onibi_dynamic_absence_publish_complete_direct_captures_body(VALUE opaque)
+{
+    OnibiDynamicAbsenceCompleteCapturePublish *publish =
+	(OnibiDynamicAbsenceCompleteCapturePublish *)(uintptr_t)opaque;
+    OnibiSemanticArena *arena = publish->arena;
+    publish->slots = publish->endpoint->semantic_captures.slot_count;
+    if (publish->endpoint->condition_captures.slot_count != publish->slots ||
+	publish->scan_state->semantic_captures.slot_count != publish->slots ||
+	publish->scan_state->condition_captures.slot_count != publish->slots ||
+	publish->failed->semantic_captures.slot_count != publish->slots ||
+	publish->failed->condition_captures.slot_count != publish->slots ||
+	publish->initial->condition_captures.slot_count != publish->slots ||
+	(uint64_t)publish->capture_count * 2U > publish->slots)
+	rb_raise(eRegexpError, "absence capture slot range is invalid");
+    if (publish->capture_count == 0) return Qfalse;
+
+    publish->selected = ruby_xcalloc(publish->capture_count, 1);
+    for (uint32_t capture = 0; capture < publish->capture_count; capture++) {
+	if (publish->pushed_captures != NULL &&
+	    publish->pushed_captures[capture])
+	    continue;
+	if (onibi_dynamic_capture_open_id(arena, publish->failed->tag_history,
+					  capture) == UINT32_MAX)
+	    continue;
+
+	uint32_t begin = capture * 2U;
+	uint32_t end = begin + 1U;
+	OnibiBytePos start = onibi_semantic_position_read(
+	    arena, publish->failed->condition_captures.root, begin, -1);
+	OnibiBytePos finish = onibi_semantic_position_read(
+	    arena, publish->failed->condition_captures.root, end, -1);
+	if (start < 0 || finish < 0) continue;
+	OnibiBytePos initial_start = onibi_semantic_position_read(
+	    arena, publish->initial->condition_captures.root, begin, -1);
+	OnibiBytePos initial_finish = onibi_semantic_position_read(
+	    arena, publish->initial->condition_captures.root, end, -1);
+	if (start == initial_start && finish == initial_finish) continue;
+	publish->selected[capture] = 1;
+    }
+
+    OnibiSemanticState *targets[2] = {publish->endpoint, publish->scan_state};
+    for (size_t target_index = 0; target_index < 2; target_index++) {
+	OnibiSemanticState *target = targets[target_index];
+	if (target_index == 1 && target == targets[0]) continue;
+	for (uint32_t capture = 0; capture < publish->capture_count;
+	     capture++) {
+	    if (!publish->selected[capture]) continue;
+	    uint32_t begin = capture * 2U;
+	    uint32_t end = begin + 1U;
+	    OnibiBytePos start = onibi_semantic_position_read(
+		arena, publish->failed->condition_captures.root, begin, -1);
+	    OnibiBytePos finish = onibi_semantic_position_read(
+		arena, publish->failed->condition_captures.root, end, -1);
+	    if (onibi_semantic_position_read(arena,
+					     target->condition_captures.root,
+					     begin, -1) == start &&
+		onibi_semantic_position_read(
+		    arena, target->condition_captures.root, end, -1) == finish)
+		continue;
+	    target->tag_history = onibi_semantic_tag_append(
+		arena, target->tag_history, begin, start);
+	    target->tag_history = onibi_semantic_tag_append(
+		arena, target->tag_history, end, finish);
+	    onibi_semantic_condition_capture_write(
+		arena, &target->condition_captures, begin, start);
+	    onibi_semantic_condition_capture_write(
+		arena, &target->condition_captures, end, finish);
+	    publish->changed = 1;
+	}
+    }
+    return publish->changed ? Qtrue : Qfalse;
+}
+
+static VALUE
+onibi_dynamic_absence_publish_complete_direct_captures_ensure(VALUE opaque)
+{
+    OnibiDynamicAbsenceCompleteCapturePublish *publish =
+	(OnibiDynamicAbsenceCompleteCapturePublish *)(uintptr_t)opaque;
+    ruby_xfree(publish->selected);
+    publish->selected = NULL;
+    return Qnil;
+}
+
+static int
+onibi_dynamic_absence_publish_complete_direct_captures(
+    OnibiSemanticArena *arena, OnibiSemanticState *endpoint,
+    OnibiSemanticState *scan_state, const OnibiSemanticState *failed,
+    const OnibiSemanticState *initial, const unsigned char *pushed_captures,
+    uint32_t capture_count)
+{
+    OnibiDynamicAbsenceCompleteCapturePublish publish = {
+	arena,		 endpoint,	scan_state, failed, initial,
+	pushed_captures, capture_count, 0,	    NULL,   0};
+    return RTEST(
+	rb_ensure(onibi_dynamic_absence_publish_complete_direct_captures_body,
+		  (VALUE)(uintptr_t)&publish,
+		  onibi_dynamic_absence_publish_complete_direct_captures_ensure,
+		  (VALUE)(uintptr_t)&publish));
+}
+
 static int
 onibi_dynamic_absence_has_active_nullable_repeat(
     const OnibiRSeqView *view, OnibiSemanticArena *arena,
@@ -4170,8 +4286,10 @@ onibi_dynamic_absence_consume_run(
 	    }
 	    else {
 		OnibiSemanticState bounded_failure = failed_result;
-		if (onibi_dynamic_absence_filter_incomplete_captures(
-			arena, &bounded_failure)) {
+		int has_incomplete =
+		    onibi_dynamic_absence_filter_incomplete_captures(
+			arena, &bounded_failure);
+		if (has_incomplete) {
 		    onibi_dynamic_absence_filter_capture_events(
 			arena, &bounded_failure,
 			trial_snapshot.capture_event_history, pushed_captures,
@@ -4207,6 +4325,18 @@ onibi_dynamic_absence_consume_run(
 			bounded_failure.capture_event_dependency;
 		    scan_state.order = bounded_failure.order;
 		    scan_state.reported_start = scan_reported_start;
+		}
+		else {
+		    OnibiSemanticState saved =
+			arena->absence_endpoints[endpoint_index].semantic;
+		    OnibiSemanticState scan_saved = scan_state;
+		    if (onibi_dynamic_absence_publish_complete_direct_captures(
+			    arena, &saved, &scan_saved, &bounded_failure, input,
+			    pushed_captures, view->header->capture_count)) {
+			arena->absence_endpoints[endpoint_index].semantic =
+			    saved;
+			scan_state = scan_saved;
+		    }
 		}
 	    }
 	}
