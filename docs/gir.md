@@ -1755,6 +1755,25 @@ failed probes. It adds path deltas in MRI priority order when failed frames
 leave the stack. A positive body match drops that probe's journal range. A
 failed probe can apply its range to the scan state and saved endpoints.
 
+A failed assertion keeps parent writes made before child entry. The assertion
+child restores its own checkpoint. Before the parent action rolls back, DYNAMIC
+copies the ordered write identities into a failure continuation. The
+continuation is a DYNAMIC stack frame. It follows sibling priority and adds
+only the parent path delta to the journal.
+
+A nested absence can reject an empty forbidden match at its start. It transfers
+the accepted body history to the parent log before it returns.
+
+Nested endpoint transfer visits each endpoint once. A pending-prefix scan
+charges each capture slot, including an unset slot. The scan reads the prior
+pair from the condition capture file. It appends output tag events as the
+result. These state files have separate owners.
+
+If a later positive probe leaves both condition slots unset, DYNAMIC carries
+the prior output pair forward. Set condition slots from the positive probe take
+priority. The carry changes output tags and condition values. It does not
+change semantic backreference registers or pushed capture rollback.
+
 A direct start clears both output slots. It sets the condition start and clears
 the condition end. It does not publish a half pair. A later direct close
 publishes a complete pair only when a condition start is set. Pushed captures
@@ -2426,8 +2445,8 @@ witness pairs.
 
 RSeq verifies the `LOOP` and `EXIT` roles. The runtime does not infer missing
 relations from graph cycles. Journal growth, path walks, comparisons, marker
-lookups, transfers, and replay charge the existing work budget. The absence
-ensure block frees the journal storage.
+lookups, transfers, failure-prefix copies, and replay charge the existing work
+budget. The absence ensure block frees the journal and pending state.
 
 All sections must have four-byte alignment.
 

@@ -314,6 +314,55 @@ class AbsenceOperatorTest < Minitest::Test
     assert_operator info[:work_charged], :>=, 17 * endpoint_count
   end
 
+  def test_nested_absence_endpoint_transfer_work_grows_linearly
+    pattern = "(?~(?:(?!(?=\\A(?~((z)|a))x))x))"
+    endpoint_counts = [32, 64]
+    work_by_endpoint_count = endpoint_counts.to_h do |endpoint_count|
+      subject = "#{"b" * (2 * endpoint_count)}z!"
+      expected = ::Regexp.new(pattern).match(subject)
+      regexp = Onibi::Regexp.new(pattern)
+      actual = regexp.match(subject)
+
+      assert_equal expected.to_a, actual.to_a, endpoint_count
+      assert_equal absence_match_snapshot(expected),
+                   absence_match_snapshot(actual), endpoint_count
+
+      info = regexp.send(:__onibi_diagnostics__, subject)
+      assert_equal 2, info[:exec_kind]
+      assert_operator info[:dynamic], :>, 0
+      assert_equal 0, info[:fallback]
+      assert_equal 1, info[:status]
+      assert_operator info[:tag_events], :>=, endpoint_count
+      [endpoint_count, info[:work_charged]]
+    end
+
+    assert_operator work_by_endpoint_count.fetch(64), :<=,
+                    3 * work_by_endpoint_count.fetch(32),
+                    "nested endpoint transfer work must grow linearly"
+  end
+
+  def test_absence_sparse_pending_capture_scan_charges_unset_slots
+    unused_capture_count = 256
+    suffix = Array.new(unused_capture_count) { "(?!(?:q(a)))" }.join
+    pattern = "(?~(?:b(?~(?:(a?)(?=a)))))#{suffix}"
+    subject = "bab"
+    expected = ::Regexp.new(pattern).match(subject)
+    regexp = Onibi::Regexp.new(pattern)
+    actual = regexp.match(subject)
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal absence_match_snapshot(expected),
+                 absence_match_snapshot(actual)
+
+    info = regexp.send(:__onibi_diagnostics__, subject)
+    assert_equal 2, info[:exec_kind]
+    assert_operator info[:dynamic], :>, 0
+    assert_equal 0, info[:fallback]
+    assert_equal 1, info[:status]
+    assert_operator info[:work_charged], :>=, 13_000,
+                    "sparse pending scan work must include unset slots"
+  end
+
   def test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix
     assert_absence_failed_probe_control(
       label: "later positive probe capture reaches an earlier endpoint",
@@ -440,6 +489,73 @@ class AbsenceOperatorTest < Minitest::Test
       assert_equal expected.to_a, actual.to_a, input
       assert_equal expected.offset(0), actual.offset(0), input
     end
+  end
+
+  def test_absence_operator_keeps_parent_capture_before_a_failed_negative_assertion
+    assert_absence_failed_probe_control(
+      label: "parent capture before a failing negative assertion",
+      pattern: "(?~(?:(a?)(?!b)))",
+      subject: "ab",
+      start: 0,
+      expected_values: ["b", ""],
+      expected_char_ranges: [[1, 2], [1, 1]],
+      expected_byte_ranges: [[1, 2], [1, 1]]
+    )
+  end
+
+  def test_absence_operator_discards_capture_writes_from_failed_assertion_children
+    cases = [
+      [
+        "failed positive assertion child",
+        "(?~(?:(?=(a)z)))",
+        "ab",
+        ["ab", nil],
+        [[0, 2], [nil, nil]]
+      ],
+      [
+        "failed negative assertion child",
+        "(?~(?:(?!(a))))",
+        "a",
+        ["a", nil],
+        [[0, 1], [nil, nil]]
+      ]
+    ]
+
+    cases.each do |label, pattern, subject, expected_values, ranges|
+      assert_absence_failed_probe_control(
+        label: label,
+        pattern: pattern,
+        subject: subject,
+        start: 0,
+        expected_values: expected_values,
+        expected_char_ranges: ranges,
+        expected_byte_ranges: ranges
+      )
+    end
+  end
+
+  def test_absence_operator_rolls_back_pushed_capture_before_a_failed_assertion
+    assert_absence_failed_probe_control(
+      label: "pushed capture before a failing positive assertion",
+      pattern: "(?~(?:(a)+(?=z)))",
+      subject: "aax",
+      start: 0,
+      expected_values: ["aax", nil],
+      expected_char_ranges: [[0, 3], [nil, nil]],
+      expected_byte_ranges: [[0, 3], [nil, nil]]
+    )
+  end
+
+  def test_nested_absence_keeps_parent_capture_before_a_failed_assertion
+    assert_absence_failed_probe_control(
+      label: "nested absence capture before a failing positive assertion",
+      pattern: "(?~(?:b(?~(?:(a?)(?=a)))))",
+      subject: "bab",
+      start: 0,
+      expected_values: ["ba", ""],
+      expected_char_ranges: [[0, 2], [1, 1]],
+      expected_byte_ranges: [[0, 2], [1, 1]]
+    )
   end
 
   def test_absence_operator_clears_empty_capture_at_input_end

@@ -1,7 +1,9 @@
 #include "onibi_encoding_internal.h"
 #include "onibi_exec_internal.h"
 #include "onibi_rseq_internal.h"
-#include <stdio.h>
+
+/* Failure continuations use this reserved value in the cycle-root slot. */
+#define ONIBI_DYNAMIC_FAILURE_FRAME_MARKER (UINT32_MAX - UINT32_C(1))
 
 typedef struct OnibiDynamicAbsenceCaptureWriteLog
     OnibiDynamicAbsenceCaptureWriteLog;
@@ -1702,6 +1704,8 @@ onibi_dynamic_cycle_seen(OnibiSemanticArena *arena,
 	if (onibi_dynamic_thread_key_equal(arena, &node->key, key)) return 1;
 	cursor = node->parent;
     }
+    if (arena->cycle_count >= (size_t)ONIBI_DYNAMIC_FAILURE_FRAME_MARKER)
+	rb_memerror();
     arena->cycles = onibi_semantic_arena_reserve(
 	arena->cycles, &arena->cycle_capacity, arena->cycle_count,
 	sizeof(*arena->cycles));
@@ -1776,14 +1780,16 @@ onibi_dynamic_cycle_prune_redundant(OnibiSemanticArena *arena, size_t base)
 {
     int have_noncycle = 0;
     for (size_t i = base; i < arena->frame_count; i++)
-	if (!onibi_dynamic_cycle_redundant(arena, &arena->frames[i])) {
+	if (arena->frames[i].cycle_root != ONIBI_DYNAMIC_FAILURE_FRAME_MARKER &&
+	    !onibi_dynamic_cycle_redundant(arena, &arena->frames[i])) {
 	    have_noncycle = 1;
 	    break;
 	}
     if (!have_noncycle) return;
     size_t write = base;
     for (size_t i = base; i < arena->frame_count; i++)
-	if (!onibi_dynamic_cycle_redundant(arena, &arena->frames[i]))
+	if (arena->frames[i].cycle_root == ONIBI_DYNAMIC_FAILURE_FRAME_MARKER ||
+	    !onibi_dynamic_cycle_redundant(arena, &arena->frames[i]))
 	    arena->frames[write++] = arena->frames[i];
     arena->frame_count = write;
 }
@@ -1926,7 +1932,8 @@ static OnibiActionResult onibi_tagged_assert_subprogram(
 static OnibiActionResult onibi_dynamic_assert_subprogram(
     OnibiExecCtx *ctx, const OnibiRAction *action, OnibiBytePos position,
     const OnibiSemanticState *predecessor, OnibiSemanticState *successor,
-    OnibiDynamicAbsenceCaptureWriteLog *capture_writes);
+    OnibiDynamicAbsenceCaptureWriteLog *capture_writes,
+    int capture_failure_owner);
 static int onibi_dynamic_absence_consume(
     VALUE rseq, const OnibiRSeqView *view, VALUE str, OnibiBytePos position,
     OnibiBytePos previous_position, OnibiBytePos active_bound,
@@ -1934,7 +1941,8 @@ static int onibi_dynamic_absence_consume(
     const OnibiSemanticState *input, OnibiSemanticArena *arena,
     unsigned char *class_stack, size_t class_stack_capacity, OnibiExecCtx *ctx,
     size_t *endpoint_base, size_t *endpoint_count,
-    OnibiDynamicAbsenceCaptureWriteLog *parent_capture_writes);
+    OnibiDynamicAbsenceCaptureWriteLog *parent_capture_writes,
+    int parent_capture_failure_owner);
 typedef enum {
     ONIBI_ABSENCE_CAPTURE_WRITE_NONE = 0,
     ONIBI_ABSENCE_CAPTURE_WRITE_ACTION = 1,
@@ -1965,11 +1973,16 @@ typedef struct {
     uint32_t destination;
     uint32_t next;
 } OnibiDynamicAbsenceRelationSuffix;
+typedef struct {
+    size_t path_begin;
+    size_t path_count;
+} OnibiDynamicAbsenceFailurePrefix;
 struct OnibiDynamicAbsenceCaptureWriteLog {
     VALUE subject;
     unsigned char *class_stack;
     size_t class_stack_capacity;
     OnibiDynamicAbsenceCaptureWriteLog *registry_parent;
+    unsigned char registry_parent_failure_owner;
     OnibiDynamicAbsenceCaptureWrite *events;
     size_t event_capacity;
     OnibiDynamicAbsenceCaptureWrite *journal;
@@ -1981,6 +1994,14 @@ struct OnibiDynamicAbsenceCaptureWriteLog {
     OnibiDynamicAbsenceCaptureWriteIdentity *previous_path;
     size_t previous_path_capacity;
     size_t previous_path_count;
+    OnibiDynamicAbsenceCaptureWriteIdentity *failure_paths;
+    size_t failure_path_capacity;
+    size_t failure_path_count;
+    OnibiDynamicAbsenceFailurePrefix *failure_prefixes;
+    size_t failure_prefix_capacity;
+    size_t failure_prefix_count;
+    uint32_t capture_count;
+    unsigned char *pending_failure_captures;
     uint64_t base_history_identity;
     uint32_t *relation_suffix_heads;
     OnibiDynamicAbsenceRelationSuffix *relation_suffixes;
@@ -2522,6 +2543,19 @@ onibi_dynamic_absence_capture_write_identity_equal(
     return identity->logical_id == event->logical_id;
 }
 
+static int
+onibi_dynamic_absence_capture_write_identity_equal_identity(
+    const OnibiDynamicAbsenceCaptureWriteIdentity *left,
+    const OnibiDynamicAbsenceCaptureWriteIdentity *right)
+{
+    if (left->kind != right->kind || left->slot != right->slot ||
+	left->flags != right->flags || left->position != right->position)
+	return 0;
+    if (left->kind == ONIBI_ABSENCE_CAPTURE_WRITE_ACTION)
+	return left->action_index == right->action_index;
+    return left->logical_id == right->logical_id;
+}
+
 static void
 onibi_dynamic_absence_capture_write_clone(
     OnibiDynamicAbsenceCaptureWriteLog *log, OnibiSemanticArena *arena,
@@ -2594,6 +2628,8 @@ onibi_dynamic_absence_capture_write_log_reset(
     (void)ctx;
     log->path_count = 0;
     log->previous_path_count = 0;
+    log->failure_path_count = 0;
+    log->failure_prefix_count = 0;
 }
 
 static int
@@ -2684,6 +2720,221 @@ onibi_dynamic_absence_capture_write_path(
     }
     log->previous_path_count = count;
     return 1;
+}
+
+static uint32_t
+onibi_dynamic_absence_capture_failure_prefix_capture(
+    OnibiSemanticArena *arena, OnibiDynamicAbsenceCaptureWriteLog *log,
+    const OnibiSemanticState *state, OnibiExecCtx *ctx)
+{
+    size_t count = 0, traversed = 0;
+    int found_base = log->base_history_identity == 0;
+    for (OnibiTagEventId id = state->tag_history; id != UINT32_MAX;
+	 id = arena->tags[id].parent) {
+	if (id >= arena->tag_count || traversed++ >= arena->tag_count)
+	    rb_raise(eRegexpError, "absence failure history is invalid");
+	onibi_exec_charge_work(ctx, 1);
+	if (log->base_history_identity != 0 &&
+	    arena->tags[id].logical_id == log->base_history_identity) {
+	    found_base = 1;
+	    break;
+	}
+	if (count == log->path_capacity) {
+	    size_t capacity =
+		log->path_capacity == 0 ? 16U : log->path_capacity;
+	    if (capacity > SIZE_MAX / 2U ||
+		capacity * 2U > SIZE_MAX / sizeof(*log->path))
+		rb_memerror();
+	    capacity *= 2U;
+	    onibi_exec_charge_work(ctx, capacity - log->path_capacity);
+	    log->path = ruby_xrealloc(log->path, capacity * sizeof(*log->path));
+	    log->path_capacity = capacity;
+	}
+	log->path[count++] = id;
+    }
+    if (!found_base) rb_raise(eRegexpError, "absence failure base is missing");
+    if (count == 0) return UINT32_MAX;
+    if (log->failure_prefix_count >= UINT32_MAX ||
+	log->failure_prefix_count == SIZE_MAX)
+	rb_memerror();
+    if (log->failure_prefix_count == log->failure_prefix_capacity) {
+	size_t capacity = log->failure_prefix_capacity == 0
+			      ? 8U
+			      : log->failure_prefix_capacity;
+	while (capacity <= log->failure_prefix_count) {
+	    if (capacity > SIZE_MAX / 2U) rb_memerror();
+	    capacity *= 2U;
+	}
+	if (capacity > SIZE_MAX / sizeof(*log->failure_prefixes)) rb_memerror();
+	onibi_exec_charge_work(ctx, capacity - log->failure_prefix_capacity);
+	log->failure_prefixes = ruby_xrealloc(
+	    log->failure_prefixes, capacity * sizeof(*log->failure_prefixes));
+	log->failure_prefix_capacity = capacity;
+    }
+    if (count > SIZE_MAX - log->failure_path_count) rb_memerror();
+    size_t required = log->failure_path_count + count;
+    if (required > log->failure_path_capacity) {
+	size_t capacity =
+	    log->failure_path_capacity == 0 ? 16U : log->failure_path_capacity;
+	while (capacity < required) {
+	    if (capacity > SIZE_MAX / 2U) rb_memerror();
+	    capacity *= 2U;
+	}
+	if (capacity > SIZE_MAX / sizeof(*log->failure_paths)) rb_memerror();
+	onibi_exec_charge_work(ctx, capacity - log->failure_path_capacity);
+	log->failure_paths = ruby_xrealloc(
+	    log->failure_paths, capacity * sizeof(*log->failure_paths));
+	log->failure_path_capacity = capacity;
+    }
+    size_t prefix_id = log->failure_prefix_count;
+    size_t path_begin = log->failure_path_count;
+    for (size_t i = count; i > 0; i--) {
+	OnibiTagEventId id = log->path[i - 1U];
+	const OnibiSemanticTagEvent *tag = &arena->tags[id];
+	const OnibiDynamicAbsenceCaptureWrite *event =
+	    onibi_dynamic_absence_capture_write_event_find(
+		log, arena, id, tag->logical_id, ctx);
+	if (event == NULL)
+	    rb_raise(eRegexpError, "absence failure provenance is missing");
+	onibi_exec_charge_work(ctx, 1);
+	log->failure_paths[log->failure_path_count++] =
+	    (OnibiDynamicAbsenceCaptureWriteIdentity){
+		event->logical_id, event->action_index, event->slot,
+		event->flags,	   event->kind,		event->position};
+    }
+    log->failure_prefixes[prefix_id] =
+	(OnibiDynamicAbsenceFailurePrefix){path_begin, count};
+    log->failure_prefix_count++;
+    return (uint32_t)prefix_id;
+}
+
+static void
+onibi_dynamic_absence_capture_failure_prefix_publish(
+    OnibiDynamicAbsenceCaptureWriteLog *log, uint32_t prefix_id,
+    OnibiExecCtx *ctx)
+{
+    if (prefix_id >= log->failure_prefix_count)
+	rb_raise(eRegexpError, "absence failure prefix is invalid");
+    OnibiDynamicAbsenceFailurePrefix prefix = log->failure_prefixes[prefix_id];
+    if (prefix.path_begin > log->failure_path_count ||
+	prefix.path_count > log->failure_path_count - prefix.path_begin)
+	rb_raise(eRegexpError, "absence failure path is invalid");
+    const OnibiDynamicAbsenceCaptureWriteIdentity *path =
+	log->failure_paths + prefix.path_begin;
+    size_t common = 0;
+    while (common < log->previous_path_count && common < prefix.path_count) {
+	onibi_exec_charge_work(ctx, 1);
+	if (!onibi_dynamic_absence_capture_write_identity_equal_identity(
+		log->previous_path + common, path + common))
+	    break;
+	common++;
+    }
+    for (size_t i = common; i < prefix.path_count; i++) {
+	const OnibiDynamicAbsenceCaptureWriteIdentity *identity = &path[i];
+	if (log->journal_count == SIZE_MAX) rb_memerror();
+	onibi_dynamic_absence_capture_write_journal_reserve(
+	    log, log->journal_count + 1U, ctx);
+	onibi_exec_charge_work(ctx, 1);
+	log->journal[log->journal_count++] = (OnibiDynamicAbsenceCaptureWrite){
+	    .tag_id = UINT32_MAX,
+	    .logical_id = identity->logical_id,
+	    .source_state = UINT32_MAX,
+	    .edge_index = UINT32_MAX,
+	    .destination = UINT32_MAX,
+	    .action_index = identity->action_index,
+	    .slot = identity->slot,
+	    .flags = identity->flags,
+	    .kind = identity->kind,
+	    .valid = 1,
+	    .position = identity->position};
+    }
+    for (size_t i = 0; i < prefix.path_count; i++) {
+	uint32_t capture = path[i].slot / 2U;
+	if (capture >= log->capture_count ||
+	    log->pending_failure_captures == NULL)
+	    rb_raise(eRegexpError, "absence failure capture slot is invalid");
+	onibi_exec_charge_work(ctx, 1);
+	log->pending_failure_captures[capture] = 1;
+    }
+    if (prefix.path_count > log->previous_path_capacity) {
+	if (prefix.path_count > SIZE_MAX / sizeof(*log->previous_path))
+	    rb_memerror();
+	onibi_exec_charge_work(ctx,
+			       prefix.path_count - log->previous_path_capacity);
+	log->previous_path =
+	    ruby_xrealloc(log->previous_path,
+			  prefix.path_count * sizeof(*log->previous_path));
+	log->previous_path_capacity = prefix.path_count;
+    }
+    for (size_t i = 0; i < prefix.path_count; i++) {
+	onibi_exec_charge_work(ctx, 1);
+	log->previous_path[i] = path[i];
+    }
+    log->previous_path_count = prefix.path_count;
+}
+
+static void
+onibi_dynamic_absence_capture_failure_prefix_merge_pending(
+    OnibiSemanticArena *arena, OnibiDynamicAbsenceCaptureWriteLog *log,
+    const OnibiSemanticState *previous, OnibiSemanticState *current,
+    const unsigned char *pushed_captures, OnibiExecCtx *ctx)
+{
+    uint32_t slots = current->condition_captures.slot_count;
+    if (previous->condition_captures.slot_count != slots ||
+	(uint64_t)log->capture_count * 2U > slots)
+	rb_raise(eRegexpError, "absence pending capture state is invalid");
+    for (uint32_t capture = 0; capture < log->capture_count; capture++) {
+	onibi_exec_charge_work(ctx, 1);
+	int pending = log->pending_failure_captures[capture] != 0;
+	if (!pending) continue;
+	log->pending_failure_captures[capture] = 0;
+	if (pushed_captures != NULL && pushed_captures[capture]) continue;
+	uint32_t begin_slot = capture * 2U;
+	uint32_t end_slot = begin_slot + 1U;
+	OnibiBytePos current_begin = onibi_semantic_position_read(
+	    arena, current->condition_captures.root, begin_slot, -1);
+	OnibiBytePos current_end = onibi_semantic_position_read(
+	    arena, current->condition_captures.root, end_slot, -1);
+	if (current_begin >= 0 || current_end >= 0) continue;
+	OnibiBytePos previous_begin = onibi_semantic_position_read(
+	    arena, previous->condition_captures.root, begin_slot, -1);
+	OnibiBytePos previous_end = onibi_semantic_position_read(
+	    arena, previous->condition_captures.root, end_slot, -1);
+	if (previous_begin < 0 || previous_end < previous_begin) continue;
+	onibi_exec_charge_work(ctx, 1);
+	current->tag_history = onibi_semantic_tag_append(
+	    arena, current->tag_history, begin_slot, previous_begin);
+	onibi_dynamic_absence_capture_write_publish(
+	    log, arena, current->tag_history, (uint16_t)begin_slot,
+	    previous_begin, ctx);
+	onibi_exec_charge_work(ctx, 1);
+	current->tag_history = onibi_semantic_tag_append(
+	    arena, current->tag_history, end_slot, previous_end);
+	onibi_dynamic_absence_capture_write_publish(
+	    log, arena, current->tag_history, (uint16_t)end_slot, previous_end,
+	    ctx);
+	onibi_semantic_condition_capture_write(
+	    arena, &current->condition_captures, begin_slot, previous_begin);
+	onibi_semantic_condition_capture_write(
+	    arena, &current->condition_captures, end_slot, previous_end);
+    }
+}
+
+static void
+onibi_dynamic_absence_capture_failure_prefix_queue(
+    OnibiSemanticArena *arena, OnibiDynamicAbsenceCaptureWriteLog *log,
+    const OnibiSemanticState *state, OnibiBytePos position,
+    OnibiBytePos previous_position, OnibiExecCtx *ctx)
+{
+    uint32_t prefix_id = onibi_dynamic_absence_capture_failure_prefix_capture(
+	arena, log, state, ctx);
+    if (prefix_id == UINT32_MAX) return;
+    OnibiDynamicFrame continuation = {0};
+    continuation.state = prefix_id;
+    continuation.position = position;
+    continuation.cycle_root = ONIBI_DYNAMIC_FAILURE_FRAME_MARKER;
+    continuation.previous_position = previous_position;
+    onibi_dynamic_stack_push(arena, continuation);
 }
 
 static void
@@ -3217,6 +3468,7 @@ onibi_dynamic_absence_capture_journal_publish(
     onibi_dynamic_absence_filter_capture_events(arena, &published,
 						before->capture_event_history,
 						pushed_captures, capture_count);
+
     if (!onibi_dynamic_absence_capture_journal_apply(
 	    view, arena, &published, before, log, pushed_captures,
 	    capture_count, journal_begin, journal_end, failed_state_id,
@@ -3309,7 +3561,8 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 			   const OnibiSemanticState *predecessor,
 			   OnibiSemanticState *successor, OnibiExecCtx *ctx,
 			   uint32_t source_state, uint32_t edge_index,
-			   OnibiDynamicAbsenceCaptureWriteLog *capture_writes)
+			   OnibiDynamicAbsenceCaptureWriteLog *capture_writes,
+			   int capture_failure_owner)
 {
     OnibiSemanticCheckpoint checkpoint = onibi_semantic_checkpoint_save(arena);
     OnibiSemanticState working = *predecessor;
@@ -3467,7 +3720,7 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 			ctx->program->exec_kind == ONIBI_EXEC_DYNAMIC
 		    ? onibi_dynamic_assert_subprogram(
 			  ctx, action, pos, &working, &assertion_state,
-			  capture_writes)
+			  capture_writes, capture_failure_owner)
 		    : onibi_tagged_assert_subprogram(ctx, action, pos, &working,
 						     &assertion_state);
 	    if (assertion_result == ONIBI_ACTION_FAIL) goto fail;
@@ -3605,8 +3858,8 @@ onibi_assertion_event_diagnostic(OnibiAssertionDiagnosticKind kind)
     if (parent_failure) {
 	diagnostic.status = onibi_apply_action_program(
 	    &view, &edges[1], subject, position, 0, encoding, ctx.encoding_mode,
-	    arena, &predecessor, &successor, &ctx, UINT32_MAX, UINT32_MAX,
-	    NULL);
+	    arena, &predecessor, &successor, &ctx, UINT32_MAX, UINT32_MAX, NULL,
+	    0);
     }
     else {
 	diagnostic.status = onibi_tagged_assert_subprogram(
@@ -3669,7 +3922,7 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	OnibiSemanticState successor = predecessor;
 	OnibiActionResult status = onibi_apply_action_program(
 	    &view, &edge, subject, 2, 0, encoding, ONIBI_ENC_ASCII_7BIT, &arena,
-	    &predecessor, &successor, NULL, UINT32_MAX, UINT32_MAX, NULL);
+	    &predecessor, &successor, NULL, UINT32_MAX, UINT32_MAX, NULL, 0);
 	rb_hash_aset(result, ID2SYM(rb_intern("success")),
 		     status == ONIBI_ACTION_SUCCESS ? Qtrue : Qfalse);
 	rb_hash_aset(result, ID2SYM(rb_intern("predecessor_reported_start")),
@@ -3981,10 +4234,12 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	OnibiSemanticState second = predecessor;
 	OnibiActionResult first_status = onibi_apply_action_program(
 	    &view, &edges[0], subject, 2, 0, encoding, ONIBI_ENC_ASCII_7BIT,
-	    &arena, &predecessor, &first, NULL, UINT32_MAX, UINT32_MAX, NULL);
+	    &arena, &predecessor, &first, NULL, UINT32_MAX, UINT32_MAX, NULL,
+	    0);
 	OnibiActionResult second_status = onibi_apply_action_program(
 	    &view, &edges[1], subject, 2, 0, encoding, ONIBI_ENC_ASCII_7BIT,
-	    &arena, &predecessor, &second, NULL, UINT32_MAX, UINT32_MAX, NULL);
+	    &arena, &predecessor, &second, NULL, UINT32_MAX, UINT32_MAX, NULL,
+	    0);
 	OnibiFrontier frontier;
 	memset(&frontier, 0, sizeof(frontier));
 	onibi_tagged_frontier_reset(&frontier, 8);
@@ -3998,11 +4253,12 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	OnibiSemanticState failed = predecessor;
 	OnibiActionResult failed_status = onibi_apply_action_program(
 	    &view, &edges[2], subject, 2, 0, encoding, ONIBI_ENC_ASCII_7BIT,
-	    &arena, &predecessor, &failed, NULL, UINT32_MAX, UINT32_MAX, NULL);
+	    &arena, &predecessor, &failed, NULL, UINT32_MAX, UINT32_MAX, NULL,
+	    0);
 	OnibiSemanticState repeated = first;
 	OnibiActionResult repeated_status = onibi_apply_action_program(
 	    &view, &edges[3], subject, 2, 0, encoding, ONIBI_ENC_ASCII_7BIT,
-	    &arena, &first, &repeated, NULL, UINT32_MAX, UINT32_MAX, NULL);
+	    &arena, &first, &repeated, NULL, UINT32_MAX, UINT32_MAX, NULL, 0);
 
 	rb_hash_aset(result, ID2SYM(rb_intern("action_success")),
 		     first_status == ONIBI_ACTION_SUCCESS &&
@@ -4093,7 +4349,7 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	size_t checkpoint = arena.register_count;
 	OnibiActionResult status = onibi_apply_action_program(
 	    &view, &edge, subject, 2, 0, encoding, ONIBI_ENC_ASCII_7BIT, &arena,
-	    &first, &failed, NULL, UINT32_MAX, UINT32_MAX, NULL);
+	    &first, &failed, NULL, UINT32_MAX, UINT32_MAX, NULL, 0);
 	rb_hash_aset(result, ID2SYM(rb_intern("failed_transaction")),
 		     status == ONIBI_ACTION_FAIL ? Qtrue : Qfalse);
 	rb_hash_aset(result, ID2SYM(rb_intern("capture_event_rollback")),
@@ -4406,6 +4662,11 @@ onibi_rseq_dynamic_run(
 	onibi_semantic_live_captures_prepare(semantic_arena, view);
     }
     const OnibiRSeqHeader *header = view->header;
+    int capture_failure_owner =
+	capture_writes != NULL && local_subprogram_id != UINT32_MAX &&
+	local_subprogram_id == capture_writes->owner_subprogram_id &&
+	local_subprogram_id < header->subprogram_count &&
+	view->subprograms[local_subprogram_id].kind == ONIBI_SUBPROGRAM_ABSENCE;
     if (header->capture_count > UINT32_MAX / 2U) return -1;
     if (start < 0 || start > active_bound || active_bound < 0 ||
 	active_bound > RSTRING_LEN(str) || initial_previous_position < 0 ||
@@ -4490,10 +4751,10 @@ onibi_rseq_dynamic_run(
 	const OnibiREdge *edge = &edges[entry_edge_base + (i - 1U)];
 	uint32_t edge_index = entry_edge_base + (i - 1U);
 	OnibiSemanticState branch;
-	if (onibi_apply_action_program(view, edge, str, start, search_origin,
-				       encoding, encoding_mode, arena, &initial,
-				       &branch, ctx, UINT32_MAX, edge_index,
-				       capture_writes) == ONIBI_ACTION_FAIL)
+	if (onibi_apply_action_program(
+		view, edge, str, start, search_origin, encoding, encoding_mode,
+		arena, &initial, &branch, ctx, UINT32_MAX, edge_index,
+		capture_writes, capture_failure_owner) == ONIBI_ACTION_FAIL)
 	    continue;
 	if (edge->destination == ONIBI_ACCEPT_STATE &&
 	    (required_end < 0 || start == required_end)) {
@@ -4517,6 +4778,13 @@ onibi_rseq_dynamic_run(
 	    ctx->current_previous_position = frame.previous_position;
 	}
 	onibi_exec_charge_work(ctx, 1);
+	if (frame.cycle_root == ONIBI_DYNAMIC_FAILURE_FRAME_MARKER) {
+	    if (!capture_failure_owner || capture_writes == NULL)
+		ONIBI_DYNAMIC_RUN_RETURN(-1);
+	    onibi_dynamic_absence_capture_failure_prefix_publish(
+		capture_writes, frame.state, ctx);
+	    continue;
+	}
 	if (frame.state == ONIBI_ACCEPT_STATE) {
 	    if (force_exhaustion && required_end >= 0 &&
 		frame.position == required_end)
@@ -4626,7 +4894,8 @@ onibi_rseq_dynamic_run(
 	    if (onibi_apply_action_program(
 		    view, edge, str, frame.position, search_origin, encoding,
 		    encoding_mode, arena, &returned, &branch, ctx, UINT32_MAX,
-		    edge_index, capture_writes) == ONIBI_ACTION_FAIL)
+		    edge_index, capture_writes,
+		    capture_failure_owner) == ONIBI_ACTION_FAIL)
 		continue;
 	    if (edge->destination == ONIBI_ACCEPT_STATE &&
 		(required_end < 0 || frame.position == required_end)) {
@@ -4665,7 +4934,8 @@ onibi_rseq_dynamic_run(
 			    encoding, encoding_mode, arena, &branch, &branch,
 			    ctx, UINT32_MAX,
 			    subprogram->entry_edge_base + (s - 1U),
-			    capture_writes) == ONIBI_ACTION_FAIL)
+			    capture_writes,
+			    capture_failure_owner) == ONIBI_ACTION_FAIL)
 			continue;
 		    OnibiCallFrame call = {
 			state->payload, state->edge_base + (e - 1U),
@@ -4698,7 +4968,7 @@ onibi_rseq_dynamic_run(
 		rseq, view, str, frame.position, frame.previous_position,
 		active_bound, search_origin, state->payload, &frame.semantic,
 		arena, class_stack, class_stack_capacity, ctx, &endpoint_base,
-		&endpoint_count, capture_writes);
+		&endpoint_count, capture_writes, capture_failure_owner);
 	    if (absence_status < 0) ONIBI_DYNAMIC_RUN_RETURN(-1);
 	    if (absence_status == 0) continue;
 	    if (endpoint_base !=
@@ -4742,7 +5012,8 @@ onibi_rseq_dynamic_run(
 			    view, edge, str, candidate, search_origin, encoding,
 			    encoding_mode, arena, edge_input, &branch, ctx,
 			    frame.state, state->edge_base + (e - 1U),
-			    capture_writes) == ONIBI_ACTION_FAIL)
+			    capture_writes,
+			    capture_failure_owner) == ONIBI_ACTION_FAIL)
 			continue;
 		    if (edge->destination == ONIBI_ACCEPT_STATE) {
 			onibi_dynamic_stack_push(
@@ -4865,8 +5136,8 @@ onibi_rseq_dynamic_run(
 	    if (onibi_apply_action_program(
 		    view, edge, str, next_position, search_origin, encoding,
 		    encoding_mode, arena, &transition_semantic, &branch, ctx,
-		    frame.state, edge_index,
-		    capture_writes) == ONIBI_ACTION_FAIL)
+		    frame.state, edge_index, capture_writes,
+		    capture_failure_owner) == ONIBI_ACTION_FAIL)
 		continue;
 	    if (edge->destination == ONIBI_ACCEPT_STATE) {
 		if (required_end < 0 || next_position == required_end) {
@@ -5025,6 +5296,15 @@ onibi_dynamic_absence_consume_run(
 	    capture_writes->journal_count = journal_begin;
 	    if (body_end == probe && probe == absent_start) {
 		if (at_outer_end) break;
+		if (capture_writes->registry_parent != NULL &&
+		    capture_writes->registry_parent_failure_owner) {
+		    onibi_dynamic_absence_capture_write_transfer_history(
+			capture_writes->registry_parent, capture_writes, arena,
+			body_result.tag_history, ctx);
+		    onibi_dynamic_absence_capture_failure_prefix_queue(
+			arena, capture_writes->registry_parent, &body_result,
+			probe, sprev, ctx);
+		}
 		arena->absence_endpoint_count = base;
 		return 0;
 	    }
@@ -5059,6 +5339,9 @@ onibi_dynamic_absence_consume_run(
 	    onibi_dynamic_absence_restore_pushed_capture_files(
 		arena, &body_result, &trial_snapshot, pushed_captures,
 		view->header->capture_count, 0);
+	    onibi_dynamic_absence_capture_failure_prefix_merge_pending(
+		arena, capture_writes, &scan_state, &body_result,
+		pushed_captures, ctx);
 	    /* The last positive probe sets output captures for all earlier
 	     * continuations. Keep each endpoint's pre-body registers for
 	     * backreferences. */
@@ -5200,6 +5483,12 @@ onibi_dynamic_absence_consume_body(VALUE opaque)
 {
     OnibiDynamicAbsenceCall *call =
 	(OnibiDynamicAbsenceCall *)(uintptr_t)opaque;
+    call->capture_writes.capture_count = call->view->header->capture_count;
+    if (call->capture_writes.capture_count != 0) {
+	onibi_exec_charge_work(call->ctx, call->capture_writes.capture_count);
+	call->capture_writes.pending_failure_captures =
+	    ruby_xcalloc(call->capture_writes.capture_count, 1);
+    }
     call->result = onibi_dynamic_absence_consume_run(
 	call->rseq, call->view, call->str, call->position,
 	call->previous_position, call->active_bound, call->search_origin,
@@ -5219,6 +5508,9 @@ onibi_dynamic_absence_consume_ensure(VALUE opaque)
     ruby_xfree(call->capture_writes.journal);
     ruby_xfree(call->capture_writes.path);
     ruby_xfree(call->capture_writes.previous_path);
+    ruby_xfree(call->capture_writes.failure_paths);
+    ruby_xfree(call->capture_writes.failure_prefixes);
+    ruby_xfree(call->capture_writes.pending_failure_captures);
     ruby_xfree(call->capture_writes.relation_suffix_heads);
     ruby_xfree(call->capture_writes.relation_suffixes);
     call->pushed_captures = NULL;
@@ -5226,6 +5518,9 @@ onibi_dynamic_absence_consume_ensure(VALUE opaque)
     call->capture_writes.journal = NULL;
     call->capture_writes.path = NULL;
     call->capture_writes.previous_path = NULL;
+    call->capture_writes.failure_paths = NULL;
+    call->capture_writes.failure_prefixes = NULL;
+    call->capture_writes.pending_failure_captures = NULL;
     call->capture_writes.relation_suffix_heads = NULL;
     call->capture_writes.relation_suffixes = NULL;
     return Qnil;
@@ -5239,7 +5534,8 @@ onibi_dynamic_absence_consume(
     const OnibiSemanticState *input, OnibiSemanticArena *arena,
     unsigned char *class_stack, size_t class_stack_capacity, OnibiExecCtx *ctx,
     size_t *endpoint_base, size_t *endpoint_count,
-    OnibiDynamicAbsenceCaptureWriteLog *parent_capture_writes)
+    OnibiDynamicAbsenceCaptureWriteLog *parent_capture_writes,
+    int parent_capture_failure_owner)
 {
     OnibiDynamicAbsenceCall call;
     memset(&call, 0, sizeof(call));
@@ -5259,6 +5555,8 @@ onibi_dynamic_absence_consume(
     call.endpoint_base = endpoint_base;
     call.endpoint_count = endpoint_count;
     call.capture_writes.registry_parent = parent_capture_writes;
+    call.capture_writes.registry_parent_failure_owner =
+	parent_capture_failure_owner;
     call.result = -1;
 
     uint32_t capture_count = view->header->capture_count;
@@ -5284,7 +5582,8 @@ static OnibiActionResult
 onibi_dynamic_assert_subprogram(
     OnibiExecCtx *ctx, const OnibiRAction *action, OnibiBytePos position,
     const OnibiSemanticState *predecessor, OnibiSemanticState *successor,
-    OnibiDynamicAbsenceCaptureWriteLog *capture_writes)
+    OnibiDynamicAbsenceCaptureWriteLog *capture_writes,
+    int capture_failure_owner)
 {
     if (action->arg32 == 0 ||
 	action->arg32 >= ctx->view->header->subprogram_count)
@@ -5328,6 +5627,10 @@ onibi_dynamic_assert_subprogram(
 	if (result > 0) {
 	    if (!positive) {
 		onibi_semantic_checkpoint_restore(arena, &checkpoint);
+		if (capture_failure_owner && capture_writes != NULL)
+		    onibi_dynamic_absence_capture_failure_prefix_queue(
+			arena, capture_writes, predecessor, position,
+			ctx->current_previous_position, ctx);
 		return ONIBI_ACTION_FAIL;
 	    }
 	    *successor = *predecessor;
@@ -5348,7 +5651,13 @@ onibi_dynamic_assert_subprogram(
 	}
 	onibi_semantic_checkpoint_restore(arena, &checkpoint);
     }
-    if (positive) return ONIBI_ACTION_FAIL;
+    if (positive) {
+	if (capture_failure_owner && capture_writes != NULL)
+	    onibi_dynamic_absence_capture_failure_prefix_queue(
+		arena, capture_writes, predecessor, position,
+		ctx->current_previous_position, ctx);
+	return ONIBI_ACTION_FAIL;
+    }
     *successor = *predecessor;
     return ONIBI_ACTION_SUCCESS;
 }
@@ -5744,7 +6053,7 @@ onibi_tagged_accept_state(OnibiExecCtx *ctx, const OnibiRSeqView *view,
 	if (onibi_apply_action_program(view, edge, str, position, search_origin,
 				       encoding, mode, arena, predecessor,
 				       accepted, ctx, UINT32_MAX, UINT32_MAX,
-				       NULL) == ONIBI_ACTION_SUCCESS) {
+				       NULL, 0) == ONIBI_ACTION_SUCCESS) {
 	    return 1;
 	}
     }
@@ -5780,7 +6089,7 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
 	if (onibi_apply_action_program(
 		view, edge, str, start, ctx->search_origin, ctx->encoding,
 		ctx->encoding_mode, arena, &predecessor, &branch, ctx,
-		UINT32_MAX, UINT32_MAX, NULL) == ONIBI_ACTION_FAIL)
+		UINT32_MAX, UINT32_MAX, NULL, 0) == ONIBI_ACTION_FAIL)
 	    continue;
 	if (edge->destination == ONIBI_ACCEPT_STATE) {
 	    if (required_end >= 0 && start != required_end) continue;
@@ -5884,8 +6193,8 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
 		if (onibi_apply_action_program(
 			view, edge, str, next_position, ctx->search_origin,
 			ctx->encoding, ctx->encoding_mode, arena, &predecessor,
-			&branch, ctx, UINT32_MAX, UINT32_MAX,
-			NULL) == ONIBI_ACTION_FAIL)
+			&branch, ctx, UINT32_MAX, UINT32_MAX, NULL,
+			0) == ONIBI_ACTION_FAIL)
 		    continue;
 		if (edge->destination == ONIBI_ACCEPT_STATE) {
 		    if (required_end >= 0 && next_position != required_end)

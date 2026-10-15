@@ -928,3 +928,98 @@ unchanged `gir.c` and `rseq.c`.
 The full project suite did not run. No commit or publication occurred.
 Evidence and commands are in
 `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-final-two-01/worker/review-02/`.
+
+## Failed assertion capture-prefix repair (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-failed-action-01`, attempt 1.
+
+DYNAMIC now copies ordered parent capture-write identities before a failed
+assertion rolls back its parent action. It queues a failure-only stack frame.
+That frame adds only the parent path delta to the journal. Failed assertion
+child writes stay inside the child checkpoint.
+
+A nested absence transfers capture history when an empty forbidden body matches
+at its start. A later positive probe carries a prior output pair forward only
+when both condition slots stay unset. Positive probe slots keep priority.
+Backreference registers and pushed-capture rollback stay unchanged.
+
+The full absence E2E passes: 89 tests and 755 assertions. Two repeated 27-row
+frozen MRI runs match. Every row uses DYNAMIC and zero fallback. Semantic state
+passes 19/107. The physical verifier passes 31/158. Subprogram checks pass
+6/46. Work-budget checks pass 5/29. Semantic regression checks pass 15/24.
+Tagged capture checks pass 16/4,840. Tagged resource checks pass 2/20.
+Positive and negative lookahead controls pass 2/3.
+
+The absence timeout and interrupt probes both raise as required. A short match
+after each event matches MRI. A clean warning build passes with two known
+warnings in unchanged `gir.c` and `rseq.c`. Ruby syntax, RuboCop, C format,
+`git diff --check`, and `make distclean` pass. The full project suite did not
+run.
+
+Exact commands, logs, source and bundle hashes, and MRI matrix outputs are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-failed-action-01/worker/final-01/`.
+No commit or publication occurred. Root review must accept this unit before the
+remaining work queue continues.
+
+## Failed assertion capture-prefix review repair (2026-10-15)
+
+Status: NEEDS CONTINUATION. Relay: `task-absence-failed-action-01`, attempt 2.
+
+The endpoint resource E2E matches MRI and uses DYNAMIC with zero fallback.
+Work grows from 2,739 to 5,299 units. Tag events grow from 202 to 394.
+However, a transfer trace shows no capture history on this path.
+
+A second public probe transfers two capture events per history. It matches MRI
+and uses DYNAMIC with zero fallback. Its work grows from 74,466 to 478,026
+units when the `b` input grows from 32 to 64 bytes. Other nested search work
+also grows, so this result does not prove linear transfer growth. Root review
+must choose a narrow way to measure transfer work.
+
+The sparse pending scan test uses 257 capture slots. It matches MRI and reports
+13,140 work units. A clean build without the per-slot charge reports 12,883.
+The 13,000-unit test limit detects the missing charge.
+
+The absence E2E passes 91 tests and 777 assertions. Semantic state passes
+19/107. The physical verifier passes 31/158. Subprogram checks pass 6/46.
+Work-budget checks pass 5/29. Semantic regression checks pass 15/24. Tagged
+capture checks pass 16/4,840. Tagged resource checks pass 2/20. Lookahead
+controls pass 2/3. Two 27-row frozen MRI runs match. All rows use DYNAMIC with
+zero fallback.
+
+Timeout and interrupt probes raise as required. A short match after each event
+matches MRI. A clean warning build passes with the two known warnings in
+unchanged `gir.c` and `rseq.c`.
+
+The range probe reports MRI byte offsets `[2,1]`; MRI `MatchData#to_a` raises.
+The pending-merge trace reads condition range `[1,1]`. This path does not pass
+the reversed MRI output pair through the condition file. The range guard and
+raw-range validator stay unchanged. The public offset difference is recorded
+for root review.
+
+The focused resource E2Es pass 2/22. The full absence E2E passes 91/777.
+The warning build reports two known warnings in unchanged `gir.c` and `rseq.c`.
+Ruby syntax, RuboCop, C format, diff checks, and `make distclean` pass.
+
+Exact commands, logs, hashes, and repeatable probes are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-failed-action-01/worker/review-02/`.
+The final C source SHA-256 is
+`4e483d0cb4cccdb9bcb6c6158dcb44cc3c0aa8eb223f2578e2ef55d19378a6d7`.
+The clean build bundle SHA-256 is
+`fdf27e1b285014e974f1956bee653eb533ee6e87eee50a702a73a97483b6d774`.
+Both final MRI matrices use this source and bundle.
+The full project suite did not run. No commit or publication occurred.
+
+## Failed-action capture repair: root acceptance (2026-10-15)
+
+Root accepted ordered parent capture effects before failed assertions. The 91
+absence E2Es and all 27 frozen MRI matrix rows pass. Transfer traces show one
+call per saved endpoint, including nonempty capture histories. Source and
+evidence hashes match. Full-project acceptance remains open.
+
+A separate reversed-range gap remains for
+`(?~(?:b(?~(?:(?=(?:(a?){9}){2}a)(?=a)))))` on `bab`.
+MRI reports capture `[2,1]` and raises ArgumentError from `to_a`. The base
+reports an unset capture. This repair reports `[1,1]`. Neither matches MRI.
+The next unit must resolve output history versus condition state.
+Evidence: `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-failed-action-01/worker/evidence-03/result.md`.
+Remote publication remains pending.
