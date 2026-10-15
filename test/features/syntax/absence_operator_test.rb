@@ -239,7 +239,92 @@ class AbsenceOperatorTest < Minitest::Test
     end
   end
 
+  def test_absence_endpoint_publishes_all_late_probe_captures
+    assert_absence_failed_probe_control(
+      label: "late probe publishes multiple captures",
+      pattern: "(?~(a+)(b+))c",
+      subject: "cxxaabb",
+      start: 0,
+      expected_values: %w[c a b],
+      expected_char_ranges: [[0, 1], [4, 5], [5, 6]],
+      expected_byte_ranges: [[0, 1], [4, 5], [5, 6]]
+    )
+  end
+
+  def test_absence_endpoint_clears_capture_from_later_unset_probe
+    assert_absence_failed_probe_control(
+      label: "later positive probe leaves capture unset",
+      pattern: "(?~(?:(a)|b))c",
+      subject: "cxxab",
+      start: 0,
+      expected_values: ["c", nil],
+      expected_char_ranges: [[0, 1], [nil, nil]],
+      expected_byte_ranges: [[0, 1], [nil, nil]]
+    )
+  end
+
+  def test_absence_endpoint_publishes_condition_capture_before_suffix
+    assert_absence_failed_probe_control(
+      label: "late probe capture selects following conditional",
+      pattern: "(?~(a))c(?(1)d|e)",
+      subject: "cdxxa",
+      start: 0,
+      expected_values: %w[cd a],
+      expected_char_ranges: [[0, 2], [4, 5]],
+      expected_byte_ranges: [[0, 2], [4, 5]]
+    )
+  end
+
+  def test_absence_endpoint_keeps_prefix_backreference_registers
+    assert_absence_failed_probe_control(
+      label: "late probe output keeps prefix backreference register",
+      pattern: "\\A(c)(?~(a))\\1",
+      subject: "ccxa",
+      start: 0,
+      expected_values: %w[cc c a],
+      expected_char_ranges: [[0, 2], [0, 1], [3, 4]],
+      expected_byte_ranges: [[0, 2], [0, 1], [3, 4]]
+    )
+  end
+
+  def test_absence_endpoint_publication_charges_large_saved_endpoint_set
+    pattern = "(?~(z))"
+    endpoint_count = 512
+    subject = "#{"a" * endpoint_count}z!"
+    expected = ::Regexp.new(pattern).match(subject)
+
+    small_budget = Onibi::Regexp.new(pattern, timeout: 0.001)
+    assert_raises(Onibi::Regexp::TimeoutError) do
+      small_budget.match("#{"a" * 20_000}z!")
+    end
+
+    regexp = Onibi::Regexp.new(pattern)
+    actual = regexp.match(subject)
+    assert_equal expected.to_a, actual.to_a
+    assert_equal absence_match_snapshot(expected), absence_match_snapshot(actual)
+    assert_instance_of Onibi::MatchData, actual
+
+    info = regexp.send(:__onibi_diagnostics__, subject)
+    assert_equal 2, info[:exec_kind]
+    assert_operator info[:dynamic], :>, 0
+    assert_equal 0, info[:fallback]
+    assert_equal 1, info[:status]
+    assert_equal expected.bytebegin(0), info[:match_start]
+    assert_equal expected.byteend(0), info[:match_end]
+    assert_operator info[:work_charged], :>=, 17 * endpoint_count
+  end
+
   def test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix
+    assert_absence_failed_probe_control(
+      label: "later positive probe capture reaches an earlier endpoint",
+      pattern: "(?~(a+))b",
+      subject: "abcabc",
+      start: 0,
+      expected_values: %w[b a],
+      expected_char_ranges: [[1, 2], [3, 4]],
+      expected_byte_ranges: [[1, 2], [3, 4]]
+    )
+
     ["(?~(a+))b", "(?~((a|b)+))c"].each do |pattern|
       %w[b ab abb abc abcabc].each do |input|
         expected = ::Regexp.new(pattern).match(input)
@@ -337,6 +422,16 @@ class AbsenceOperatorTest < Minitest::Test
 
   def test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary
     pattern = "(?~(?:(a?)(?=a)))"
+
+    assert_absence_failed_probe_control(
+      label: "positive lookahead capture at the absence boundary",
+      pattern: pattern,
+      subject: "ab",
+      start: 0,
+      expected_values: ["b", ""],
+      expected_char_ranges: [[1, 2], [1, 1]],
+      expected_byte_ranges: [[1, 2], [1, 1]]
+    )
 
     %w[ab abb abc].each do |input|
       expected = ::Regexp.new(pattern).match(input)

@@ -1877,6 +1877,20 @@ onibi_dynamic_absence_endpoint_push(OnibiSemanticArena *arena,
 	(OnibiDynamicAbsenceEndpoint){position, previous_position, *semantic};
 }
 
+static void
+onibi_dynamic_absence_endpoint_publish_body_captures(
+    OnibiDynamicAbsenceEndpoint *endpoint,
+    const OnibiSemanticState *body_result)
+{
+    endpoint->semantic.condition_captures = body_result->condition_captures;
+    endpoint->semantic.tag_history = body_result->tag_history;
+    endpoint->semantic.capture_event_history =
+	body_result->capture_event_history;
+    endpoint->semantic.capture_event_dependency =
+	body_result->capture_event_dependency;
+    endpoint->semantic.order = body_result->order;
+}
+
 typedef struct {
     size_t capture_event_count;
     size_t capture_event_root_count;
@@ -5045,17 +5059,20 @@ onibi_dynamic_absence_consume_run(
 	    onibi_dynamic_absence_restore_pushed_capture_files(
 		arena, &body_result, &trial_snapshot, pushed_captures,
 		view->header->capture_count, 0);
-	    OnibiSemanticState saved =
-		arena->absence_endpoints[endpoint_index].semantic;
-	    /* Keep result and condition captures, but retain pre-body registers
-	     * for backreferences. */
-	    saved.condition_captures = body_result.condition_captures;
-	    saved.tag_history = body_result.tag_history;
-	    saved.capture_event_history = body_result.capture_event_history;
-	    saved.capture_event_dependency =
-		body_result.capture_event_dependency;
-	    saved.order = body_result.order;
-	    arena->absence_endpoints[endpoint_index].semantic = saved;
+	    /* The last positive probe sets output captures for all earlier
+	     * continuations. Keep each endpoint's pre-body registers for
+	     * backreferences. */
+	    for (size_t i = base; i <= endpoint_index; i++) {
+		if (ctx != NULL) {
+		    ctx->current_position =
+			arena->absence_endpoints[i].position;
+		    ctx->current_previous_position =
+			arena->absence_endpoints[i].previous_position;
+		}
+		onibi_exec_charge_work(ctx, 1);
+		onibi_dynamic_absence_endpoint_publish_body_captures(
+		    &arena->absence_endpoints[i], &body_result);
+	    }
 	    OnibiBytePos scan_reported_start = scan_state.reported_start;
 	    scan_state.condition_captures = body_result.condition_captures;
 	    scan_state.tag_history = body_result.tag_history;

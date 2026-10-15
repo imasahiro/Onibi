@@ -882,3 +882,49 @@ The fixed-three public range error is resolved. Two prior absence failures remai
 Root verified final source and evidence hashes. Full-project acceptance remains open.
 Acceptance evidence: `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/root-acceptance.json`.
 Remote publication remains pending.
+
+## Absence endpoint propagation candidate (2026-10-15)
+
+A later positive body probe now sends its output captures to earlier saved endpoints.
+The runtime keeps each endpoint's semantic registers for backreferences.
+
+The nested suffix E2E passes: one test and 28 assertions.
+The full absence file reports 80 tests, 633 assertions, and one failure:
+`test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary`.
+
+The lookahead failure has a separate current-source cause.
+Its empty direct capture closes before a failing assertion in one action program.
+The action transaction rolls back the close.
+The selected failure history keeps only the open slot.
+This case needs a separate ordered failure-action repair.
+
+This candidate awaits root review.
+Evidence and exact commands are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-final-two-01/worker/`.
+The full project suite did not run.
+No commit or publication occurred.
+
+## Absence endpoint work review (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-final-two-01`, attempt 2.
+
+DYNAMIC now charges one work unit for each earlier endpoint it updates.
+It stores each endpoint's byte positions before it polls.
+It keeps each endpoint's backreference registers.
+
+Five added public E2Es cover multiple captures, an unset capture, a condition,
+backreferences, and many saved endpoints. The focused run reports 11 tests and
+120 assertions with no failures. The late-probe case has 512 `a` bytes before
+`z` and charges 8,776 work units. Its normal-budget result matches MRI. It uses
+DYNAMIC with zero fallback. A 20,000-byte timeout case raises at 1 ms.
+
+The full absence file reports 85 tests, 688 assertions, and one known failure:
+`test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary`.
+Both 27-row frozen MRI runs match. Every row uses DYNAMIC and zero fallback.
+The semantic-state, physical-verifier, subprogram, work-budget, timeout, and
+interrupt checks pass. The warning build reports only the two known warnings in
+unchanged `gir.c` and `rseq.c`.
+
+The full project suite did not run. No commit or publication occurred.
+Evidence and commands are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-final-two-01/worker/review-02/`.
