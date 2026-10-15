@@ -1,6 +1,18 @@
 #include "onibi_encoding_internal.h"
 #include "onibi_exec_internal.h"
 #include "onibi_rseq_internal.h"
+#include <stdio.h>
+
+typedef struct OnibiDynamicAbsenceCaptureWriteLog
+    OnibiDynamicAbsenceCaptureWriteLog;
+
+static void onibi_dynamic_absence_capture_write_clone(
+    OnibiDynamicAbsenceCaptureWriteLog *log, OnibiSemanticArena *arena,
+    OnibiTagEventId source, OnibiTagEventId destination, OnibiExecCtx *ctx);
+static void onibi_dynamic_absence_capture_write_publish(
+    OnibiDynamicAbsenceCaptureWriteLog *log, OnibiSemanticArena *arena,
+    OnibiTagEventId tag_id, uint16_t slot, OnibiBytePos position,
+    OnibiExecCtx *ctx);
 
 static int
 onibi_ascii_literal_equal(const unsigned char *left, const unsigned char *right,
@@ -430,6 +442,7 @@ onibi_semantic_arena_reset(OnibiSemanticArena *arena)
 	       arena->order_bucket_capacity * sizeof(uint32_t));
     arena->register_count = 0;
     arena->tag_count = 0;
+    arena->next_tag_identity = 1;
     arena->call_count = 0;
     arena->atomic_count = 0;
     arena->absence_count = 0;
@@ -890,8 +903,24 @@ onibi_semantic_tag_append(OnibiSemanticArena *arena, OnibiTagEventId parent,
 					 : arena->tags[parent].hash;
     hash = onibi_semantic_hash_value(hash, slot);
     hash = onibi_semantic_hash_value(hash, (uint64_t)position);
-    arena->tags[id] = (OnibiSemanticTagEvent){parent, slot, position, hash};
+    if (arena->next_tag_identity == 0) arena->next_tag_identity = 1;
+    if (arena->next_tag_identity == UINT64_MAX) rb_memerror();
+    arena->tags[id] = (OnibiSemanticTagEvent){parent, slot, position, hash,
+					      arena->next_tag_identity++};
     onibi_diagnostics.tag_events++;
+    return id;
+}
+
+static OnibiTagEventId
+onibi_semantic_tag_clone(OnibiSemanticArena *arena, OnibiTagEventId parent,
+			 const OnibiSemanticTagEvent *source)
+{
+    uint32_t slot = source->slot;
+    OnibiBytePos position = source->position;
+    uint64_t logical_id = source->logical_id;
+    OnibiTagEventId id =
+	onibi_semantic_tag_append(arena, parent, slot, position);
+    arena->tags[id].logical_id = logical_id;
     return id;
 }
 
@@ -1170,6 +1199,18 @@ onibi_semantic_capture_is_active(const OnibiSemanticArena *arena,
     return 0;
 }
 
+static OnibiTagEventId
+onibi_semantic_tag_latest_for_slot(const OnibiSemanticArena *arena,
+				   OnibiTagEventId tag_history, uint32_t slot)
+{
+    while (tag_history != UINT32_MAX) {
+	const OnibiSemanticTagEvent *event = &arena->tags[tag_history];
+	if (event->slot == slot) return tag_history;
+	tag_history = event->parent;
+    }
+    return UINT32_MAX;
+}
+
 static void
 onibi_semantic_restore_active_captures(OnibiSemanticArena *arena,
 				       OnibiSemanticState *state,
@@ -1221,17 +1262,25 @@ onibi_semantic_restore_active_conditions(OnibiSemanticArena *arena,
 static void
 onibi_semantic_restore_active_capture_tags(
     OnibiSemanticArena *arena, OnibiSemanticState *state,
-    const OnibiSemanticCaptureFile *caller, OnibiTagEventId caller_tag_history)
+    OnibiTagEventId caller_tag_history,
+    OnibiDynamicAbsenceCaptureWriteLog *capture_writes, OnibiExecCtx *ctx)
 {
     for (uint32_t capture = 0;
 	 capture * 2U + 1U < state->semantic_captures.slot_count; capture++) {
 	uint32_t slot = capture * 2U;
-	OnibiBytePos begin =
-	    onibi_semantic_position_read(arena, caller->root, slot, -1);
 	if (onibi_semantic_capture_is_active(arena, caller_tag_history, slot,
-					     slot + 1U))
-	    state->tag_history = onibi_semantic_tag_append(
-		arena, state->tag_history, slot, begin);
+					     slot + 1U)) {
+	    OnibiTagEventId source_id = onibi_semantic_tag_latest_for_slot(
+		arena, caller_tag_history, slot);
+	    if (source_id == UINT32_MAX)
+		rb_raise(eRegexpError, "active capture has no start tag");
+	    OnibiSemanticTagEvent source = arena->tags[source_id];
+	    OnibiTagEventId restored_id =
+		onibi_semantic_tag_clone(arena, state->tag_history, &source);
+	    state->tag_history = restored_id;
+	    onibi_dynamic_absence_capture_write_clone(
+		capture_writes, arena, source_id, restored_id, ctx);
+	}
     }
 }
 
@@ -1862,14 +1911,71 @@ static OnibiActionResult onibi_tagged_assert_subprogram(
     const OnibiSemanticState *predecessor, OnibiSemanticState *successor);
 static OnibiActionResult onibi_dynamic_assert_subprogram(
     OnibiExecCtx *ctx, const OnibiRAction *action, OnibiBytePos position,
-    const OnibiSemanticState *predecessor, OnibiSemanticState *successor);
+    const OnibiSemanticState *predecessor, OnibiSemanticState *successor,
+    OnibiDynamicAbsenceCaptureWriteLog *capture_writes);
 static int onibi_dynamic_absence_consume(
     VALUE rseq, const OnibiRSeqView *view, VALUE str, OnibiBytePos position,
     OnibiBytePos previous_position, OnibiBytePos active_bound,
     OnibiBytePos search_origin, uint32_t subprogram_id,
     const OnibiSemanticState *input, OnibiSemanticArena *arena,
     unsigned char *class_stack, size_t class_stack_capacity, OnibiExecCtx *ctx,
-    size_t *endpoint_base, size_t *endpoint_count);
+    size_t *endpoint_base, size_t *endpoint_count,
+    OnibiDynamicAbsenceCaptureWriteLog *parent_capture_writes);
+typedef enum {
+    ONIBI_ABSENCE_CAPTURE_WRITE_NONE = 0,
+    ONIBI_ABSENCE_CAPTURE_WRITE_ACTION = 1,
+    ONIBI_ABSENCE_CAPTURE_WRITE_PUBLISHED = 2
+} OnibiAbsenceCaptureWriteKind;
+typedef struct {
+    OnibiTagEventId tag_id;
+    uint64_t logical_id;
+    uint32_t source_state;
+    uint32_t edge_index;
+    uint32_t destination;
+    uint32_t action_index;
+    uint16_t slot;
+    uint8_t flags;
+    uint8_t kind;
+    uint8_t valid;
+    OnibiBytePos position;
+} OnibiDynamicAbsenceCaptureWrite;
+typedef struct {
+    uint64_t logical_id;
+    uint32_t action_index;
+    uint16_t slot;
+    uint8_t flags;
+    uint8_t kind;
+    OnibiBytePos position;
+} OnibiDynamicAbsenceCaptureWriteIdentity;
+typedef struct {
+    uint32_t destination;
+    uint32_t next;
+} OnibiDynamicAbsenceRelationSuffix;
+struct OnibiDynamicAbsenceCaptureWriteLog {
+    VALUE subject;
+    unsigned char *class_stack;
+    size_t class_stack_capacity;
+    OnibiDynamicAbsenceCaptureWriteLog *registry_parent;
+    OnibiDynamicAbsenceCaptureWrite *events;
+    size_t event_capacity;
+    OnibiDynamicAbsenceCaptureWrite *journal;
+    size_t journal_count;
+    size_t journal_capacity;
+    OnibiTagEventId *path;
+    size_t path_capacity;
+    size_t path_count;
+    OnibiDynamicAbsenceCaptureWriteIdentity *previous_path;
+    size_t previous_path_capacity;
+    size_t previous_path_count;
+    uint64_t base_history_identity;
+    uint32_t *relation_suffix_heads;
+    OnibiDynamicAbsenceRelationSuffix *relation_suffixes;
+    size_t relation_suffix_count;
+    size_t relation_suffix_capacity;
+    size_t relation_count;
+    uint32_t owner_subprogram_id;
+    unsigned char relation_suffix_ready;
+};
 typedef struct {
     VALUE rseq;
     const OnibiRSeqView *view;
@@ -1887,6 +1993,7 @@ typedef struct {
     size_t *endpoint_base;
     size_t *endpoint_count;
     unsigned char *pushed_captures;
+    OnibiDynamicAbsenceCaptureWriteLog capture_writes;
     int result;
 } OnibiDynamicAbsenceCall;
 static int onibi_tagged_lookbehind_start(OnibiExecCtx *ctx,
@@ -1901,7 +2008,9 @@ static int onibi_tagged_frontier_add(OnibiFrontier *frontier,
 static int onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 					 const OnibiSemanticState *accepted,
 					 OnibiRawMatch *raw_match,
-					 uint32_t capture_slots);
+					 uint32_t capture_slots,
+					 int require_complete_pairs,
+					 OnibiExecCtx *ctx);
 
 static OnibiTagEventId
 onibi_dynamic_capture_open_id(const OnibiSemanticArena *arena,
@@ -1927,7 +2036,10 @@ typedef struct {
     unsigned char *clear;
     uint32_t slots;
     int clear_semantic;
+    int owns_clear;
     OnibiTagEventId *events;
+    OnibiDynamicAbsenceCaptureWriteLog *capture_writes;
+    OnibiExecCtx *ctx;
 } OnibiDynamicAbsenceCaptureFilter;
 
 static VALUE
@@ -1938,28 +2050,41 @@ onibi_dynamic_absence_filter_capture_slots_body(VALUE opaque)
     OnibiSemanticArena *arena = filter->arena;
     OnibiSemanticState *state = filter->state;
     int any = 0;
-    for (uint32_t slot = 0; slot < filter->slots; slot++)
+    for (uint32_t slot = 0; slot < filter->slots; slot++) {
+	onibi_exec_charge_work(filter->ctx, 1);
 	if (filter->clear[slot]) any = 1;
+    }
     if (!any) return Qnil;
 
     size_t count = 0;
     for (OnibiTagEventId id = state->tag_history; id != UINT32_MAX;
-	 id = arena->tags[id].parent)
+	 id = arena->tags[id].parent) {
+	if (id >= arena->tag_count || count >= arena->tag_count)
+	    rb_raise(eRegexpError, "absence capture history is invalid");
+	onibi_exec_charge_work(filter->ctx, 1);
 	count++;
+    }
     if (count > SIZE_MAX / sizeof(*filter->events)) rb_memerror();
+    onibi_exec_charge_work(filter->ctx, count);
     if (count != 0)
 	filter->events = ruby_xmalloc(count * sizeof(*filter->events));
     size_t index = 0;
     for (OnibiTagEventId id = state->tag_history; id != UINT32_MAX;
-	 id = arena->tags[id].parent)
+	 id = arena->tags[id].parent) {
 	filter->events[index++] = id;
+	onibi_exec_charge_work(filter->ctx, 1);
+    }
     state->tag_history = UINT32_MAX;
     while (index != 0) {
-	const OnibiSemanticTagEvent *event =
-	    &arena->tags[filter->events[--index]];
-	if (event->slot < filter->slots && filter->clear[event->slot]) continue;
-	state->tag_history = onibi_semantic_tag_append(
-	    arena, state->tag_history, event->slot, event->position);
+	onibi_exec_charge_work(filter->ctx, 1);
+	OnibiTagEventId source_id = filter->events[--index];
+	OnibiSemanticTagEvent event = arena->tags[source_id];
+	if (event.slot < filter->slots && filter->clear[event.slot]) continue;
+	OnibiTagEventId cloned =
+	    onibi_semantic_tag_clone(arena, state->tag_history, &event);
+	state->tag_history = cloned;
+	onibi_dynamic_absence_capture_write_clone(
+	    filter->capture_writes, arena, source_id, cloned, filter->ctx);
     }
 
     for (uint32_t slot = 0; slot < filter->slots; slot++)
@@ -1975,259 +2100,25 @@ onibi_dynamic_absence_filter_capture_slots_ensure(VALUE opaque)
     OnibiDynamicAbsenceCaptureFilter *filter =
 	(OnibiDynamicAbsenceCaptureFilter *)(uintptr_t)opaque;
     ruby_xfree(filter->events);
-    ruby_xfree(filter->clear);
+    if (filter->owns_clear) ruby_xfree(filter->clear);
     filter->events = NULL;
     filter->clear = NULL;
     return Qnil;
 }
 
 static void
-onibi_dynamic_absence_filter_capture_slots(OnibiSemanticArena *arena,
-					   OnibiSemanticState *state,
-					   unsigned char *clear, uint32_t slots,
-					   int clear_semantic)
+onibi_dynamic_absence_filter_capture_slots(
+    OnibiSemanticArena *arena, OnibiSemanticState *state, unsigned char *clear,
+    uint32_t slots, int clear_semantic, int owns_clear,
+    OnibiDynamicAbsenceCaptureWriteLog *capture_writes, OnibiExecCtx *ctx)
 {
-    OnibiDynamicAbsenceCaptureFilter filter = {arena, state,	      clear,
-					       slots, clear_semantic, NULL};
+    OnibiDynamicAbsenceCaptureFilter filter = {
+	arena,	    state, clear,	   slots, clear_semantic,
+	owns_clear, NULL,  capture_writes, ctx};
     rb_ensure(onibi_dynamic_absence_filter_capture_slots_body,
 	      (VALUE)(uintptr_t)&filter,
 	      onibi_dynamic_absence_filter_capture_slots_ensure,
 	      (VALUE)(uintptr_t)&filter);
-}
-
-static int
-onibi_dynamic_absence_filter_incomplete_captures(OnibiSemanticArena *arena,
-						 OnibiSemanticState *state)
-{
-    uint32_t slots = state->semantic_captures.slot_count;
-    unsigned char *clear = slots == 0 ? NULL : ruby_xcalloc(slots, 1);
-    int any = 0;
-    for (uint32_t capture = 0; capture * 2U + 1U < slots; capture++) {
-	uint32_t begin = capture * 2U;
-	uint32_t end = begin + 1U;
-	for (OnibiTagEventId id = state->tag_history; id != UINT32_MAX;
-	     id = arena->tags[id].parent) {
-	    uint32_t slot = arena->tags[id].slot;
-	    if (slot == begin) {
-		clear[begin] = clear[end] = 1;
-		any = 1;
-		break;
-	    }
-	    if (slot == end) break;
-	}
-    }
-    onibi_dynamic_absence_filter_capture_slots(arena, state, clear, slots, 1);
-    return any;
-}
-
-typedef struct {
-    OnibiSemanticArena *arena;
-    OnibiSemanticState *target;
-    const OnibiSemanticState *failed;
-    const unsigned char *pushed_captures;
-    uint32_t capture_count;
-    uint32_t slots;
-    unsigned char *clear;
-    int changed;
-} OnibiDynamicAbsenceIncompleteCapturePublish;
-
-static VALUE
-onibi_dynamic_absence_publish_incomplete_direct_captures_body(VALUE opaque)
-{
-    OnibiDynamicAbsenceIncompleteCapturePublish *publish =
-	(OnibiDynamicAbsenceIncompleteCapturePublish *)(uintptr_t)opaque;
-    OnibiSemanticArena *arena = publish->arena;
-    OnibiSemanticState *target = publish->target;
-    const OnibiSemanticState *failed = publish->failed;
-    publish->slots = target->semantic_captures.slot_count;
-    if (target->condition_captures.slot_count != publish->slots ||
-	failed->semantic_captures.slot_count != publish->slots ||
-	failed->condition_captures.slot_count != publish->slots ||
-	(uint64_t)publish->capture_count * 2U > publish->slots)
-	rb_raise(eRegexpError, "absence capture slot range is invalid");
-    if (publish->slots == 0) return Qfalse;
-    publish->clear = ruby_xcalloc(publish->slots, 1);
-
-    for (uint32_t capture = 0; capture < publish->capture_count; capture++) {
-	uint32_t begin = capture * 2U;
-	uint32_t end = begin + 1U;
-	int incomplete = 0;
-	for (OnibiTagEventId id = failed->tag_history; id != UINT32_MAX;
-	     id = arena->tags[id].parent) {
-	    if (id >= arena->tag_count)
-		rb_raise(eRegexpError, "absence capture history is invalid");
-	    uint32_t slot = arena->tags[id].slot;
-	    if (slot == begin) {
-		incomplete = 1;
-		break;
-	    }
-	    if (slot == end) break;
-	}
-	if (!incomplete || (publish->pushed_captures != NULL &&
-			    publish->pushed_captures[capture]))
-	    continue;
-
-	publish->clear[begin] = 1;
-	publish->clear[end] = 1;
-	OnibiBytePos start = onibi_semantic_position_read(
-	    arena, failed->condition_captures.root, begin, -1);
-	onibi_semantic_condition_capture_write(
-	    arena, &target->condition_captures, begin, start);
-	/* A direct start clears its old end, as OP_MEMORY_START does in MRI. */
-	onibi_semantic_condition_capture_write(
-	    arena, &target->condition_captures, end, -1);
-	publish->changed = 1;
-    }
-
-    if (publish->changed) {
-	unsigned char *clear = publish->clear;
-	publish->clear = NULL;
-	onibi_dynamic_absence_filter_capture_slots(arena, target, clear,
-						   publish->slots, 0);
-	return Qtrue;
-    }
-    return Qfalse;
-}
-
-static VALUE
-onibi_dynamic_absence_publish_incomplete_direct_captures_ensure(VALUE opaque)
-{
-    OnibiDynamicAbsenceIncompleteCapturePublish *publish =
-	(OnibiDynamicAbsenceIncompleteCapturePublish *)(uintptr_t)opaque;
-    ruby_xfree(publish->clear);
-    publish->clear = NULL;
-    return Qnil;
-}
-
-static int
-onibi_dynamic_absence_publish_incomplete_direct_captures(
-    OnibiSemanticArena *arena, OnibiSemanticState *target,
-    const OnibiSemanticState *failed, const unsigned char *pushed_captures,
-    uint32_t capture_count)
-{
-    OnibiDynamicAbsenceIncompleteCapturePublish publish = {
-	arena, target, failed, pushed_captures, capture_count, 0, NULL, 0};
-    return RTEST(rb_ensure(
-	onibi_dynamic_absence_publish_incomplete_direct_captures_body,
-	(VALUE)(uintptr_t)&publish,
-	onibi_dynamic_absence_publish_incomplete_direct_captures_ensure,
-	(VALUE)(uintptr_t)&publish));
-}
-
-typedef struct {
-    OnibiSemanticArena *arena;
-    OnibiSemanticState *endpoint;
-    OnibiSemanticState *scan_state;
-    const OnibiSemanticState *failed;
-    const OnibiSemanticState *initial;
-    const unsigned char *pushed_captures;
-    uint32_t capture_count;
-    uint32_t slots;
-    unsigned char *selected;
-    int changed;
-} OnibiDynamicAbsenceCompleteCapturePublish;
-
-/* A later failed probe can close a direct capture that an earlier positive
- * probe left in the endpoint. Merge only changed complete direct pairs. */
-static VALUE
-onibi_dynamic_absence_publish_complete_direct_captures_body(VALUE opaque)
-{
-    OnibiDynamicAbsenceCompleteCapturePublish *publish =
-	(OnibiDynamicAbsenceCompleteCapturePublish *)(uintptr_t)opaque;
-    OnibiSemanticArena *arena = publish->arena;
-    publish->slots = publish->endpoint->semantic_captures.slot_count;
-    if (publish->endpoint->condition_captures.slot_count != publish->slots ||
-	publish->scan_state->semantic_captures.slot_count != publish->slots ||
-	publish->scan_state->condition_captures.slot_count != publish->slots ||
-	publish->failed->semantic_captures.slot_count != publish->slots ||
-	publish->failed->condition_captures.slot_count != publish->slots ||
-	publish->initial->condition_captures.slot_count != publish->slots ||
-	(uint64_t)publish->capture_count * 2U > publish->slots)
-	rb_raise(eRegexpError, "absence capture slot range is invalid");
-    if (publish->capture_count == 0) return Qfalse;
-
-    publish->selected = ruby_xcalloc(publish->capture_count, 1);
-    for (uint32_t capture = 0; capture < publish->capture_count; capture++) {
-	if (publish->pushed_captures != NULL &&
-	    publish->pushed_captures[capture])
-	    continue;
-	if (onibi_dynamic_capture_open_id(arena, publish->failed->tag_history,
-					  capture) == UINT32_MAX)
-	    continue;
-
-	uint32_t begin = capture * 2U;
-	uint32_t end = begin + 1U;
-	OnibiBytePos start = onibi_semantic_position_read(
-	    arena, publish->failed->condition_captures.root, begin, -1);
-	OnibiBytePos finish = onibi_semantic_position_read(
-	    arena, publish->failed->condition_captures.root, end, -1);
-	if (start < 0 || finish < 0) continue;
-	OnibiBytePos initial_start = onibi_semantic_position_read(
-	    arena, publish->initial->condition_captures.root, begin, -1);
-	OnibiBytePos initial_finish = onibi_semantic_position_read(
-	    arena, publish->initial->condition_captures.root, end, -1);
-	if (start == initial_start && finish == initial_finish) continue;
-	publish->selected[capture] = 1;
-    }
-
-    OnibiSemanticState *targets[2] = {publish->endpoint, publish->scan_state};
-    for (size_t target_index = 0; target_index < 2; target_index++) {
-	OnibiSemanticState *target = targets[target_index];
-	if (target_index == 1 && target == targets[0]) continue;
-	for (uint32_t capture = 0; capture < publish->capture_count;
-	     capture++) {
-	    if (!publish->selected[capture]) continue;
-	    uint32_t begin = capture * 2U;
-	    uint32_t end = begin + 1U;
-	    OnibiBytePos start = onibi_semantic_position_read(
-		arena, publish->failed->condition_captures.root, begin, -1);
-	    OnibiBytePos finish = onibi_semantic_position_read(
-		arena, publish->failed->condition_captures.root, end, -1);
-	    if (onibi_semantic_position_read(arena,
-					     target->condition_captures.root,
-					     begin, -1) == start &&
-		onibi_semantic_position_read(
-		    arena, target->condition_captures.root, end, -1) == finish)
-		continue;
-	    target->tag_history = onibi_semantic_tag_append(
-		arena, target->tag_history, begin, start);
-	    target->tag_history = onibi_semantic_tag_append(
-		arena, target->tag_history, end, finish);
-	    onibi_semantic_condition_capture_write(
-		arena, &target->condition_captures, begin, start);
-	    onibi_semantic_condition_capture_write(
-		arena, &target->condition_captures, end, finish);
-	    publish->changed = 1;
-	}
-    }
-    return publish->changed ? Qtrue : Qfalse;
-}
-
-static VALUE
-onibi_dynamic_absence_publish_complete_direct_captures_ensure(VALUE opaque)
-{
-    OnibiDynamicAbsenceCompleteCapturePublish *publish =
-	(OnibiDynamicAbsenceCompleteCapturePublish *)(uintptr_t)opaque;
-    ruby_xfree(publish->selected);
-    publish->selected = NULL;
-    return Qnil;
-}
-
-static int
-onibi_dynamic_absence_publish_complete_direct_captures(
-    OnibiSemanticArena *arena, OnibiSemanticState *endpoint,
-    OnibiSemanticState *scan_state, const OnibiSemanticState *failed,
-    const OnibiSemanticState *initial, const unsigned char *pushed_captures,
-    uint32_t capture_count)
-{
-    OnibiDynamicAbsenceCompleteCapturePublish publish = {
-	arena,		 endpoint,	scan_state, failed, initial,
-	pushed_captures, capture_count, 0,	    NULL,   0};
-    return RTEST(
-	rb_ensure(onibi_dynamic_absence_publish_complete_direct_captures_body,
-		  (VALUE)(uintptr_t)&publish,
-		  onibi_dynamic_absence_publish_complete_direct_captures_ensure,
-		  (VALUE)(uintptr_t)&publish));
 }
 
 static int
@@ -2250,10 +2141,10 @@ onibi_dynamic_absence_has_active_nullable_repeat(
 }
 
 static void
-onibi_dynamic_absence_filter_captures(OnibiSemanticArena *arena,
-				      OnibiSemanticState *accepted,
-				      const OnibiSemanticState *terminal,
-				      int nullable_repeat_active)
+onibi_dynamic_absence_filter_captures(
+    OnibiSemanticArena *arena, OnibiSemanticState *accepted,
+    const OnibiSemanticState *terminal, int nullable_repeat_active,
+    OnibiDynamicAbsenceCaptureWriteLog *capture_writes, OnibiExecCtx *ctx)
 {
     uint32_t slots = accepted->semantic_captures.slot_count;
     unsigned char *clear = slots == 0 ? NULL : ruby_xcalloc(slots, 1);
@@ -2273,8 +2164,8 @@ onibi_dynamic_absence_filter_captures(OnibiSemanticArena *arena,
 	    (terminal_open == UINT32_MAX || !same_capture))
 	    clear[capture * 2U] = clear[capture * 2U + 1U] = 1;
     }
-    onibi_dynamic_absence_filter_capture_slots(arena, accepted, clear, slots,
-					       1);
+    onibi_dynamic_absence_filter_capture_slots(arena, accepted, clear, slots, 1,
+					       1, capture_writes, ctx);
 }
 
 static void
@@ -2318,11 +2209,14 @@ typedef struct {
     OnibiSemanticState *state;
     const OnibiSemanticState *snapshot;
     const unsigned char *pushed_captures;
+    OnibiDynamicAbsenceCaptureWriteLog *capture_writes;
+    OnibiExecCtx *ctx;
     uint32_t capture_count;
     unsigned char *clear;
     unsigned char *seen;
     unsigned char *latest;
     OnibiBytePos *positions;
+    OnibiTagEventId *ids;
 } OnibiDynamicAbsenceTagRollback;
 
 static VALUE
@@ -2341,6 +2235,7 @@ onibi_dynamic_absence_restore_pushed_tags_body(VALUE opaque)
     rollback->latest = ruby_xcalloc(rollback->capture_count, 1);
     rollback->positions =
 	ruby_xmalloc((size_t)slots * sizeof(*rollback->positions));
+    rollback->ids = ruby_xmalloc((size_t)slots * sizeof(*rollback->ids));
     for (uint32_t capture = 0; capture < rollback->capture_count; capture++) {
 	if (!rollback->pushed_captures[capture]) continue;
 	rollback->clear[capture * 2U] = 1;
@@ -2355,38 +2250,64 @@ onibi_dynamic_absence_restore_pushed_tags_body(VALUE opaque)
 	    continue;
 	rollback->seen[slot] = 1;
 	rollback->positions[slot] = event->position;
+	rollback->ids[slot] = id;
 	if (rollback->latest[slot / 2U] == 0)
 	    rollback->latest[slot / 2U] = (slot & 1U) == 0 ? 1 : 2;
     }
 
     unsigned char *clear = rollback->clear;
     rollback->clear = NULL;
-    onibi_dynamic_absence_filter_capture_slots(rollback->arena, rollback->state,
-					       clear, slots, 0);
+    onibi_dynamic_absence_filter_capture_slots(
+	rollback->arena, rollback->state, clear, slots, 0, 1,
+	rollback->capture_writes, rollback->ctx);
 
     for (uint32_t capture = 0; capture < rollback->capture_count; capture++) {
 	if (!rollback->pushed_captures[capture]) continue;
 	uint32_t begin = capture * 2U;
 	uint32_t end = begin + 1U;
 	if (rollback->latest[capture] == 1) {
-	    if (rollback->seen[end])
-		rollback->state->tag_history = onibi_semantic_tag_append(
-		    rollback->arena, rollback->state->tag_history, end,
-		    rollback->positions[end]);
-	    if (rollback->seen[begin])
-		rollback->state->tag_history = onibi_semantic_tag_append(
-		    rollback->arena, rollback->state->tag_history, begin,
-		    rollback->positions[begin]);
+	    if (rollback->seen[end]) {
+		OnibiSemanticTagEvent event =
+		    rollback->arena->tags[rollback->ids[end]];
+		OnibiTagEventId restored = onibi_semantic_tag_clone(
+		    rollback->arena, rollback->state->tag_history, &event);
+		rollback->state->tag_history = restored;
+		onibi_dynamic_absence_capture_write_clone(
+		    rollback->capture_writes, rollback->arena,
+		    rollback->ids[end], restored, rollback->ctx);
+	    }
+	    if (rollback->seen[begin]) {
+		OnibiSemanticTagEvent event =
+		    rollback->arena->tags[rollback->ids[begin]];
+		OnibiTagEventId restored = onibi_semantic_tag_clone(
+		    rollback->arena, rollback->state->tag_history, &event);
+		rollback->state->tag_history = restored;
+		onibi_dynamic_absence_capture_write_clone(
+		    rollback->capture_writes, rollback->arena,
+		    rollback->ids[begin], restored, rollback->ctx);
+	    }
 	}
 	else {
-	    if (rollback->seen[begin])
-		rollback->state->tag_history = onibi_semantic_tag_append(
-		    rollback->arena, rollback->state->tag_history, begin,
-		    rollback->positions[begin]);
-	    if (rollback->seen[end])
-		rollback->state->tag_history = onibi_semantic_tag_append(
-		    rollback->arena, rollback->state->tag_history, end,
-		    rollback->positions[end]);
+	    if (rollback->seen[begin]) {
+		OnibiSemanticTagEvent event =
+		    rollback->arena->tags[rollback->ids[begin]];
+		OnibiTagEventId restored = onibi_semantic_tag_clone(
+		    rollback->arena, rollback->state->tag_history, &event);
+		rollback->state->tag_history = restored;
+		onibi_dynamic_absence_capture_write_clone(
+		    rollback->capture_writes, rollback->arena,
+		    rollback->ids[begin], restored, rollback->ctx);
+	    }
+	    if (rollback->seen[end]) {
+		OnibiSemanticTagEvent event =
+		    rollback->arena->tags[rollback->ids[end]];
+		OnibiTagEventId restored = onibi_semantic_tag_clone(
+		    rollback->arena, rollback->state->tag_history, &event);
+		rollback->state->tag_history = restored;
+		onibi_dynamic_absence_capture_write_clone(
+		    rollback->capture_writes, rollback->arena,
+		    rollback->ids[end], restored, rollback->ctx);
+	    }
 	}
     }
     return Qnil;
@@ -2401,19 +2322,21 @@ onibi_dynamic_absence_restore_pushed_tags_ensure(VALUE opaque)
     ruby_xfree(rollback->seen);
     ruby_xfree(rollback->latest);
     ruby_xfree(rollback->positions);
+    ruby_xfree(rollback->ids);
     return Qnil;
 }
 
 static void
-onibi_dynamic_absence_restore_pushed_tags(OnibiSemanticArena *arena,
-					  OnibiSemanticState *state,
-					  const OnibiSemanticState *snapshot,
-					  const unsigned char *pushed_captures,
-					  uint32_t capture_count)
+onibi_dynamic_absence_restore_pushed_tags(
+    OnibiSemanticArena *arena, OnibiSemanticState *state,
+    const OnibiSemanticState *snapshot, const unsigned char *pushed_captures,
+    uint32_t capture_count, OnibiDynamicAbsenceCaptureWriteLog *capture_writes,
+    OnibiExecCtx *ctx)
 {
     OnibiDynamicAbsenceTagRollback rollback = {
-	arena, state, snapshot, pushed_captures, capture_count, NULL,
-	NULL,  NULL,  NULL};
+	arena,		state, snapshot,      pushed_captures,
+	capture_writes, ctx,   capture_count, NULL,
+	NULL,		NULL,  NULL,	      NULL};
     rb_ensure(onibi_dynamic_absence_restore_pushed_tags_body,
 	      (VALUE)(uintptr_t)&rollback,
 	      onibi_dynamic_absence_restore_pushed_tags_ensure,
@@ -2519,13 +2442,860 @@ onibi_dynamic_absence_filter_capture_events(
 	      (VALUE)(uintptr_t)&filter);
 }
 
+static void
+onibi_dynamic_absence_capture_write_event_store(
+    OnibiDynamicAbsenceCaptureWriteLog *log, OnibiSemanticArena *arena,
+    const OnibiDynamicAbsenceCaptureWrite *event, OnibiExecCtx *ctx)
+{
+    if (log == NULL) return;
+    if (event->tag_id >= arena->tag_count || !event->valid ||
+	arena->tags[event->tag_id].logical_id != event->logical_id ||
+	arena->tags[event->tag_id].slot != event->slot ||
+	arena->tags[event->tag_id].position != event->position)
+	rb_raise(eRegexpError, "absence capture write provenance is invalid");
+    size_t id = (size_t)event->tag_id;
+    if (id >= log->event_capacity) {
+	size_t capacity = log->event_capacity == 0 ? 16U : log->event_capacity;
+	while (capacity <= id) {
+	    if (capacity > SIZE_MAX / 2U) rb_memerror();
+	    capacity *= 2U;
+	}
+	if (capacity > SIZE_MAX / sizeof(*log->events)) rb_memerror();
+	onibi_exec_charge_work(ctx, capacity - log->event_capacity);
+	size_t added = capacity - log->event_capacity;
+	log->events =
+	    ruby_xrealloc(log->events, capacity * sizeof(*log->events));
+	memset(log->events + log->event_capacity, 0,
+	       added * sizeof(*log->events));
+	log->event_capacity = capacity;
+    }
+    onibi_exec_charge_work(ctx, 1);
+    log->events[id] = *event;
+}
+
+static const OnibiDynamicAbsenceCaptureWrite *
+onibi_dynamic_absence_capture_write_event_find(
+    const OnibiDynamicAbsenceCaptureWriteLog *log,
+    const OnibiSemanticArena *arena, OnibiTagEventId tag_id,
+    uint64_t logical_id, OnibiExecCtx *ctx)
+{
+    for (const OnibiDynamicAbsenceCaptureWriteLog *owner = log; owner != NULL;
+	 owner = owner->registry_parent) {
+	onibi_exec_charge_work(ctx, 1);
+	if ((size_t)tag_id < owner->event_capacity) {
+	    const OnibiDynamicAbsenceCaptureWrite *event =
+		&owner->events[tag_id];
+	    if (event->valid && event->tag_id == tag_id &&
+		event->logical_id == logical_id && tag_id < arena->tag_count &&
+		arena->tags[tag_id].logical_id == logical_id)
+		return event;
+	}
+    }
+    return NULL;
+}
+
+static int
+onibi_dynamic_absence_capture_write_identity_equal(
+    const OnibiDynamicAbsenceCaptureWriteIdentity *identity,
+    const OnibiDynamicAbsenceCaptureWrite *event)
+{
+    if (identity->kind != event->kind || identity->slot != event->slot ||
+	identity->flags != event->flags ||
+	identity->position != event->position)
+	return 0;
+    if (event->kind == ONIBI_ABSENCE_CAPTURE_WRITE_ACTION)
+	return identity->action_index == event->action_index;
+    return identity->logical_id == event->logical_id;
+}
+
+static void
+onibi_dynamic_absence_capture_write_clone(
+    OnibiDynamicAbsenceCaptureWriteLog *log, OnibiSemanticArena *arena,
+    OnibiTagEventId source, OnibiTagEventId destination, OnibiExecCtx *ctx)
+{
+    if (log == NULL) return;
+    if (source >= arena->tag_count || destination >= arena->tag_count)
+	rb_raise(eRegexpError, "absence capture clone is invalid");
+    const OnibiSemanticTagEvent *source_tag = &arena->tags[source];
+    const OnibiSemanticTagEvent *destination_tag = &arena->tags[destination];
+    const OnibiDynamicAbsenceCaptureWrite *source_event =
+	onibi_dynamic_absence_capture_write_event_find(
+	    log, arena, source, source_tag->logical_id, ctx);
+    if (source_event == NULL) return;
+    OnibiDynamicAbsenceCaptureWrite clone = *source_event;
+    clone.tag_id = destination;
+    clone.logical_id = destination_tag->logical_id;
+    clone.slot = destination_tag->slot;
+    clone.position = destination_tag->position;
+    clone.valid = 1;
+    onibi_dynamic_absence_capture_write_event_store(log, arena, &clone, ctx);
+}
+
+static void
+onibi_dynamic_absence_capture_write_publish(
+    OnibiDynamicAbsenceCaptureWriteLog *log, OnibiSemanticArena *arena,
+    OnibiTagEventId tag_id, uint16_t slot, OnibiBytePos position,
+    OnibiExecCtx *ctx)
+{
+    if (log == NULL) return;
+    if (tag_id >= arena->tag_count || arena->tags[tag_id].slot != slot ||
+	arena->tags[tag_id].position != position)
+	rb_raise(eRegexpError, "absence capture publication is invalid");
+    OnibiDynamicAbsenceCaptureWrite event = {
+	.tag_id = tag_id,
+	.logical_id = arena->tags[tag_id].logical_id,
+	.source_state = UINT32_MAX,
+	.edge_index = UINT32_MAX,
+	.destination = UINT32_MAX,
+	.action_index = UINT32_MAX,
+	.slot = slot,
+	.flags = 0,
+	.kind = ONIBI_ABSENCE_CAPTURE_WRITE_PUBLISHED,
+	.valid = 1,
+	.position = position};
+    onibi_dynamic_absence_capture_write_event_store(log, arena, &event, ctx);
+}
+
+static void
+onibi_dynamic_absence_capture_write_journal_reserve(
+    OnibiDynamicAbsenceCaptureWriteLog *log, size_t required, OnibiExecCtx *ctx)
+{
+    if (required <= log->journal_capacity) return;
+    size_t capacity = log->journal_capacity == 0 ? 16U : log->journal_capacity;
+    while (capacity < required) {
+	if (capacity > SIZE_MAX / 2U) rb_memerror();
+	capacity *= 2U;
+    }
+    if (capacity > SIZE_MAX / sizeof(*log->journal)) rb_memerror();
+    onibi_exec_charge_work(ctx, capacity - log->journal_capacity);
+    log->journal =
+	ruby_xrealloc(log->journal, capacity * sizeof(*log->journal));
+    log->journal_capacity = capacity;
+}
+
+static void
+onibi_dynamic_absence_capture_write_log_reset(
+    OnibiDynamicAbsenceCaptureWriteLog *log, OnibiExecCtx *ctx)
+{
+    (void)ctx;
+    log->path_count = 0;
+    log->previous_path_count = 0;
+}
+
+static int
+onibi_dynamic_absence_capture_write_path(
+    OnibiSemanticArena *arena, OnibiDynamicAbsenceCaptureWriteLog *log,
+    const OnibiSemanticState *failed, OnibiExecCtx *ctx)
+{
+    size_t count = 0;
+    size_t traversed = 0;
+    int found_base = log->base_history_identity == 0;
+    for (OnibiTagEventId id = failed->tag_history; id != UINT32_MAX;
+	 id = arena->tags[id].parent) {
+	if (id >= arena->tag_count || traversed >= arena->tag_count)
+	    rb_raise(eRegexpError, "absence capture history is invalid");
+	onibi_exec_charge_work(ctx, 1);
+	traversed++;
+	if (log->base_history_identity != 0 &&
+	    arena->tags[id].logical_id == log->base_history_identity) {
+	    found_base = 1;
+	    break;
+	}
+	if (count == log->path_capacity) {
+	    size_t capacity =
+		log->path_capacity == 0 ? 16U : log->path_capacity;
+	    if (capacity > SIZE_MAX / 2U ||
+		capacity * 2U > SIZE_MAX / sizeof(*log->path))
+		rb_memerror();
+	    capacity *= 2U;
+	    onibi_exec_charge_work(ctx, capacity - log->path_capacity);
+	    log->path = ruby_xrealloc(log->path, capacity * sizeof(*log->path));
+	    log->path_capacity = capacity;
+	}
+	log->path[count++] = id;
+    }
+    if (!found_base)
+	rb_raise(eRegexpError, "absence capture base is missing from history");
+
+    size_t common = 0;
+    while (common < log->previous_path_count && common < count) {
+	onibi_exec_charge_work(ctx, 1);
+	OnibiTagEventId current_id = log->path[count - common - 1U];
+	const OnibiDynamicAbsenceCaptureWrite *event =
+	    onibi_dynamic_absence_capture_write_event_find(
+		log, arena, current_id, arena->tags[current_id].logical_id,
+		ctx);
+	if (event == NULL)
+	    rb_raise(eRegexpError,
+		     "absence capture write provenance is missing");
+	if (!onibi_dynamic_absence_capture_write_identity_equal(
+		log->previous_path + common, event))
+	    break;
+	common++;
+    }
+    for (size_t i = count - common; i > 0; i--) {
+	OnibiTagEventId id = log->path[i - 1U];
+	uint64_t logical_id = arena->tags[id].logical_id;
+	const OnibiDynamicAbsenceCaptureWrite *event =
+	    onibi_dynamic_absence_capture_write_event_find(log, arena, id,
+							   logical_id, ctx);
+	if (event == NULL)
+	    rb_raise(eRegexpError,
+		     "absence capture write provenance is missing");
+	if (log->journal_count == SIZE_MAX) rb_memerror();
+	onibi_dynamic_absence_capture_write_journal_reserve(
+	    log, log->journal_count + 1U, ctx);
+	onibi_exec_charge_work(ctx, 1);
+	log->journal[log->journal_count++] = *event;
+    }
+    if (count > log->previous_path_capacity) {
+	if (count > SIZE_MAX / sizeof(*log->previous_path)) rb_memerror();
+	onibi_exec_charge_work(ctx, count - log->previous_path_capacity);
+	log->previous_path = ruby_xrealloc(log->previous_path,
+					   count * sizeof(*log->previous_path));
+	log->previous_path_capacity = count;
+    }
+    for (size_t i = 0; i < count; i++) {
+	onibi_exec_charge_work(ctx, 1);
+	OnibiTagEventId id = log->path[count - i - 1U];
+	const OnibiDynamicAbsenceCaptureWrite *event =
+	    onibi_dynamic_absence_capture_write_event_find(
+		log, arena, id, arena->tags[id].logical_id, ctx);
+	if (event == NULL)
+	    rb_raise(eRegexpError,
+		     "absence capture write provenance is missing");
+	log->previous_path[i] = (OnibiDynamicAbsenceCaptureWriteIdentity){
+	    event->logical_id, event->action_index, event->slot,
+	    event->flags,      event->kind,	    event->position};
+    }
+    log->previous_path_count = count;
+    return 1;
+}
+
+static void
+onibi_dynamic_absence_capture_write_relation_suffixes_prepare(
+    const OnibiRSeqView *view, OnibiDynamicAbsenceCaptureWriteLog *log,
+    OnibiExecCtx *ctx)
+{
+    if (log->relation_suffix_ready) return;
+    size_t count = view->header->absence_capture_relation_count;
+    if (count > SIZE_MAX / sizeof(*log->relation_suffix_heads)) rb_memerror();
+    log->relation_count = count;
+    if (count != 0) {
+	onibi_exec_charge_work(ctx, count);
+	log->relation_suffix_heads =
+	    ruby_xmalloc(count * sizeof(*log->relation_suffix_heads));
+	for (size_t i = 0; i < count; i++) {
+	    onibi_exec_charge_work(ctx, 1);
+	    log->relation_suffix_heads[i] = UINT32_MAX;
+	}
+    }
+    for (uint32_t edge_index = 0; edge_index < view->header->edge_count;
+	 edge_index++) {
+	const OnibiREdge *edge = &view->edges[edge_index];
+	onibi_exec_charge_work(ctx, 1);
+	if (edge->action_offset == 0) continue;
+	if (edge->action_offset % sizeof(OnibiRAction) != 0)
+	    rb_raise(eRegexpError, "absence relation action offset is invalid");
+	uint32_t action_index =
+	    edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
+	for (; action_index < view->header->action_count; action_index++) {
+	    const OnibiRAction *action = &view->actions[action_index];
+	    onibi_exec_charge_work(ctx, 1);
+	    if (action->op == ONIBI_RA_END) break;
+	    if (action->op != ONIBI_RA_CAPTURE_RELATION ||
+		action->flags != ONIBI_CAPTURE_RELATION_ROLE_SUFFIX)
+		continue;
+	    if (action->arg32 == 0 || action->arg32 > count ||
+		edge->destination >= view->header->state_count)
+		rb_raise(eRegexpError, "absence suffix relation is invalid");
+	    size_t relation_index = action->arg32 - 1U;
+	    const OnibiAbsenceCaptureRelation *relation =
+		&view->absence_capture_relations[relation_index];
+	    if (relation->target_close_slot != action->arg16)
+		rb_raise(eRegexpError,
+			 "absence suffix relation slot is invalid");
+	    if (log->relation_suffix_count == SIZE_MAX ||
+		log->relation_suffix_count >= UINT32_MAX)
+		rb_memerror();
+	    size_t required = log->relation_suffix_count + 1U;
+	    if (required > log->relation_suffix_capacity) {
+		size_t capacity = log->relation_suffix_capacity == 0
+				      ? 16U
+				      : log->relation_suffix_capacity;
+		while (capacity < required) {
+		    if (capacity > SIZE_MAX / 2U) rb_memerror();
+		    capacity *= 2U;
+		}
+		if (capacity > SIZE_MAX / sizeof(*log->relation_suffixes) ||
+		    capacity > UINT32_MAX)
+		    rb_memerror();
+		onibi_exec_charge_work(ctx, capacity -
+						log->relation_suffix_capacity);
+		log->relation_suffixes =
+		    ruby_xrealloc(log->relation_suffixes,
+				  capacity * sizeof(*log->relation_suffixes));
+		log->relation_suffix_capacity = capacity;
+	    }
+	    uint32_t suffix_index = (uint32_t)log->relation_suffix_count++;
+	    log->relation_suffixes[suffix_index].destination =
+		edge->destination;
+	    log->relation_suffixes[suffix_index].next =
+		log->relation_suffix_heads[relation_index];
+	    log->relation_suffix_heads[relation_index] = suffix_index;
+	}
+    }
+    for (size_t i = 0; i < count; i++) {
+	onibi_exec_charge_work(ctx, 1);
+	if (log->relation_suffix_heads[i] == UINT32_MAX)
+	    rb_raise(eRegexpError, "absence suffix relation is missing");
+    }
+    log->relation_suffix_ready = 1;
+}
+
+static int
+onibi_dynamic_absence_capture_write_relation_suffix_matches(
+    const OnibiDynamicAbsenceCaptureWriteLog *log, uint32_t relation_index,
+    uint32_t failed_state_id, OnibiExecCtx *ctx)
+{
+    if (relation_index >= log->relation_count || !log->relation_suffix_ready)
+	return 0;
+    uint32_t head = log->relation_suffix_heads[relation_index];
+    if (head == UINT32_MAX || head >= log->relation_suffix_count) return 0;
+    uint32_t destination = log->relation_suffixes[head].destination;
+    size_t traversed = 0;
+    for (uint32_t suffix_index = head; suffix_index != UINT32_MAX;
+	 suffix_index = log->relation_suffixes[suffix_index].next) {
+	if (suffix_index >= log->relation_suffix_count)
+	    rb_raise(eRegexpError, "absence suffix relation link is invalid");
+	if (traversed++ >= log->relation_suffix_count)
+	    rb_raise(eRegexpError, "absence suffix relation cycle is invalid");
+	onibi_exec_charge_work(ctx, 1);
+	if (log->relation_suffixes[suffix_index].destination != destination)
+	    return 0;
+    }
+    return destination == failed_state_id;
+}
+
+typedef struct {
+    const OnibiRSeqView *view;
+    OnibiSemanticArena *arena;
+    OnibiSemanticState *target;
+    const OnibiSemanticState *before;
+    OnibiTagEventId failed_history;
+    OnibiDynamicAbsenceCaptureWriteLog *log;
+    const unsigned char *pushed_captures;
+    uint32_t capture_count;
+    size_t journal_begin;
+    size_t journal_end;
+    uint32_t failed_state_id;
+    OnibiBytePos failed_position;
+    OnibiBytePos active_bound;
+    OnibiExecCtx *ctx;
+    unsigned char *clear;
+    int changed;
+} OnibiDynamicAbsenceCaptureJournalApply;
+
+static int
+onibi_dynamic_absence_capture_write_journal_has_tag(
+    const OnibiDynamicAbsenceCaptureJournalApply *apply, OnibiTagEventId tag_id)
+{
+    for (size_t i = apply->journal_begin; i < apply->journal_end; i++) {
+	onibi_exec_charge_work(apply->ctx, 1);
+	if (apply->log->journal[i].tag_id == tag_id) return 1;
+    }
+    return 0;
+}
+
+static int
+onibi_dynamic_absence_capture_write_history_has_tag(
+    const OnibiDynamicAbsenceCaptureJournalApply *apply, OnibiTagEventId tag_id)
+{
+    size_t traversed = 0;
+    for (OnibiTagEventId id = apply->failed_history; id != UINT32_MAX;
+	 id = apply->arena->tags[id].parent) {
+	if (id >= apply->arena->tag_count ||
+	    traversed++ >= apply->arena->tag_count)
+	    rb_raise(eRegexpError, "absence capture history is invalid");
+	onibi_exec_charge_work(apply->ctx, 1);
+	if (id == tag_id) return 1;
+    }
+    return 0;
+}
+
+static int
+onibi_dynamic_absence_capture_relation_suffix_consumes(
+    OnibiDynamicAbsenceCaptureJournalApply *apply)
+{
+    if (apply->failed_state_id >= apply->view->header->state_count ||
+	apply->log->subject == Qnil)
+	rb_raise(eRegexpError, "absence suffix consumer is invalid");
+    const OnibiRState *state = &apply->view->states[apply->failed_state_id];
+    onibi_exec_charge_work(apply->ctx, 1);
+    switch (state->op) {
+    case ONIBI_RS_CHAR:
+    case ONIBI_RS_CLASS:
+    case ONIBI_RS_ANY: {
+	rb_encoding *encoding = rb_enc_get(apply->log->subject);
+	OnibiEncodingMode mode =
+	    onibi_encoding_mode_for(apply->log->subject, encoding);
+	OnibiBytePos next_position = apply->active_bound;
+	return onibi_rseq_consume_character(
+	    apply->view, state, apply->log->subject, apply->active_bound,
+	    encoding, mode, &next_position, apply->log->class_stack,
+	    apply->log->class_stack_capacity, apply->ctx);
+    }
+    case ONIBI_RS_GRAPHEME:
+	return onibi_grapheme_width(apply->log->subject, apply->active_bound) >
+	       0;
+    default: rb_raise(eRegexpError, "unsupported absence suffix consumer");
+    }
+}
+
+static int
+onibi_dynamic_absence_capture_write_pair_before(
+    OnibiDynamicAbsenceCaptureJournalApply *apply, OnibiTagEventId history_head,
+    OnibiTagEventId anchor_id, int include_anchor, uint32_t capture,
+    OnibiTagEventId *open_id, OnibiTagEventId *close_id)
+{
+    OnibiSemanticArena *arena = apply->arena;
+    if (capture > (UINT32_MAX - 1U) / 2U || anchor_id >= arena->tag_count)
+	return 0;
+    OnibiTagEventId id = history_head;
+    size_t traversed = 0;
+    while (id != UINT32_MAX && id != anchor_id) {
+	if (id >= arena->tag_count || traversed++ >= arena->tag_count)
+	    rb_raise(eRegexpError, "absence capture anchor is invalid");
+	onibi_exec_charge_work(apply->ctx, 1);
+	id = arena->tags[id].parent;
+    }
+    if (id != anchor_id) return 0;
+    uint32_t start_slot = capture * 2U;
+    uint32_t end_slot = start_slot + 1U;
+    if (arena->tags[id].slot != end_slot) return 0;
+    *close_id = id;
+    id = include_anchor ? id : arena->tags[id].parent;
+    traversed = 0;
+    while (id != UINT32_MAX) {
+	if (id >= arena->tag_count || traversed++ >= arena->tag_count)
+	    rb_raise(eRegexpError, "absence capture pair history is invalid");
+	onibi_exec_charge_work(apply->ctx, 1);
+	if (arena->tags[id].slot == start_slot) {
+	    *open_id = id;
+	    return 1;
+	}
+	id = arena->tags[id].parent;
+    }
+    return 0;
+}
+
+static int
+onibi_dynamic_absence_capture_write_pushed_target_apply(
+    OnibiDynamicAbsenceCaptureJournalApply *apply,
+    const OnibiDynamicAbsenceCaptureWrite *write)
+{
+    if (write->kind != ONIBI_ABSENCE_CAPTURE_WRITE_ACTION ||
+	write->action_index >= apply->view->header->action_count ||
+	(write->flags & ONIBI_RA_CAPTURE_CLOSE) == 0 ||
+	(write->slot & 1U) == 0 || write->position != apply->active_bound ||
+	apply->failed_position != apply->active_bound ||
+	apply->failed_state_id >= apply->view->header->state_count ||
+	!apply->log->relation_suffix_ready)
+	return 0;
+    const OnibiRAction *close = &apply->view->actions[write->action_index];
+    if (close->op != ONIBI_RA_CAPTURE ||
+	close->flags != ONIBI_RA_CAPTURE_CLOSE || close->arg16 != write->slot)
+	rb_raise(eRegexpError, "absence capture close provenance is invalid");
+
+    for (uint32_t i = write->action_index + 1U;
+	 i < apply->view->header->action_count; i++) {
+	const OnibiRAction *marker = &apply->view->actions[i];
+	if (marker->op != ONIBI_RA_CAPTURE_RELATION) break;
+	onibi_exec_charge_work(apply->ctx, 1);
+	if (marker->flags != ONIBI_CAPTURE_RELATION_ROLE_CLOSE ||
+	    marker->arg16 != write->slot)
+	    continue;
+	if (marker->arg32 == 0 || marker->arg32 > apply->log->relation_count)
+	    rb_raise(eRegexpError, "absence capture close relation is invalid");
+	uint32_t relation_index = marker->arg32 - 1U;
+	const OnibiAbsenceCaptureRelation *relation =
+	    &apply->view->absence_capture_relations[relation_index];
+	if (relation->subprogram_id != apply->log->owner_subprogram_id ||
+	    relation->target_close_slot != write->slot ||
+	    relation->target_start_kind != ONIBI_RELATION_TARGET_START_PUSHED)
+	    continue;
+	if (!onibi_dynamic_absence_capture_write_relation_suffix_matches(
+		apply->log, relation_index, apply->failed_state_id, apply->ctx))
+	    continue;
+	uint32_t target_capture = relation->target_close_slot / 2U;
+	uint32_t witness_capture = relation->pushed_witness_close_slot / 2U;
+	if (target_capture >= apply->capture_count ||
+	    witness_capture >= apply->capture_count ||
+	    target_capture == witness_capture ||
+	    apply->pushed_captures == NULL ||
+	    !apply->pushed_captures[target_capture])
+	    continue;
+
+	OnibiTagEventId target_open_id = UINT32_MAX;
+	OnibiTagEventId target_close_id = UINT32_MAX;
+	if (!onibi_dynamic_absence_capture_write_pair_before(
+		apply, apply->failed_history, write->tag_id, 1, target_capture,
+		&target_open_id, &target_close_id) ||
+	    target_close_id != write->tag_id ||
+	    !onibi_dynamic_absence_capture_write_journal_has_tag(
+		apply, target_open_id))
+	    continue;
+	const OnibiDynamicAbsenceCaptureWrite *target_open_write =
+	    onibi_dynamic_absence_capture_write_event_find(
+		apply->log, apply->arena, target_open_id,
+		apply->arena->tags[target_open_id].logical_id, apply->ctx);
+	if (target_open_write == NULL ||
+	    target_open_write->kind != ONIBI_ABSENCE_CAPTURE_WRITE_ACTION ||
+	    (target_open_write->flags & ONIBI_RA_CAPTURE_OPEN_START_PUSH) == 0)
+	    continue;
+
+	OnibiTagEventId witness_open_id = UINT32_MAX;
+	OnibiTagEventId witness_close_id = UINT32_MAX;
+	if (!onibi_dynamic_absence_capture_write_pair_before(
+		apply, apply->failed_history, write->tag_id, 0, witness_capture,
+		&witness_open_id, &witness_close_id) ||
+	    !onibi_dynamic_absence_capture_write_journal_has_tag(
+		apply, witness_open_id) ||
+	    !onibi_dynamic_absence_capture_write_journal_has_tag(
+		apply, witness_close_id))
+	    continue;
+	const OnibiDynamicAbsenceCaptureWrite *witness_open_write =
+	    onibi_dynamic_absence_capture_write_event_find(
+		apply->log, apply->arena, witness_open_id,
+		apply->arena->tags[witness_open_id].logical_id, apply->ctx);
+	const OnibiDynamicAbsenceCaptureWrite *witness_close_write =
+	    onibi_dynamic_absence_capture_write_event_find(
+		apply->log, apply->arena, witness_close_id,
+		apply->arena->tags[witness_close_id].logical_id, apply->ctx);
+	if (witness_open_write == NULL || witness_close_write == NULL ||
+	    witness_open_write->kind != ONIBI_ABSENCE_CAPTURE_WRITE_ACTION ||
+	    witness_close_write->kind != ONIBI_ABSENCE_CAPTURE_WRITE_ACTION ||
+	    (witness_open_write->flags & ONIBI_RA_CAPTURE_OPEN_START_PUSH) ==
+		0 ||
+	    (witness_close_write->flags & ONIBI_RA_CAPTURE_CLOSE) == 0 ||
+	    witness_close_write->slot != relation->pushed_witness_close_slot)
+	    continue;
+
+	memset(apply->clear, 0, apply->target->semantic_captures.slot_count);
+	apply->clear[relation->target_close_slot - 1U] = 1;
+	apply->clear[relation->target_close_slot] = 1;
+	onibi_dynamic_absence_filter_capture_slots(
+	    apply->arena, apply->target, apply->clear,
+	    apply->target->semantic_captures.slot_count, 0, 0, apply->log,
+	    apply->ctx);
+	OnibiSemanticTagEvent open = apply->arena->tags[target_open_id];
+	OnibiSemanticTagEvent close_event = apply->arena->tags[target_close_id];
+	onibi_exec_charge_work(apply->ctx, 1);
+	OnibiTagEventId restored_open = onibi_semantic_tag_clone(
+	    apply->arena, apply->target->tag_history, &open);
+	apply->target->tag_history = restored_open;
+	onibi_dynamic_absence_capture_write_clone(apply->log, apply->arena,
+						  target_open_id, restored_open,
+						  apply->ctx);
+	onibi_exec_charge_work(apply->ctx, 1);
+	OnibiTagEventId restored_close = onibi_semantic_tag_clone(
+	    apply->arena, apply->target->tag_history, &close_event);
+	apply->target->tag_history = restored_close;
+	onibi_dynamic_absence_capture_write_clone(apply->log, apply->arena,
+						  target_close_id,
+						  restored_close, apply->ctx);
+	onibi_semantic_condition_capture_write(
+	    apply->arena, &apply->target->condition_captures,
+	    relation->target_close_slot - 1U, open.position);
+	onibi_semantic_condition_capture_write(
+	    apply->arena, &apply->target->condition_captures,
+	    relation->target_close_slot, close_event.position);
+	apply->changed = 1;
+	return 1;
+    }
+    return 0;
+}
+
+static int
+onibi_dynamic_absence_capture_write_close_deferred(
+    OnibiDynamicAbsenceCaptureJournalApply *apply,
+    const OnibiDynamicAbsenceCaptureWrite *write)
+{
+    if (write->kind != ONIBI_ABSENCE_CAPTURE_WRITE_ACTION ||
+	write->action_index >= apply->view->header->action_count ||
+	(write->flags & ONIBI_RA_CAPTURE_CLOSE) == 0 ||
+	(write->slot & 1U) == 0 || write->position != apply->active_bound ||
+	apply->failed_position != apply->active_bound ||
+	apply->failed_state_id >= apply->view->header->state_count ||
+	!apply->log->relation_suffix_ready ||
+	!onibi_dynamic_absence_capture_write_history_has_tag(apply,
+							     write->tag_id))
+	return 0;
+    const OnibiRAction *close = &apply->view->actions[write->action_index];
+    if (close->op != ONIBI_RA_CAPTURE ||
+	close->flags != ONIBI_RA_CAPTURE_CLOSE || close->arg16 != write->slot)
+	rb_raise(eRegexpError, "absence capture close provenance is invalid");
+
+    for (uint32_t i = write->action_index + 1U;
+	 i < apply->view->header->action_count; i++) {
+	const OnibiRAction *marker = &apply->view->actions[i];
+	if (marker->op != ONIBI_RA_CAPTURE_RELATION) break;
+	onibi_exec_charge_work(apply->ctx, 1);
+	if (marker->flags != ONIBI_CAPTURE_RELATION_ROLE_CLOSE ||
+	    marker->arg16 != write->slot)
+	    continue;
+	if (marker->arg32 == 0 || marker->arg32 > apply->log->relation_count)
+	    rb_raise(eRegexpError, "absence capture close relation is invalid");
+	uint32_t relation_index = marker->arg32 - 1U;
+	const OnibiAbsenceCaptureRelation *relation =
+	    &apply->view->absence_capture_relations[relation_index];
+	if (relation->subprogram_id != apply->log->owner_subprogram_id ||
+	    relation->target_close_slot != write->slot)
+	    continue;
+	if (onibi_dynamic_absence_capture_write_relation_suffix_matches(
+		apply->log, relation_index, apply->failed_state_id,
+		apply->ctx) &&
+	    !onibi_dynamic_absence_capture_relation_suffix_consumes(apply))
+	    return 1;
+    }
+    return 0;
+}
+
+static VALUE
+onibi_dynamic_absence_capture_journal_apply_body(VALUE opaque)
+{
+    OnibiDynamicAbsenceCaptureJournalApply *apply =
+	(OnibiDynamicAbsenceCaptureJournalApply *)(uintptr_t)opaque;
+    OnibiSemanticArena *arena = apply->arena;
+    OnibiSemanticState *target = apply->target;
+    uint32_t slots = target->semantic_captures.slot_count;
+    if (target->condition_captures.slot_count != slots ||
+	apply->before->semantic_captures.slot_count != slots ||
+	apply->before->condition_captures.slot_count != slots ||
+	(uint64_t)apply->capture_count * 2U > slots ||
+	apply->journal_begin > apply->journal_end ||
+	apply->journal_end > apply->log->journal_count)
+	rb_raise(eRegexpError, "absence capture journal range is invalid");
+
+    if (apply->ctx) apply->ctx->current_position = apply->failed_position;
+    target->semantic_captures = apply->before->semantic_captures;
+    target->condition_captures = apply->before->condition_captures;
+    target->tag_history = apply->before->tag_history;
+    target->reported_start = apply->before->reported_start;
+    apply->changed =
+	target->capture_event_history != apply->before->capture_event_history ||
+	target->capture_event_dependency !=
+	    apply->before->capture_event_dependency;
+    if (slots == 0) return apply->changed ? Qtrue : Qfalse;
+    apply->clear = ruby_xcalloc(slots, 1);
+
+    for (size_t i = apply->journal_begin; i < apply->journal_end; i++) {
+	onibi_exec_charge_work(apply->ctx, 1);
+	const OnibiDynamicAbsenceCaptureWrite *write = &apply->log->journal[i];
+	if (!write->valid || write->slot >= slots || write->position < 0)
+	    rb_raise(eRegexpError, "absence capture journal entry is invalid");
+	if (onibi_dynamic_absence_capture_write_pushed_target_apply(apply,
+								    write))
+	    continue;
+	if (onibi_dynamic_absence_capture_write_close_deferred(apply, write))
+	    continue;
+	uint32_t capture = write->slot / 2U;
+	if (capture >= apply->capture_count ||
+	    (apply->pushed_captures != NULL && apply->pushed_captures[capture]))
+	    continue;
+
+	if ((write->slot & 1U) == 0) {
+	    if (write->kind == ONIBI_ABSENCE_CAPTURE_WRITE_ACTION &&
+		(write->flags & ONIBI_RA_CAPTURE_OPEN_START_PUSH) != 0)
+		continue;
+	    memset(apply->clear, 0, slots);
+	    apply->clear[write->slot] = 1;
+	    apply->clear[write->slot + 1U] = 1;
+	    onibi_dynamic_absence_filter_capture_slots(
+		arena, target, apply->clear, slots, 0, 0, apply->log,
+		apply->ctx);
+	    onibi_semantic_condition_capture_write(
+		arena, &target->condition_captures, write->slot,
+		write->position);
+	    onibi_semantic_condition_capture_write(
+		arena, &target->condition_captures, write->slot + 1U, -1);
+	    apply->changed = 1;
+	    continue;
+	}
+	OnibiBytePos capture_start = onibi_semantic_position_read(
+	    arena, target->condition_captures.root, write->slot - 1U, -1);
+	memset(apply->clear, 0, slots);
+	apply->clear[write->slot - 1U] = 1;
+	apply->clear[write->slot] = 1;
+	onibi_dynamic_absence_filter_capture_slots(
+	    arena, target, apply->clear, slots, 0, 0, apply->log, apply->ctx);
+	if (capture_start >= 0) {
+	    target->tag_history = onibi_semantic_tag_append(
+		arena, target->tag_history, write->slot - 1U, capture_start);
+	    onibi_dynamic_absence_capture_write_publish(
+		apply->log, arena, target->tag_history,
+		(uint16_t)(write->slot - 1U), capture_start, apply->ctx);
+	    target->tag_history = onibi_semantic_tag_append(
+		arena, target->tag_history, write->slot, write->position);
+	    onibi_dynamic_absence_capture_write_publish(
+		apply->log, arena, target->tag_history, write->slot,
+		write->position, apply->ctx);
+	}
+	onibi_semantic_condition_capture_write(
+	    arena, &target->condition_captures, write->slot, write->position);
+	apply->changed = 1;
+    }
+    return apply->changed ? Qtrue : Qfalse;
+}
+
+static VALUE
+onibi_dynamic_absence_capture_journal_apply_ensure(VALUE opaque)
+{
+    OnibiDynamicAbsenceCaptureJournalApply *apply =
+	(OnibiDynamicAbsenceCaptureJournalApply *)(uintptr_t)opaque;
+    ruby_xfree(apply->clear);
+    apply->clear = NULL;
+    return Qnil;
+}
+
+static int
+onibi_dynamic_absence_capture_journal_apply(
+    const OnibiRSeqView *view, OnibiSemanticArena *arena,
+    OnibiSemanticState *target, const OnibiSemanticState *before,
+    OnibiDynamicAbsenceCaptureWriteLog *log,
+    const unsigned char *pushed_captures, uint32_t capture_count,
+    size_t journal_begin, size_t journal_end, uint32_t failed_state_id,
+    OnibiBytePos failed_position, OnibiBytePos active_bound, OnibiExecCtx *ctx)
+{
+    OnibiDynamicAbsenceCaptureJournalApply apply = {
+	.view = view,
+	.arena = arena,
+	.target = target,
+	.before = before,
+	.failed_history = target->tag_history,
+	.log = log,
+	.pushed_captures = pushed_captures,
+	.capture_count = capture_count,
+	.journal_begin = journal_begin,
+	.journal_end = journal_end,
+	.failed_state_id = failed_state_id,
+	.failed_position = failed_position,
+	.active_bound = active_bound,
+	.ctx = ctx,
+	.clear = NULL,
+	.changed = 0};
+    return RTEST(rb_ensure(onibi_dynamic_absence_capture_journal_apply_body,
+			   (VALUE)(uintptr_t)&apply,
+			   onibi_dynamic_absence_capture_journal_apply_ensure,
+			   (VALUE)(uintptr_t)&apply));
+}
+
+static int
+onibi_dynamic_absence_capture_journal_publish(
+    const OnibiRSeqView *view, OnibiSemanticArena *arena,
+    OnibiSemanticState *target, const OnibiSemanticState *before,
+    const OnibiSemanticState *failed, OnibiDynamicAbsenceCaptureWriteLog *log,
+    const unsigned char *pushed_captures, uint32_t capture_count,
+    size_t journal_begin, size_t journal_end, uint32_t failed_state_id,
+    OnibiBytePos failed_position, OnibiBytePos active_bound, OnibiExecCtx *ctx)
+{
+    OnibiSemanticState published = *failed;
+    onibi_dynamic_absence_filter_capture_events(arena, &published,
+						before->capture_event_history,
+						pushed_captures, capture_count);
+    if (!onibi_dynamic_absence_capture_journal_apply(
+	    view, arena, &published, before, log, pushed_captures,
+	    capture_count, journal_begin, journal_end, failed_state_id,
+	    failed_position, active_bound, ctx))
+	return 0;
+    *target = published;
+    return 1;
+}
+
+static void
+onibi_dynamic_absence_capture_write_record(
+    OnibiDynamicAbsenceCaptureWriteLog *log, OnibiSemanticArena *arena,
+    OnibiTagEventId tag_id, uint32_t source_state, uint32_t edge_index,
+    uint32_t destination, uint32_t action_index, uint16_t slot, uint8_t flags,
+    OnibiBytePos position, OnibiExecCtx *ctx)
+{
+    if (log == NULL) return;
+    if (tag_id >= arena->tag_count || arena->tags[tag_id].slot != slot ||
+	arena->tags[tag_id].position != position)
+	rb_raise(eRegexpError, "absence capture action is invalid");
+    OnibiDynamicAbsenceCaptureWrite event = {
+	.tag_id = tag_id,
+	.logical_id = arena->tags[tag_id].logical_id,
+	.source_state = source_state,
+	.edge_index = edge_index,
+	.destination = destination,
+	.action_index = action_index,
+	.slot = slot,
+	.flags = flags,
+	.kind = ONIBI_ABSENCE_CAPTURE_WRITE_ACTION,
+	.valid = 1,
+	.position = position};
+    onibi_dynamic_absence_capture_write_event_store(log, arena, &event, ctx);
+}
+
+static void
+onibi_dynamic_absence_capture_write_transfer_history(
+    OnibiDynamicAbsenceCaptureWriteLog *parent,
+    OnibiDynamicAbsenceCaptureWriteLog *child, OnibiSemanticArena *arena,
+    OnibiTagEventId history, OnibiExecCtx *ctx)
+{
+    if (parent == NULL) return;
+    child->path_count = 0;
+    size_t traversed = 0;
+    int found_base = child->base_history_identity == 0;
+    for (OnibiTagEventId id = history; id != UINT32_MAX;
+	 id = arena->tags[id].parent) {
+	if (id >= arena->tag_count || traversed >= arena->tag_count)
+	    rb_raise(eRegexpError, "absence published history is invalid");
+	onibi_exec_charge_work(ctx, 1);
+	traversed++;
+	if (child->base_history_identity != 0 &&
+	    arena->tags[id].logical_id == child->base_history_identity) {
+	    found_base = 1;
+	    break;
+	}
+	if (child->path_count == child->path_capacity) {
+	    size_t capacity =
+		child->path_capacity == 0 ? 16U : child->path_capacity;
+	    if (capacity > SIZE_MAX / 2U ||
+		capacity * 2U > SIZE_MAX / sizeof(*child->path))
+		rb_memerror();
+	    capacity *= 2U;
+	    onibi_exec_charge_work(ctx, capacity - child->path_capacity);
+	    child->path =
+		ruby_xrealloc(child->path, capacity * sizeof(*child->path));
+	    child->path_capacity = capacity;
+	}
+	child->path[child->path_count++] = id;
+    }
+    if (!found_base)
+	rb_raise(eRegexpError, "absence published base is missing");
+    for (size_t i = child->path_count; i > 0; i--) {
+	OnibiTagEventId id = child->path[i - 1U];
+	const OnibiSemanticTagEvent *tag = &arena->tags[id];
+	if (onibi_dynamic_absence_capture_write_event_find(
+		child, arena, id, tag->logical_id, ctx) == NULL)
+	    rb_raise(eRegexpError,
+		     "absence published capture provenance is missing");
+	onibi_dynamic_absence_capture_write_publish(
+	    parent, arena, id, tag->slot, tag->position, ctx);
+    }
+}
+
 static OnibiActionResult
 onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 			   VALUE str, OnibiBytePos pos,
 			   OnibiBytePos search_origin, rb_encoding *encoding,
 			   OnibiEncodingMode mode, OnibiSemanticArena *arena,
 			   const OnibiSemanticState *predecessor,
-			   OnibiSemanticState *successor, OnibiExecCtx *ctx)
+			   OnibiSemanticState *successor, OnibiExecCtx *ctx,
+			   uint32_t source_state, uint32_t edge_index,
+			   OnibiDynamicAbsenceCaptureWriteLog *capture_writes)
 {
     OnibiSemanticCheckpoint checkpoint = onibi_semantic_checkpoint_save(arena);
     OnibiSemanticState working = *predecessor;
@@ -2540,6 +3310,7 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 	    *successor = working;
 	    return ONIBI_ACTION_SUCCESS;
 	}
+	if (action->op == ONIBI_RA_CAPTURE_RELATION) continue;
 	if (action->op == ONIBI_RA_ORDER) {
 	    working.order =
 		onibi_capture_order_append(arena, working.order, action->arg32);
@@ -2582,6 +3353,10 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 	    }
 	    working.tag_history = onibi_semantic_tag_append(
 		arena, working.tag_history, action->arg16, pos);
+	    onibi_dynamic_absence_capture_write_record(
+		capture_writes, arena, working.tag_history, source_state,
+		edge_index, edge->destination, index, action->arg16,
+		action->flags, pos, ctx);
 	    continue;
 	}
 	if (action->op >= ONIBI_RA_NULL_ENTER &&
@@ -2672,14 +3447,16 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 	}
 	if (action->op == ONIBI_RA_ASSERT_SUBPROGRAM) {
 	    OnibiSemanticState assertion_state;
-	    if (ctx == NULL ||
-		((ctx->program != NULL &&
-			  ctx->program->exec_kind == ONIBI_EXEC_DYNAMIC
-		      ? onibi_dynamic_assert_subprogram
-		      : onibi_tagged_assert_subprogram)(
-		     ctx, action, pos, &working, &assertion_state) ==
-		 ONIBI_ACTION_FAIL))
-		goto fail;
+	    if (ctx == NULL) goto fail;
+	    OnibiActionResult assertion_result =
+		ctx->program != NULL &&
+			ctx->program->exec_kind == ONIBI_EXEC_DYNAMIC
+		    ? onibi_dynamic_assert_subprogram(
+			  ctx, action, pos, &working, &assertion_state,
+			  capture_writes)
+		    : onibi_tagged_assert_subprogram(ctx, action, pos, &working,
+						     &assertion_state);
+	    if (assertion_result == ONIBI_ACTION_FAIL) goto fail;
 	    working = assertion_state;
 	    continue;
 	}
@@ -2814,7 +3591,8 @@ onibi_assertion_event_diagnostic(OnibiAssertionDiagnosticKind kind)
     if (parent_failure) {
 	diagnostic.status = onibi_apply_action_program(
 	    &view, &edges[1], subject, position, 0, encoding, ctx.encoding_mode,
-	    arena, &predecessor, &successor, &ctx);
+	    arena, &predecessor, &successor, &ctx, UINT32_MAX, UINT32_MAX,
+	    NULL);
     }
     else {
 	diagnostic.status = onibi_tagged_assert_subprogram(
@@ -2877,7 +3655,7 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	OnibiSemanticState successor = predecessor;
 	OnibiActionResult status = onibi_apply_action_program(
 	    &view, &edge, subject, 2, 0, encoding, ONIBI_ENC_ASCII_7BIT, &arena,
-	    &predecessor, &successor, NULL);
+	    &predecessor, &successor, NULL, UINT32_MAX, UINT32_MAX, NULL);
 	rb_hash_aset(result, ID2SYM(rb_intern("success")),
 		     status == ONIBI_ACTION_SUCCESS ? Qtrue : Qfalse);
 	rb_hash_aset(result, ID2SYM(rb_intern("predecessor_reported_start")),
@@ -3189,10 +3967,10 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	OnibiSemanticState second = predecessor;
 	OnibiActionResult first_status = onibi_apply_action_program(
 	    &view, &edges[0], subject, 2, 0, encoding, ONIBI_ENC_ASCII_7BIT,
-	    &arena, &predecessor, &first, NULL);
+	    &arena, &predecessor, &first, NULL, UINT32_MAX, UINT32_MAX, NULL);
 	OnibiActionResult second_status = onibi_apply_action_program(
 	    &view, &edges[1], subject, 2, 0, encoding, ONIBI_ENC_ASCII_7BIT,
-	    &arena, &predecessor, &second, NULL);
+	    &arena, &predecessor, &second, NULL, UINT32_MAX, UINT32_MAX, NULL);
 	OnibiFrontier frontier;
 	memset(&frontier, 0, sizeof(frontier));
 	onibi_tagged_frontier_reset(&frontier, 8);
@@ -3206,11 +3984,11 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	OnibiSemanticState failed = predecessor;
 	OnibiActionResult failed_status = onibi_apply_action_program(
 	    &view, &edges[2], subject, 2, 0, encoding, ONIBI_ENC_ASCII_7BIT,
-	    &arena, &predecessor, &failed, NULL);
+	    &arena, &predecessor, &failed, NULL, UINT32_MAX, UINT32_MAX, NULL);
 	OnibiSemanticState repeated = first;
 	OnibiActionResult repeated_status = onibi_apply_action_program(
 	    &view, &edges[3], subject, 2, 0, encoding, ONIBI_ENC_ASCII_7BIT,
-	    &arena, &first, &repeated, NULL);
+	    &arena, &first, &repeated, NULL, UINT32_MAX, UINT32_MAX, NULL);
 
 	rb_hash_aset(result, ID2SYM(rb_intern("action_success")),
 		     first_status == ONIBI_ACTION_SUCCESS &&
@@ -3301,7 +4079,7 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	size_t checkpoint = arena.register_count;
 	OnibiActionResult status = onibi_apply_action_program(
 	    &view, &edge, subject, 2, 0, encoding, ONIBI_ENC_ASCII_7BIT, &arena,
-	    &first, &failed, NULL);
+	    &first, &failed, NULL, UINT32_MAX, UINT32_MAX, NULL);
 	rb_hash_aset(result, ID2SYM(rb_intern("failed_transaction")),
 		     status == ONIBI_ACTION_FAIL ? Qtrue : Qfalse);
 	rb_hash_aset(result, ID2SYM(rb_intern("capture_event_rollback")),
@@ -3436,7 +4214,7 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	    rb_raise(rb_eRuntimeError,
 		     "TAGGED output diagnostic lost its thread");
 	onibi_tagged_materialize_tags(&arena, &frontier.semantics[0],
-				      &raw_match, 4);
+				      &raw_match, 4, 0, NULL);
 	VALUE capture_ranges = rb_ary_new_capa(4);
 	for (uint32_t i = 1; i < raw_match.num_regs; i++) {
 	    rb_ary_push(capture_ranges, LONG2NUM(raw_match.beg[i]));
@@ -3478,7 +4256,8 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 				   .num_regs = 2,
 				   .beg = capture_beg,
 				   .end = capture_end};
-	onibi_tagged_materialize_tags(&arena, &accepted, &raw_match, 2);
+	onibi_tagged_materialize_tags(&arena, &accepted, &raw_match, 2, 0,
+				      NULL);
 	rb_hash_aset(result, ID2SYM(rb_intern("sibling_orders")),
 		     !onibi_capture_order_is_ancestor(&arena, rejected.order,
 						      accepted.order)
@@ -3516,8 +4295,8 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 				      .num_regs = 2,
 				      .beg = merged_beg,
 				      .end = merged_end};
-	int merged_materialized =
-	    onibi_tagged_materialize_tags(&arena, &merged, &merged_match, 2);
+	int merged_materialized = onibi_tagged_materialize_tags(
+	    &arena, &merged, &merged_match, 2, 0, NULL);
 	rb_hash_aset(result, ID2SYM(rb_intern("duplicate_owner_kept")),
 		     first_inserted && !second_inserted && owner_resolved
 			 ? Qtrue
@@ -3600,7 +4379,9 @@ onibi_rseq_dynamic_run(
     OnibiBytePos *failed_position, int reset_arena, OnibiBytePos *matched_end,
     OnibiSemanticState *accepted_state, OnibiSemanticArena *semantic_arena,
     unsigned char *class_stack, size_t class_stack_capacity, OnibiExecCtx *ctx,
-    OnibiBytePos *matched_previous_position)
+    OnibiBytePos *matched_previous_position,
+    OnibiDynamicAbsenceCaptureWriteLog *capture_writes,
+    uint32_t *failed_state_id)
 {
     OnibiRSeqView local_view;
     const OnibiRSeqView *view = cached_view;
@@ -3693,10 +4474,12 @@ onibi_rseq_dynamic_run(
     }
     for (uint32_t i = entry_edge_count; i > 0; i--) {
 	const OnibiREdge *edge = &edges[entry_edge_base + (i - 1U)];
+	uint32_t edge_index = entry_edge_base + (i - 1U);
 	OnibiSemanticState branch;
 	if (onibi_apply_action_program(view, edge, str, start, search_origin,
 				       encoding, encoding_mode, arena, &initial,
-				       &branch, ctx) == ONIBI_ACTION_FAIL)
+				       &branch, ctx, UINT32_MAX, edge_index,
+				       capture_writes) == ONIBI_ACTION_FAIL)
 	    continue;
 	if (edge->destination == ONIBI_ACCEPT_STATE &&
 	    (required_end < 0 || start == required_end)) {
@@ -3737,6 +4520,17 @@ onibi_rseq_dynamic_run(
 	    }
 	    continue;
 	}
+	if (capture_writes != NULL && local_subprogram_id != UINT32_MAX &&
+	    local_subprogram_id < header->subprogram_count &&
+	    view->subprograms[local_subprogram_id].kind ==
+		ONIBI_SUBPROGRAM_ABSENCE &&
+	    frame.semantic.calls.depth == caller_state.calls.depth &&
+	    frame.position >= 0 && frame.position <= active_bound &&
+	    frame.state < header->state_count) {
+	    if (!onibi_dynamic_absence_capture_write_path(arena, capture_writes,
+							  &frame.semantic, ctx))
+		ONIBI_DYNAMIC_RUN_RETURN(-1);
+	}
 	if (!force_exhaustion && failed_state && failed_position &&
 	    frame.position >= *failed_position) {
 	    *failed_state = frame.semantic;
@@ -3745,6 +4539,7 @@ onibi_rseq_dynamic_run(
 		    arena, local_subprogram_id, failed_state,
 		    caller_state.counters, caller_state.progress);
 	    *failed_position = frame.position;
+	    if (failed_state_id != NULL) *failed_state_id = frame.state;
 	}
 	if (frame.position < 0 || frame.position > active_bound ||
 	    frame.state >= header->state_count)
@@ -3756,6 +4551,7 @@ onibi_rseq_dynamic_run(
 	    frame.position >= *failed_position) {                              \
 	    *failed_state = frame.semantic;                                    \
 	    *failed_position = frame.position;                                 \
+	    if (failed_state_id != NULL) *failed_state_id = frame.state;       \
 	}                                                                      \
     } while (0)
 	uint32_t cycle_root = frame.cycle_root;
@@ -3808,15 +4604,15 @@ onibi_rseq_dynamic_run(
 	    onibi_semantic_restore_active_conditions(
 		arena, &returned, &call->caller_condition_captures,
 		call->caller_tag_history);
-	    onibi_semantic_restore_active_capture_tags(
-		arena, &returned, &call->caller_captures,
-		call->caller_tag_history);
+	    onibi_semantic_restore_active_capture_tags(arena, &returned,
+						       call->caller_tag_history,
+						       capture_writes, ctx);
 	    OnibiSemanticState branch;
 	    const OnibiREdge *edge = &edges[edge_index];
-	    if (onibi_apply_action_program(view, edge, str, frame.position,
-					   search_origin, encoding,
-					   encoding_mode, arena, &returned,
-					   &branch, ctx) == ONIBI_ACTION_FAIL)
+	    if (onibi_apply_action_program(
+		    view, edge, str, frame.position, search_origin, encoding,
+		    encoding_mode, arena, &returned, &branch, ctx, UINT32_MAX,
+		    edge_index, capture_writes) == ONIBI_ACTION_FAIL)
 		continue;
 	    if (edge->destination == ONIBI_ACCEPT_STATE &&
 		(required_end < 0 || frame.position == required_end)) {
@@ -3853,7 +4649,9 @@ onibi_rseq_dynamic_run(
 		    if (onibi_apply_action_program(
 			    view, entry, str, frame.position, search_origin,
 			    encoding, encoding_mode, arena, &branch, &branch,
-			    ctx) == ONIBI_ACTION_FAIL)
+			    ctx, UINT32_MAX,
+			    subprogram->entry_edge_base + (s - 1U),
+			    capture_writes) == ONIBI_ACTION_FAIL)
 			continue;
 		    OnibiCallFrame call = {
 			state->payload, state->edge_base + (e - 1U),
@@ -3886,7 +4684,7 @@ onibi_rseq_dynamic_run(
 		rseq, view, str, frame.position, frame.previous_position,
 		active_bound, search_origin, state->payload, &frame.semantic,
 		arena, class_stack, class_stack_capacity, ctx, &endpoint_base,
-		&endpoint_count);
+		&endpoint_count, capture_writes);
 	    if (absence_status < 0) ONIBI_DYNAMIC_RUN_RETURN(-1);
 	    if (absence_status == 0) continue;
 	    if (endpoint_base !=
@@ -3928,8 +4726,9 @@ onibi_rseq_dynamic_run(
 			    endpoint.previous_position;
 		    if (onibi_apply_action_program(
 			    view, edge, str, candidate, search_origin, encoding,
-			    encoding_mode, arena, edge_input, &branch,
-			    ctx) == ONIBI_ACTION_FAIL)
+			    encoding_mode, arena, edge_input, &branch, ctx,
+			    frame.state, state->edge_base + (e - 1U),
+			    capture_writes) == ONIBI_ACTION_FAIL)
 			continue;
 		    if (edge->destination == ONIBI_ACCEPT_STATE) {
 			onibi_dynamic_stack_push(
@@ -3970,7 +4769,7 @@ onibi_rseq_dynamic_run(
 		subprogram->entry_edge_count, state->payload, -1, 0,
 		&frame.semantic, NULL, NULL, 0, &atomic_end, &atomic_result,
 		arena, class_stack, class_stack_capacity, ctx,
-		&atomic_previous_position);
+		&atomic_previous_position, capture_writes, NULL);
 	    if (atomic_status < 0) ONIBI_DYNAMIC_RUN_RETURN(-1);
 	    if (atomic_status == 0) {
 		onibi_semantic_checkpoint_restore(arena, &checkpoint);
@@ -4046,12 +4845,14 @@ onibi_rseq_dynamic_run(
 	for (uint32_t pass = 0; pass < state->edge_count; pass++) {
 	    uint32_t e = state->edge_count - pass;
 	    const OnibiREdge *edge = &edges[state->edge_base + (e - 1U)];
+	    uint32_t edge_index = state->edge_base + (e - 1U);
 	    OnibiSemanticState branch;
 	    if (ctx) ctx->current_previous_position = next_previous_position;
 	    if (onibi_apply_action_program(
 		    view, edge, str, next_position, search_origin, encoding,
-		    encoding_mode, arena, &transition_semantic, &branch,
-		    ctx) == ONIBI_ACTION_FAIL)
+		    encoding_mode, arena, &transition_semantic, &branch, ctx,
+		    frame.state, edge_index,
+		    capture_writes) == ONIBI_ACTION_FAIL)
 		continue;
 	    if (edge->destination == ONIBI_ACCEPT_STATE) {
 		if (required_end < 0 || next_position == required_end) {
@@ -4104,7 +4905,7 @@ onibi_rseq_backtracking_match(
 	rseq, view, str, start, matched_previous_position, RSTRING_LEN(str),
 	search_origin, edge_base, edge_count, UINT32_MAX, -1, 0, NULL, NULL,
 	NULL, 1, matched_end, accepted_state, semantic_arena, class_stack,
-	class_stack_capacity, ctx, &matched_previous_position);
+	class_stack_capacity, ctx, &matched_previous_position, NULL, NULL);
 }
 
 /* Keep one saved continuation for each endpoint that the absence scan can
@@ -4117,7 +4918,8 @@ onibi_dynamic_absence_consume_run(
     const OnibiSemanticState *input, OnibiSemanticArena *arena,
     unsigned char *class_stack, size_t class_stack_capacity, OnibiExecCtx *ctx,
     size_t *endpoint_base, size_t *endpoint_count,
-    const unsigned char *pushed_captures)
+    const unsigned char *pushed_captures,
+    OnibiDynamicAbsenceCaptureWriteLog *capture_writes)
 {
     if (view->header->subprogram_count == 0) return -1;
     if (subprogram_id == 0 || subprogram_id >= view->header->subprogram_count)
@@ -4141,6 +4943,21 @@ onibi_dynamic_absence_consume_run(
     int saw_positive = 0;
     rb_encoding *encoding = rb_enc_get(str);
     OnibiEncodingMode encoding_mode = onibi_encoding_mode_for(str, encoding);
+
+    if (capture_writes == NULL) return -1;
+    capture_writes->owner_subprogram_id = subprogram_id;
+    capture_writes->subject = str;
+    capture_writes->class_stack = class_stack;
+    capture_writes->class_stack_capacity = class_stack_capacity;
+    if (input->tag_history != UINT32_MAX) {
+	if (input->tag_history >= arena->tag_count) return -1;
+	capture_writes->base_history_identity =
+	    arena->tags[input->tag_history].logical_id;
+    }
+    else
+	capture_writes->base_history_identity = 0;
+    onibi_dynamic_absence_capture_write_relation_suffixes_prepare(
+	view, capture_writes, ctx);
 
     while (probe <= outer_end) {
 	if (ctx) {
@@ -4176,17 +4993,22 @@ onibi_dynamic_absence_consume_run(
 	OnibiBytePos body_end = probe;
 	OnibiBytePos body_previous_position = sprev;
 	OnibiBytePos failed_end = probe;
+	uint32_t failed_state_id = UINT32_MAX;
+	onibi_dynamic_absence_capture_write_log_reset(capture_writes, ctx);
+	size_t journal_begin = capture_writes->journal_count;
 	int result = onibi_rseq_dynamic_run(
 	    rseq, view, str, probe, sprev, aend, search_origin,
 	    subprogram->entry_edge_base, subprogram->entry_edge_count,
 	    subprogram_id, -1, 0, input, &failed_result, &failed_end, 0,
 	    &body_end, &body_result, arena, class_stack, class_stack_capacity,
-	    ctx, &body_previous_position);
+	    ctx, &body_previous_position, capture_writes, &failed_state_id);
 	if (result < 0) {
+	    capture_writes->journal_count = journal_begin;
 	    arena->absence_endpoint_count = base;
 	    return -1;
 	}
 	if (result > 0) {
+	    capture_writes->journal_count = journal_begin;
 	    if (body_end == probe && probe == absent_start) {
 		if (at_outer_end) break;
 		arena->absence_endpoint_count = base;
@@ -4203,7 +5025,7 @@ onibi_dynamic_absence_consume_run(
 		subprogram_id, body_end, 0, input, &terminal_state,
 		&terminal_position, 0, &forced_end, &forced_accept, arena,
 		class_stack, class_stack_capacity, ctx,
-		&forced_previous_position);
+		&forced_previous_position, NULL, NULL);
 	    if (forced_status < 0) {
 		arena->absence_endpoint_count = base;
 		return -1;
@@ -4212,13 +5034,14 @@ onibi_dynamic_absence_consume_run(
 	    onibi_dynamic_absence_filter_captures(
 		arena, &body_result, &terminal_state,
 		onibi_dynamic_absence_has_active_nullable_repeat(view, arena,
-								 &body_result));
+								 &body_result),
+		capture_writes, ctx);
 	    onibi_dynamic_absence_filter_capture_events(
 		arena, &body_result, trial_snapshot.capture_event_history,
 		pushed_captures, view->header->capture_count);
 	    onibi_dynamic_absence_restore_pushed_tags(
 		arena, &body_result, &trial_snapshot, pushed_captures,
-		view->header->capture_count);
+		view->header->capture_count, capture_writes, ctx);
 	    onibi_dynamic_absence_restore_pushed_capture_files(
 		arena, &body_result, &trial_snapshot, pushed_captures,
 		view->header->capture_count, 0);
@@ -4249,95 +5072,76 @@ onibi_dynamic_absence_consume_run(
 	    else if (body_previous_position < aend)
 		aend = body_previous_position;
 	}
-	else if (failed_end != aend && saw_positive) {
-	    OnibiSemanticState saved =
-		arena->absence_endpoints[endpoint_index].semantic;
-	    if (onibi_dynamic_absence_publish_incomplete_direct_captures(
-		    arena, &saved, &failed_result, pushed_captures,
-		    view->header->capture_count))
-		arena->absence_endpoints[endpoint_index].semantic = saved;
-	    (void)onibi_dynamic_absence_publish_incomplete_direct_captures(
-		arena, &scan_state, &failed_result, pushed_captures,
-		view->header->capture_count);
-	}
-	else if (failed_end == aend) {
-	    if (!saw_positive) {
-		/* A failed body can publish its captures at the active end
-		 * bound. */
-		if (!at_outer_end) {
-		    for (size_t i = base; i < arena->absence_endpoint_count;
-			 i++) {
-			OnibiSemanticState before =
-			    arena->absence_endpoints[i].semantic;
-			OnibiSemanticState published = failed_result;
-			onibi_dynamic_absence_filter_capture_events(
-			    arena, &published, before.capture_event_history,
-			    pushed_captures, view->header->capture_count);
-			onibi_dynamic_absence_restore_pushed_tags(
-			    arena, &published, &before, pushed_captures,
-			    view->header->capture_count);
-			onibi_dynamic_absence_restore_pushed_capture_files(
-			    arena, &published, &before, pushed_captures,
-			    view->header->capture_count, 1);
-			published.reported_start = before.reported_start;
-			arena->absence_endpoints[i].semantic = published;
-		    }
-		}
+	else {
+	    size_t journal_end = capture_writes->journal_count;
+	    if (journal_end < journal_begin)
+		rb_raise(eRegexpError,
+			 "absence capture journal order is invalid");
+	    if (failed_end != aend && saw_positive) {
+		OnibiSemanticState before =
+		    arena->absence_endpoints[endpoint_index].semantic;
+		(void)onibi_dynamic_absence_capture_journal_publish(
+		    view, arena,
+		    &arena->absence_endpoints[endpoint_index].semantic, &before,
+		    &failed_result, capture_writes, pushed_captures,
+		    view->header->capture_count, journal_begin, journal_end,
+		    failed_state_id, failed_end, aend, ctx);
+		before = scan_state;
+		(void)onibi_dynamic_absence_capture_journal_publish(
+		    view, arena, &scan_state, &before, &failed_result,
+		    capture_writes, pushed_captures,
+		    view->header->capture_count, journal_begin, journal_end,
+		    failed_state_id, failed_end, aend, ctx);
 	    }
-	    else {
-		OnibiSemanticState bounded_failure = failed_result;
-		int has_incomplete =
-		    onibi_dynamic_absence_filter_incomplete_captures(
-			arena, &bounded_failure);
-		if (has_incomplete) {
-		    onibi_dynamic_absence_filter_capture_events(
-			arena, &bounded_failure,
-			trial_snapshot.capture_event_history, pushed_captures,
-			view->header->capture_count);
-		    onibi_dynamic_absence_restore_pushed_tags(
-			arena, &bounded_failure, &trial_snapshot,
-			pushed_captures, view->header->capture_count);
-		    onibi_dynamic_absence_restore_pushed_capture_files(
-			arena, &bounded_failure, &trial_snapshot,
-			pushed_captures, view->header->capture_count, 0);
-		    OnibiSemanticState saved =
-			arena->absence_endpoints[endpoint_index].semantic;
-		    OnibiBytePos saved_start = saved.reported_start;
-		    saved.condition_captures =
-			bounded_failure.condition_captures;
-		    saved.tag_history = bounded_failure.tag_history;
-		    saved.capture_event_history =
-			bounded_failure.capture_event_history;
-		    saved.capture_event_dependency =
-			bounded_failure.capture_event_dependency;
-		    saved.order = bounded_failure.order;
-		    saved.reported_start = saved_start;
-		    arena->absence_endpoints[endpoint_index].semantic = saved;
-
-		    OnibiBytePos scan_reported_start =
-			scan_state.reported_start;
-		    scan_state.condition_captures =
-			bounded_failure.condition_captures;
-		    scan_state.tag_history = bounded_failure.tag_history;
-		    scan_state.capture_event_history =
-			bounded_failure.capture_event_history;
-		    scan_state.capture_event_dependency =
-			bounded_failure.capture_event_dependency;
-		    scan_state.order = bounded_failure.order;
-		    scan_state.reported_start = scan_reported_start;
+	    else if (failed_end == aend) {
+		if (!saw_positive) {
+		    if (!at_outer_end) {
+			for (size_t i = base; i < arena->absence_endpoint_count;
+			     i++) {
+			    OnibiSemanticState before =
+				arena->absence_endpoints[i].semantic;
+			    (void)onibi_dynamic_absence_capture_journal_publish(
+				view, arena,
+				&arena->absence_endpoints[i].semantic, &before,
+				&failed_result, capture_writes, pushed_captures,
+				view->header->capture_count, journal_begin,
+				journal_end, failed_state_id, failed_end, aend,
+				ctx);
+			}
+			OnibiSemanticState before = scan_state;
+			(void)onibi_dynamic_absence_capture_journal_publish(
+			    view, arena, &scan_state, &before, &failed_result,
+			    capture_writes, pushed_captures,
+			    view->header->capture_count, journal_begin,
+			    journal_end, failed_state_id, failed_end, aend,
+			    ctx);
+		    }
 		}
 		else {
-		    OnibiSemanticState saved =
+		    OnibiSemanticState before =
 			arena->absence_endpoints[endpoint_index].semantic;
-		    OnibiSemanticState scan_saved = scan_state;
-		    if (onibi_dynamic_absence_publish_complete_direct_captures(
-			    arena, &saved, &scan_saved, &bounded_failure, input,
-			    pushed_captures, view->header->capture_count)) {
-			arena->absence_endpoints[endpoint_index].semantic =
-			    saved;
-			scan_state = scan_saved;
-		    }
+		    (void)onibi_dynamic_absence_capture_journal_publish(
+			view, arena,
+			&arena->absence_endpoints[endpoint_index].semantic,
+			&before, &failed_result, capture_writes,
+			pushed_captures, view->header->capture_count,
+			journal_begin, journal_end, failed_state_id, failed_end,
+			aend, ctx);
+		    before = scan_state;
+		    (void)onibi_dynamic_absence_capture_journal_publish(
+			view, arena, &scan_state, &before, &failed_result,
+			capture_writes, pushed_captures,
+			view->header->capture_count, journal_begin, journal_end,
+			failed_state_id, failed_end, aend, ctx);
 		}
+	    }
+	    else if (!saw_positive) {
+		OnibiSemanticState before = scan_state;
+		(void)onibi_dynamic_absence_capture_journal_publish(
+		    view, arena, &scan_state, &before, &failed_result,
+		    capture_writes, pushed_captures,
+		    view->header->capture_count, journal_begin, journal_end,
+		    failed_state_id, failed_end, aend, ctx);
 	    }
 	}
 
@@ -4365,6 +5169,12 @@ onibi_dynamic_absence_consume_run(
     arena->absence_endpoint_count = write;
     *endpoint_base = base;
     *endpoint_count = write - base;
+    if (capture_writes->registry_parent != NULL) {
+	for (size_t i = base; i < write; i++)
+	    onibi_dynamic_absence_capture_write_transfer_history(
+		capture_writes->registry_parent, capture_writes, arena,
+		arena->absence_endpoints[i].semantic.tag_history, ctx);
+    }
     return *endpoint_count > 0 ? 1 : 0;
 }
 
@@ -4378,7 +5188,7 @@ onibi_dynamic_absence_consume_body(VALUE opaque)
 	call->previous_position, call->active_bound, call->search_origin,
 	call->subprogram_id, call->input, call->arena, call->class_stack,
 	call->class_stack_capacity, call->ctx, call->endpoint_base,
-	call->endpoint_count, call->pushed_captures);
+	call->endpoint_count, call->pushed_captures, &call->capture_writes);
     return Qnil;
 }
 
@@ -4388,7 +5198,19 @@ onibi_dynamic_absence_consume_ensure(VALUE opaque)
     OnibiDynamicAbsenceCall *call =
 	(OnibiDynamicAbsenceCall *)(uintptr_t)opaque;
     ruby_xfree(call->pushed_captures);
+    ruby_xfree(call->capture_writes.events);
+    ruby_xfree(call->capture_writes.journal);
+    ruby_xfree(call->capture_writes.path);
+    ruby_xfree(call->capture_writes.previous_path);
+    ruby_xfree(call->capture_writes.relation_suffix_heads);
+    ruby_xfree(call->capture_writes.relation_suffixes);
     call->pushed_captures = NULL;
+    call->capture_writes.events = NULL;
+    call->capture_writes.journal = NULL;
+    call->capture_writes.path = NULL;
+    call->capture_writes.previous_path = NULL;
+    call->capture_writes.relation_suffix_heads = NULL;
+    call->capture_writes.relation_suffixes = NULL;
     return Qnil;
 }
 
@@ -4399,7 +5221,8 @@ onibi_dynamic_absence_consume(
     OnibiBytePos search_origin, uint32_t subprogram_id,
     const OnibiSemanticState *input, OnibiSemanticArena *arena,
     unsigned char *class_stack, size_t class_stack_capacity, OnibiExecCtx *ctx,
-    size_t *endpoint_base, size_t *endpoint_count)
+    size_t *endpoint_base, size_t *endpoint_count,
+    OnibiDynamicAbsenceCaptureWriteLog *parent_capture_writes)
 {
     OnibiDynamicAbsenceCall call;
     memset(&call, 0, sizeof(call));
@@ -4418,6 +5241,7 @@ onibi_dynamic_absence_consume(
     call.ctx = ctx;
     call.endpoint_base = endpoint_base;
     call.endpoint_count = endpoint_count;
+    call.capture_writes.registry_parent = parent_capture_writes;
     call.result = -1;
 
     uint32_t capture_count = view->header->capture_count;
@@ -4440,10 +5264,10 @@ onibi_dynamic_absence_consume(
 }
 
 static OnibiActionResult
-onibi_dynamic_assert_subprogram(OnibiExecCtx *ctx, const OnibiRAction *action,
-				OnibiBytePos position,
-				const OnibiSemanticState *predecessor,
-				OnibiSemanticState *successor)
+onibi_dynamic_assert_subprogram(
+    OnibiExecCtx *ctx, const OnibiRAction *action, OnibiBytePos position,
+    const OnibiSemanticState *predecessor, OnibiSemanticState *successor,
+    OnibiDynamicAbsenceCaptureWriteLog *capture_writes)
 {
     if (action->arg32 == 0 ||
 	action->arg32 >= ctx->view->header->subprogram_count)
@@ -4479,7 +5303,7 @@ onibi_dynamic_assert_subprogram(OnibiExecCtx *ctx, const OnibiRAction *action,
 	    subprogram->entry_edge_count, action->arg32, required_end, 0,
 	    predecessor, NULL, NULL, 0, &assertion_end, &assertion_result,
 	    arena, ctx->class_stack, ctx->class_stack_capacity, ctx,
-	    &assertion_previous);
+	    &assertion_previous, capture_writes, NULL);
 	if (result < 0) {
 	    onibi_semantic_checkpoint_restore(arena, &checkpoint);
 	    return ONIBI_ACTION_FAIL;
@@ -4577,6 +5401,7 @@ onibi_regular_apply_actions(const OnibiRSeqView *view, const OnibiREdge *edge,
 	    *history = transaction.history;
 	    return 1;
 	}
+	if (action->op == ONIBI_RA_CAPTURE_RELATION) continue;
 	if (action->op == ONIBI_RA_ASSERT_POSITION &&
 	    (action->arg16 == ONIBI_RAP_WORD_BOUNDARY ||
 	     action->arg16 == ONIBI_RAP_NONWORD_BOUNDARY)) {
@@ -4785,9 +5610,14 @@ onibi_tagged_materialize_event_chain(const OnibiSemanticArena *arena,
 static int
 onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 			      const OnibiSemanticState *accepted,
-			      OnibiRawMatch *raw_match, uint32_t capture_slots)
+			      OnibiRawMatch *raw_match, uint32_t capture_slots,
+			      int require_complete_pairs, OnibiExecCtx *ctx)
 {
     if (capture_slots > SIZE_MAX / sizeof(uint32_t)) return 0;
+    if (require_complete_pairs && ctx != NULL && raw_match->num_regs > 1U) {
+	ctx->current_position = ctx->matched_end;
+	onibi_exec_charge_work(ctx, raw_match->num_regs - 1U);
+    }
     for (uint32_t i = 1; i < raw_match->num_regs; i++) {
 	raw_match->beg[i] = -1;
 	raw_match->end[i] = -1;
@@ -4868,6 +5698,15 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 	}
 	owner = cell->resolved_owner;
     }
+
+    if (require_complete_pairs) {
+	for (uint32_t reg = 1; reg < raw_match->num_regs; reg++) {
+	    if (raw_match->beg[reg] < 0 || raw_match->end[reg] < 0) {
+		raw_match->beg[reg] = -1;
+		raw_match->end[reg] = -1;
+	    }
+	}
+    }
     ruby_xfree(orders);
     ruby_xfree(visited);
     return 1;
@@ -4887,7 +5726,8 @@ onibi_tagged_accept_state(OnibiExecCtx *ctx, const OnibiRSeqView *view,
 	if (edge->destination != ONIBI_ACCEPT_STATE) continue;
 	if (onibi_apply_action_program(view, edge, str, position, search_origin,
 				       encoding, mode, arena, predecessor,
-				       accepted, ctx) == ONIBI_ACTION_SUCCESS) {
+				       accepted, ctx, UINT32_MAX, UINT32_MAX,
+				       NULL) == ONIBI_ACTION_SUCCESS) {
 	    return 1;
 	}
     }
@@ -4920,10 +5760,10 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
 	OnibiSemanticState predecessor = *initial;
 	predecessor.capture_event_dependency = prior;
 	OnibiSemanticState branch;
-	if (onibi_apply_action_program(view, edge, str, start,
-				       ctx->search_origin, ctx->encoding,
-				       ctx->encoding_mode, arena, &predecessor,
-				       &branch, ctx) == ONIBI_ACTION_FAIL)
+	if (onibi_apply_action_program(
+		view, edge, str, start, ctx->search_origin, ctx->encoding,
+		ctx->encoding_mode, arena, &predecessor, &branch, ctx,
+		UINT32_MAX, UINT32_MAX, NULL) == ONIBI_ACTION_FAIL)
 	    continue;
 	if (edge->destination == ONIBI_ACCEPT_STATE) {
 	    if (required_end >= 0 && start != required_end) continue;
@@ -5027,7 +5867,8 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
 		if (onibi_apply_action_program(
 			view, edge, str, next_position, ctx->search_origin,
 			ctx->encoding, ctx->encoding_mode, arena, &predecessor,
-			&branch, ctx) == ONIBI_ACTION_FAIL)
+			&branch, ctx, UINT32_MAX, UINT32_MAX,
+			NULL) == ONIBI_ACTION_FAIL)
 		    continue;
 		if (edge->destination == ONIBI_ACCEPT_STATE) {
 		    if (required_end >= 0 && next_position != required_end)
@@ -5421,9 +6262,9 @@ onibi_exec_dynamic(OnibiExecCtx *ctx)
 	ctx->reported_start = accepted.reported_start;
 	if (onibi_raw_match_capture_mode(ctx->raw_match,
 					 ctx->program->capture_count) &&
-	    !onibi_tagged_materialize_tags(&ctx->semantic_arena, &accepted,
-					   ctx->raw_match,
-					   ctx->program->capture_count * 2U)) {
+	    !onibi_tagged_materialize_tags(
+		&ctx->semantic_arena, &accepted, ctx->raw_match,
+		ctx->program->capture_count * 2U, 1, ctx)) {
 	    onibi_diagnostics.executor_error_kind =
 		ONIBI_EXECUTOR_ERROR_MALFORMED_PROGRAM;
 	    return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
@@ -5452,9 +6293,9 @@ onibi_exec_tagged(OnibiExecCtx *ctx)
 	ctx->reported_start = accepted.reported_start;
 	if (onibi_raw_match_capture_mode(ctx->raw_match,
 					 ctx->program->capture_count) &&
-	    !onibi_tagged_materialize_tags(&ctx->semantic_arena, &accepted,
-					   ctx->raw_match,
-					   ctx->program->capture_count * 2U)) {
+	    !onibi_tagged_materialize_tags(
+		&ctx->semantic_arena, &accepted, ctx->raw_match,
+		ctx->program->capture_count * 2U, 1, ctx)) {
 	    onibi_diagnostics.executor_error_kind =
 		ONIBI_EXECUTOR_ERROR_MALFORMED_PROGRAM;
 	    return ONIBI_EXEC_STATUS_INTERNAL_ERROR;

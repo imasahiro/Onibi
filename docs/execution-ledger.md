@@ -671,3 +671,214 @@ Exact commands, results, and hashes are in
 `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-complete-failed-capture-01/worker/implementation-01/`.
 Root verified the source and evidence hashes and accepted this repair.
 Remote publication remains pending.
+
+
+## Ordered failed-probe capture replay (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-ordered-failure-continuation-01`.
+DYNAMIC now replays direct capture writes from each failed probe that has no
+positive body match. A direct start clears prior output tags. It sets the
+condition start and clears the condition end. A direct close adds a complete
+output pair only when its start remains set. A pushed start keeps its saved
+capture pair. A close-only repeat-exit edge skips its close when the fused
+suffix consumer fails at the active bound. The edge check requires a sibling
+pushed start and a cycle in that sibling path.
+
+The four frozen MRI differential E2Es pass with DYNAMIC and zero fallback.
+They report 4 tests and 51 assertions. The full absence file reports 77 tests,
+566 assertions, and 2 failures. Both failures existed before this repair:
+`test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix` and
+`test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary`.
+This repair resolves the failed-suffix and nested-suffix capture failures.
+It adds no failure.
+
+The physical verifier passes 29 tests and 100 assertions. The subprogram
+representation check passes 6 tests and 46 assertions. The 27-row MRI matrix
+passes twice with identical results. All 26 prior correct rows stay unchanged.
+The separate `fixed_three` RangeError stays unchanged. All rows use DYNAMIC and
+zero fallback. The warning build passes with two known warnings in `gir.c` and
+`rseq.c`. Ruby syntax, RuboCop, clang-format, `git diff --check`, and
+`make distclean` pass. The full project suite did not run.
+
+Exact commands, results, hashes, failure identities, and repeatable matrix
+outputs are in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/worker/`.
+No commit or publication occurred in this relay. Remote publication remains
+pending.
+
+## Failed-probe classifier review repair (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: task-absence-ordered-failure-continuation-01, attempt 2.
+The classifier now matches a pushed start with the close for the same capture.
+It requires a cyclic sibling path and a close-only edge to an input-consuming state.
+A sibling consuming edge with the same close program blocks fusion.
+The classifier builds one charged cycle map per absence call and caches each edge result.
+Normal failed-probe resets use a generation counter and cost O(1).
+The graph walk, edge scans, action scans, and capture-history replay charge the existing work budget.
+The six frozen cases test nested captures, repeated captures, alternate exits, and failures before and at the bound.
+They include MRI differential values, character ranges, byte ranges, native DYNAMIC use, and zero fallback.
+
+Five focused E2Es pass: 5 tests and 75 assertions.
+The full absence file reports 78 tests, 588 assertions, and two known failures.
+The same two test names failed before attempt 2. This repair adds no failure.
+The physical verifier passes 29 tests and 100 assertions.
+The subprogram check passes 6 tests and 46 assertions.
+Semantic state passes 19 tests and 107 assertions.
+Tagged-order differential passes 16 tests and 4,840 assertions.
+Work-budget polling passes 5 tests and 29 assertions.
+Timeout and interrupt coverage passes 15 tests and 24 assertions.
+The 27-row matrix passes twice with identical case results.
+All 26 prior correct rows stay unchanged. The separate fixed_three RangeError stays unchanged.
+All rows use DYNAMIC with zero fallback.
+The warning build passes with two known warnings in unchanged gir.c and rseq.c.
+Ruby syntax, RuboCop, clang-format, git diff --check, and make distclean pass.
+The full project suite did not run.
+
+The selected failed tag chain does not contain ordered writes from sibling failed branches.
+The edge-wide close marker also has unproved cases outside the six frozen shapes.
+See the exact limits and source analysis in the review-02 result packet.
+No commit or publication occurred.
+Exact commands, output hashes, source hashes, and repeatable matrix outputs are in
+/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/worker/review-02/.
+
+
+## Absence capture compiler tuples (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-ordered-failure-continuation-01`, attempt 8, phase `compiler-tuples`.
+The compiler stores logical tuples during compilation. Each tuple keeps
+separate target-close and pushed-witness slots. Each physical absence variant
+links the tuple to its semantic and physical owner IDs. The compiler saves and
+restores active owner IDs around nested subprogram compilation.
+
+The RSeq relation table stays empty. No markers, populated records, or runtime
+behavior changed. The warning build passes with two known warnings in existing
+functions in `gir.c` and `rseq.c`. Format and diff checks pass. No E2E tests
+ran in this increment.
+
+Exact commands, hashes, the source patch, and build log are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/worker/compiler-08/`.
+Next: wire marker placement and prove the mapping before table population.
+
+## Absence capture provenance markers (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-ordered-failure-continuation-01`, attempt 9, phase `marker-lowering`.
+The compiler now binds each logical tuple to its physical absence owner.
+Each tuple keeps separate target-close and pushed-witness slots. The compiler
+places `CLOSE`, `LOOP`, `EXIT`, and `SUFFIX` markers in GIR actions. RSeq v8
+stores the records after lookbehind widths.
+
+The compiler emits metadata only for a variable repeat with a pushed witness
+and a following positive-width suffix. It accepts only supported wrapper
+paths. It does not attach a zero-width child to a later consuming sibling.
+The physical verifier checks the records, action roles, owner, close pair,
+repeat-choice edges, and consuming suffix edge. Marker actions remain no-op.
+The ordered capture journal is not implemented in this unit.
+
+The clean warning build passes. It reports two known warnings in unchanged
+`gir.c` and `rseq.c` functions. The physical verifier passes 31 tests and 158
+assertions. The subprogram representation check passes 6 tests and 46
+assertions. Four capture controls run. Three pass. The remaining failure,
+`test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix`, also
+fails in the saved baseline. This unit did not run the full absence file or
+the full project suite.
+
+Public diagnostics accept a captured target with a two-branch consuming
+suffix. They reject relation metadata for a zero-width lookahead child before
+a consuming sibling. The physical verifier round-trip checks distinct target
+and witness slots and all four marker roles.
+
+Exact commands, logs, hashes, and patches are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/worker/metadata-09/`.
+No commit or publication occurred. Root review must accept this metadata
+stage before the next journal unit.
+
+## Ordered failed-probe capture journal (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-ordered-failure-continuation-01`, attempt 10.
+DYNAMIC now records capture writes in MRI path order across failed probes.
+A positive body match drops that probe's journal range. A failed probe can
+apply ordered writes to the scan state and saved endpoints. Direct starts clear
+old output pairs and update condition values. Direct closes publish complete
+pairs only. Pushed targets use their exact target and witness relation.
+
+For a direct close at the active bound, DYNAMIC reads the exact close and suffix
+relation. It defers that close only when all suffix markers name the same failed
+state and that state cannot consume the current subject. A consuming suffix
+keeps the close. The runtime does not infer relation records from graph cycles.
+Journal work uses the current work budget and the absence ensure block frees its
+storage.
+
+Five frozen MRI E2Es pass: 5 tests, 64 assertions. They cover both suffix
+targets, both prior regressions, and the earlier-sibling capture case. The full
+absence file reports 79 tests, 599 assertions, and two failures. The pre-edit
+source had 79 tests, 593 assertions, and three failures. This repair resolves
+the earlier-sibling failure. It adds no failure. The two remaining failures are
+`test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix` and
+`test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary`.
+
+The physical verifier passes 31 tests and 158 assertions. The subprogram check
+passes 6 tests and 46 assertions. Semantic-state checks pass 19 tests and 107
+assertions. Tagged lowering passes 7 tests and 33 assertions. Tagged resource
+checks pass 2 tests and 20 assertions. Tagged MRI differential checks pass 16
+tests and 4,840 assertions. Tagged UTF-8 checks pass 11 tests and 126
+assertions. Work-budget checks pass 5 tests and 29 assertions. Timeout and
+interrupt checks pass 15 tests and 24 assertions.
+
+Two fresh 27-row MRI matrix runs match. All 27 rows use DYNAMIC with zero
+fallback. The 26 prior correct rows match MRI. The separate `fixed_three`
+RangeError stays unchanged. The warning build passes with two known warnings in
+`gir.c` and `rseq.c`. Clang format, Ruby syntax, RuboCop, `git diff --check`,
+and `make distclean` pass. The full project suite did not run.
+
+Exact commands, logs, comparison results, source hashes, and matrix outputs are
+in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/worker/journal-10/`.
+No commit or publication occurred. Remote publication remains pending.
+
+
+## Ordered failed-probe capture pair repair (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-ordered-failure-continuation-01`, attempt 11, phase `review-repair`.
+DYNAMIC keeps an output capture pair only when both slots are set. It clears a
+lone start or end after it merges tag and capture-event histories. It keeps a
+pair with two set slots, including MRI empty ranges where start is greater than
+end. The raw-range validator did not change. Internal lineage diagnostics keep
+their partial-event behavior.
+
+The direct-close replay keeps both output tags and provenance inside the
+condition-start guard. It still updates the condition end register when the
+start is unset. Pushed target pairs, branch order, and journal ownership stay
+unchanged. The pair sweep charges its capture count before it allocates scratch
+arrays.
+
+Six frozen MRI E2Es pass: 6 tests and 75 assertions. The fixed-repeat case
+returns `xab` with capture 1 unset. The full absence file reports 80 tests, 610
+assertions, and the same two known failures:
+`test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix` and
+`test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary`.
+
+The physical verifier passes 31 tests and 158 assertions. The subprogram check
+passes 6 tests and 46 assertions. Semantic state passes 19 tests and 107
+assertions. Work-budget checks pass 5 tests and 29 assertions. Timeout and
+interrupt checks pass 15 tests and 24 assertions. Tagged lowering passes 7
+tests and 33 assertions. Tagged resource checks pass 2 tests and 20 assertions.
+Tagged MRI differential checks pass 16 tests and 4,840 assertions. Tagged
+UTF-8 checks pass 11 tests and 126 assertions.
+
+Two fresh 27-row MRI matrix runs match each other and MRI. All rows use DYNAMIC
+with zero fallback. The 26 prior correct rows stay unchanged. The `fixed_three`
+row now matches MRI and raises no public error. The warning build passes with
+two known warnings in `gir.c` and `rseq.c`. Ruby syntax, RuboCop, C format,
+`git diff --check`, and `make distclean` pass. The full project suite did not
+run.
+
+Exact commands, logs, source and bundle hashes, and matrix outputs are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/worker/review-11/`.
+No commit or publication occurred.
+
+## Ordered absence repair: root acceptance (2026-10-15)
+
+Root accepted the complete RSeq v8 metadata and ordered capture journal repair.
+Six focused E2Es pass. All 27 frozen MRI matrix rows now match.
+The fixed-three public range error is resolved. Two prior absence failures remain.
+Root verified final source and evidence hashes. Full-project acceptance remains open.
+Acceptance evidence: `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/root-acceptance.json`.
+Remote publication remains pending.

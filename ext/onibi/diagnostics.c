@@ -377,6 +377,7 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
     rb_hash_aset(result, ID2SYM(rb_intern("state_payloads")), state_payloads);
     VALUE subprograms = rb_ary_new();
     VALUE lookbehind_widths = rb_ary_new();
+    VALUE absence_capture_relations = rb_ary_new();
     if (!NIL_P(obj->rseq)) {
 	for (uint32_t i = 0; i < obj->rseq_view.header->subprogram_count; i++) {
 	    const OnibiSubprogramDesc *s = &obj->rseq_view.subprograms[i];
@@ -408,10 +409,23 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 	     i++)
 	    rb_ary_push(lookbehind_widths,
 			UINT2NUM(obj->rseq_view.lookbehind_widths[i]));
+	for (uint32_t i = 0;
+	     i < obj->rseq_view.header->absence_capture_relation_count; i++) {
+	    const OnibiAbsenceCaptureRelation *relation =
+		&obj->rseq_view.absence_capture_relations[i];
+	    rb_ary_push(absence_capture_relations,
+			rb_ary_new_from_args(
+			    4, UINT2NUM(relation->subprogram_id),
+			    UINT2NUM(relation->target_close_slot),
+			    UINT2NUM(relation->pushed_witness_close_slot),
+			    UINT2NUM(relation->target_start_kind)));
+	}
     }
     rb_hash_aset(result, ID2SYM(rb_intern("subprograms")), subprograms);
     rb_hash_aset(result, ID2SYM(rb_intern("lookbehind_widths")),
 		 lookbehind_widths);
+    rb_hash_aset(result, ID2SYM(rb_intern("absence_capture_relations")),
+		 absence_capture_relations);
     VALUE class_kinds = rb_ary_new();
     if (!NIL_P(obj->rseq)) {
 	static const char *const names[] = {"ascii_bitmap", "codepoint_ranges",
@@ -688,6 +702,8 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
     OnibiIdVector lookbehind_width_vector = {NULL, 0, 0, NULL};
     OnibiSemanticClassVector class_vector = {classes, 0, 1, NULL};
     OnibiIdVector progress_vector = {progress_slots, 0, 1, NULL};
+    OnibiAbsenceCaptureRelationVector absence_capture_relation_vector = {
+	NULL, 0, 0, NULL};
     OnibiGIRView view = {&state_vector,
 			 &edge_vector,
 			 &start_vector,
@@ -698,6 +714,7 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 			 &lookbehind_width_vector,
 			 &class_vector,
 			 &progress_vector,
+			 &absence_capture_relation_vector,
 			 4,
 			 1,
 			 1,
@@ -999,6 +1016,66 @@ onibi_rseq_verifier_direct_fold_scenario(ID scenario)
     return name != NULL && strncmp(name, prefix, sizeof(prefix) - 1U) == 0;
 }
 
+static uint32_t
+onibi_rseq_relation_marker_find(const OnibiRSeqHeader *header,
+				const OnibiRAction *actions,
+				uint32_t relation_id, uint8_t role)
+{
+    for (uint32_t i = 0; i < header->action_count; i++)
+	if (actions[i].op == ONIBI_RA_CAPTURE_RELATION &&
+	    actions[i].arg32 == relation_id && actions[i].flags == role)
+	    return i;
+    rb_raise(rb_eRuntimeError,
+	     "absence relation diagnostic requires its marker");
+    return UINT32_MAX;
+}
+
+static uint32_t
+onibi_rseq_relation_edge_find(const OnibiRSeqHeader *header,
+			      const OnibiREdge *edges,
+			      const OnibiRAction *actions, uint32_t relation_id,
+			      uint8_t role)
+{
+    for (uint32_t i = 0; i < header->edge_count; i++) {
+	const OnibiREdge *edge = &edges[i];
+	if (edge->action_offset == 0 ||
+	    edge->action_offset % sizeof(OnibiRAction) != 0)
+	    continue;
+	uint32_t action_index =
+	    edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
+	for (; action_index < header->action_count; action_index++) {
+	    const OnibiRAction *action = &actions[action_index];
+	    if (action->op == ONIBI_RA_END) break;
+	    if (action->op == ONIBI_RA_CAPTURE_RELATION &&
+		action->arg32 == relation_id && action->flags == role)
+		return i;
+	}
+    }
+    rb_raise(rb_eRuntimeError,
+	     "absence relation diagnostic requires its edge marker");
+    return UINT32_MAX;
+}
+
+static uint32_t
+onibi_rseq_relation_marker_program_offset(const OnibiRAction *actions,
+					  uint32_t marker_index)
+{
+    uint32_t begin = marker_index;
+    while (begin > 0 && actions[begin - 1U].op != ONIBI_RA_END)
+	begin--;
+    return (begin + 1U) * (uint32_t)sizeof(OnibiRAction);
+}
+
+static void
+onibi_rseq_relation_marker_remove(const OnibiRSeqHeader *header,
+				  OnibiRAction *actions, uint32_t relation_id,
+				  uint8_t role)
+{
+    uint32_t index =
+	onibi_rseq_relation_marker_find(header, actions, relation_id, role);
+    actions[index] = (OnibiRAction){ONIBI_RA_ORDER, 0, 0, 0};
+}
+
 static VALUE
 onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 {
@@ -1043,6 +1120,9 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	(uint32_t *)(RSTRING_PTR(blob) + header->backref_lists_offset);
     OnibiSubprogramDesc *subprograms =
 	(OnibiSubprogramDesc *)(RSTRING_PTR(blob) + header->subprograms_offset);
+    OnibiAbsenceCaptureRelation *absence_relations =
+	(OnibiAbsenceCaptureRelation
+	     *)(RSTRING_PTR(blob) + header->absence_capture_relations_offset);
     if (scenario == rb_intern("end_bound_old_version"))
 	header->version = 1;
     else if (scenario == rb_intern("end_bound_unknown_feature"))
@@ -1106,6 +1186,126 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	if (!changed)
 	    rb_raise(rb_eRuntimeError,
 		     "minimum-end diagnostic requires a backreference state");
+    }
+    else if (scenario == rb_intern("absence_close_relation_old_version"))
+	header->version = 7;
+    else if (scenario == rb_intern("absence_close_relation_feature_missing"))
+	header->features &= ~ONIBI_RSEQ_FEATURE_ABSENCE_CAPTURE_RELATION;
+    else if (scenario == rb_intern("absence_close_relation_feature_orphan"))
+	header->absence_capture_relation_count = 0;
+    else if (scenario == rb_intern("absence_close_relation_id_zero")) {
+	uint32_t marker = onibi_rseq_relation_marker_find(
+	    header, actions, 1, ONIBI_CAPTURE_RELATION_ROLE_CLOSE);
+	actions[marker].arg32 = 0;
+    }
+    else if (scenario == rb_intern("absence_close_relation_id_sparse")) {
+	uint32_t marker = onibi_rseq_relation_marker_find(
+	    header, actions, 1, ONIBI_CAPTURE_RELATION_ROLE_CLOSE);
+	actions[marker].arg32 = header->absence_capture_relation_count + 1U;
+    }
+    else if (scenario == rb_intern("absence_close_relation_slot_range"))
+	absence_relations[0].target_close_slot =
+	    (uint16_t)(header->capture_count * 2U);
+    else if (scenario == rb_intern("absence_close_relation_slot_even"))
+	absence_relations[0].target_close_slot--;
+    else if (scenario == rb_intern("absence_close_relation_unknown_flag")) {
+	uint32_t marker = onibi_rseq_relation_marker_find(
+	    header, actions, 1, ONIBI_CAPTURE_RELATION_ROLE_CLOSE);
+	actions[marker].flags = UINT8_MAX;
+    }
+    else if (scenario == rb_intern("absence_close_relation_open_action")) {
+	uint32_t marker = onibi_rseq_relation_marker_find(
+	    header, actions, 1, ONIBI_CAPTURE_RELATION_ROLE_CLOSE);
+	uint32_t close = marker;
+	while (close > 0 &&
+	       actions[close - 1U].op == ONIBI_RA_CAPTURE_RELATION &&
+	       actions[close - 1U].flags == ONIBI_CAPTURE_RELATION_ROLE_CLOSE)
+	    close--;
+	if (close == 0 || actions[close - 1U].op != ONIBI_RA_CAPTURE ||
+	    actions[close - 1U].flags != ONIBI_RA_CAPTURE_CLOSE)
+	    rb_raise(rb_eRuntimeError,
+		     "absence relation diagnostic requires its target close");
+	actions[close - 1U].arg16 =
+	    absence_relations[0].pushed_witness_close_slot;
+    }
+    else if (scenario == rb_intern("absence_close_relation_duplicate"))
+	absence_relations[0].pushed_witness_close_slot =
+	    absence_relations[0].target_close_slot;
+    else if (scenario == rb_intern("absence_close_relation_duplicate_role")) {
+	uint32_t marker = onibi_rseq_relation_marker_find(
+	    header, actions, 1, ONIBI_CAPTURE_RELATION_ROLE_LOOP);
+	actions[marker].flags = ONIBI_CAPTURE_RELATION_ROLE_EXIT;
+    }
+    else if (scenario == rb_intern("absence_close_relation_capture_mismatch")) {
+	uint32_t marker = onibi_rseq_relation_marker_find(
+	    header, actions, 1, ONIBI_CAPTURE_RELATION_ROLE_CLOSE);
+	actions[marker].arg16 = absence_relations[0].pushed_witness_close_slot;
+    }
+    else if (scenario == rb_intern("absence_close_relation_missing_close"))
+	onibi_rseq_relation_marker_remove(header, actions, 1,
+					  ONIBI_CAPTURE_RELATION_ROLE_CLOSE);
+    else if (scenario == rb_intern("absence_close_relation_missing_loop"))
+	onibi_rseq_relation_marker_remove(header, actions, 1,
+					  ONIBI_CAPTURE_RELATION_ROLE_LOOP);
+    else if (scenario == rb_intern("absence_close_relation_missing_exit"))
+	onibi_rseq_relation_marker_remove(header, actions, 1,
+					  ONIBI_CAPTURE_RELATION_ROLE_EXIT);
+    else if (scenario == rb_intern("absence_close_relation_missing_suffix"))
+	onibi_rseq_relation_marker_remove(header, actions, 1,
+					  ONIBI_CAPTURE_RELATION_ROLE_SUFFIX);
+    else if (scenario == rb_intern("absence_close_relation_non_absence_owner"))
+	absence_relations[0].subprogram_id = 0;
+    else if (scenario == rb_intern("absence_close_relation_cross_owner")) {
+	uint32_t marker = onibi_rseq_relation_marker_find(
+	    header, actions, 1, ONIBI_CAPTURE_RELATION_ROLE_CLOSE);
+	if (header->start_edge_count == 0)
+	    rb_raise(rb_eRuntimeError,
+		     "absence relation diagnostic requires a root entry");
+	edges[header->start_edge_base].action_offset =
+	    onibi_rseq_relation_marker_program_offset(actions, marker);
+    }
+    else if (scenario == rb_intern("absence_close_relation_exit_edge")) {
+	uint32_t edge = onibi_rseq_relation_edge_find(
+	    header, edges, actions, 1, ONIBI_CAPTURE_RELATION_ROLE_EXIT);
+	edges[edge].destination = ONIBI_ACCEPT_STATE;
+    }
+    else if (scenario == rb_intern("absence_close_relation_loop_edge")) {
+	uint32_t edge = onibi_rseq_relation_edge_find(
+	    header, edges, actions, 1, ONIBI_CAPTURE_RELATION_ROLE_LOOP);
+	edges[edge].destination = ONIBI_ACCEPT_STATE;
+    }
+    else if (scenario == rb_intern("absence_close_relation_suffix_edge")) {
+	uint32_t edge = onibi_rseq_relation_edge_find(
+	    header, edges, actions, 1, ONIBI_CAPTURE_RELATION_ROLE_SUFFIX);
+	edges[edge].action_offset = 0;
+    }
+    else if (scenario ==
+	     rb_intern("absence_close_relation_suffix_nonconsuming")) {
+	uint32_t edge = onibi_rseq_relation_edge_find(
+	    header, edges, actions, 1, ONIBI_CAPTURE_RELATION_ROLE_SUFFIX);
+	if (edges[edge].destination >= header->state_count)
+	    rb_raise(rb_eRuntimeError,
+		     "absence relation diagnostic requires a suffix state");
+	states[edges[edge].destination].op = ONIBI_RS_ABSENT;
+	states[edges[edge].destination].payload =
+	    absence_relations[0].subprogram_id;
+    }
+    else if (scenario ==
+	     rb_intern("absence_close_relation_pushed_open_missing")) {
+	int changed = 0;
+	uint16_t witness_open =
+	    (uint16_t)(absence_relations[0].pushed_witness_close_slot - 1U);
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_CAPTURE &&
+		(actions[i].flags & ONIBI_RA_CAPTURE_CLOSE) == 0 &&
+		actions[i].arg16 == witness_open &&
+		(actions[i].flags & ONIBI_RA_CAPTURE_OPEN_START_PUSH) != 0) {
+		actions[i].flags &= (uint8_t)~ONIBI_RA_CAPTURE_OPEN_START_PUSH;
+		changed = 1;
+	    }
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "absence relation diagnostic requires a pushed witness");
     }
     else if (scenario == rb_intern("casefold_direct_valid")) {
 	if ((header->features &

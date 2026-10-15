@@ -73,6 +73,71 @@ class RseqPhysicalVerifierTest < Minitest::Test
     assert_empty failures, failures.join("\n")
   end
 
+  def test_rejects_invalid_absence_capture_close_relations
+    regexp = Onibi::Regexp.new("(?~((a|b)+)c)")
+    scenarios = %i[
+      absence_close_relation_old_version
+      absence_close_relation_feature_missing
+      absence_close_relation_feature_orphan
+      absence_close_relation_id_zero
+      absence_close_relation_id_sparse
+      absence_close_relation_slot_range
+      absence_close_relation_slot_even
+      absence_close_relation_unknown_flag
+      absence_close_relation_open_action
+      absence_close_relation_duplicate
+      absence_close_relation_duplicate_role
+      absence_close_relation_capture_mismatch
+      absence_close_relation_missing_close
+      absence_close_relation_missing_loop
+      absence_close_relation_missing_exit
+      absence_close_relation_missing_suffix
+      absence_close_relation_non_absence_owner
+      absence_close_relation_cross_owner
+      absence_close_relation_exit_edge
+      absence_close_relation_loop_edge
+      absence_close_relation_suffix_edge
+      absence_close_relation_suffix_nonconsuming
+      absence_close_relation_pushed_open_missing
+    ]
+
+    scenarios.each do |scenario|
+      error = assert_raises(ArgumentError, scenario.to_s) do
+        regexp.send(:__onibi_rseq_verifier_diagnostics__, scenario)
+      end
+      refute_equal "unknown RSeq verifier diagnostic", error.message, scenario.to_s
+    end
+  end
+
+  def test_compiler_round_trips_absence_capture_close_relations
+    regexp = Onibi::Regexp.new("(?~((a|b)+)c)")
+    diagnostics = regexp.send(:__onibi_diagnostics__, "")
+    actions = diagnostics.fetch(:actions)
+    action_arg32 = diagnostics.fetch(:action_arg32)
+    relations = diagnostics.fetch(:absence_capture_relations)
+    relation_opcode = 15
+    markers = actions.each_with_index.filter_map do |(_op, _flags, _slot), index|
+      next unless actions[index][0] == relation_opcode
+
+      [actions[index][1], actions[index][2], action_arg32[index]]
+    end
+
+    refute_empty relations
+    refute_empty markers
+    assert_equal (1..relations.length).to_a, markers.map(&:last).uniq.sort
+    markers.group_by(&:last).each do |relation_id, relation_markers|
+      _subprogram_id, target_slot, witness_slot, target_start_kind =
+        relations.fetch(relation_id - 1)
+
+      assert_equal [1, 2, 3, 4], relation_markers.map(&:first).sort
+      assert_equal [target_slot], relation_markers.map { |marker| marker[1] }.uniq
+      assert_operator target_slot, :odd?
+      assert_operator witness_slot, :odd?
+      refute_equal target_slot, witness_slot
+      assert_includes [0, 1], target_start_kind
+    end
+  end
+
   def test_rejects_bad_class_and_literal_descriptors
     assert_invalid("[a]", :class_descriptor)
     assert_invalid("\\p{Alpha}", :class_ctype)

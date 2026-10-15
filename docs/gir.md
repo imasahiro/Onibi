@@ -1750,6 +1750,17 @@ For a marked capture, absence restores both boundary slots and condition values
 from the endpoint state before the body. It preserves an unset pair, a prior
 range, or a pending open. Direct writes to unmarked captures remain visible.
 
+During each absence scan, DYNAMIC keeps one ordered capture journal across
+failed probes. It adds path deltas in MRI priority order when failed frames
+leave the stack. A positive body match drops that probe's journal range. A
+failed probe can apply its range to the scan state and saved endpoints.
+
+A direct start clears both output slots. It sets the condition start and clears
+the condition end. It does not publish a half pair. A later direct close
+publishes a complete pair only when a condition start is set. Pushed captures
+keep their saved pair. Backreference registers stay separate from output and
+condition capture values.
+
 A live nullable-repeat owner identifies a capture by its tag-event node. A
 forced replay can make new nodes for the same tag history. The capture filter
 compares node identity while the owner is live. It compares tag-history values
@@ -2332,13 +2343,15 @@ typedef struct {
     uint32_t end_search_fold_normalized_codepoints;
     uint32_t end_search_fold_dmin_bytes;
     uint32_t end_search_fold_dmax_bytes;
+    uint32_t absence_capture_relation_count;
+    uint32_t absence_capture_relations_offset;
 } OnibiRSeqHeader;
 ```
 
 The current RSeq version is:
 
 ```text
-7
+8
 ```
 
 Version 2 added `end_search_bound_bytes` to the physical header. Its feature
@@ -2367,6 +2380,54 @@ Version 7 adds capture-start rollback metadata. Feature bit 15 is present
 exactly when a capture action has the pushed-open bit. The verifier reconstructs
 the feature from decoded actions. It rejects old versions, unknown capture
 flags, and the pushed-open bit on a close action.
+
+Version 8 adds the absence capture relation table after lookbehind widths.
+The header stores the table count and byte offset. Each record is 12 bytes:
+physical absence subprogram ID, target close slot, pushed witness close slot,
+target-start kind, and three zero reserved bytes. Both capture slots are odd.
+Target-start kind is `0` for direct and `1` for pushed. The witness open slot
+is its close slot minus one. The relation ID is the one-based record index.
+
+Action `RA_CAPTURE_RELATION` stores the role in `flags`, the target close slot
+in `arg16`, and the relation ID in `arg32`. Roles are `1` for `CLOSE`, `2`
+for `LOOP`, `3` for `EXIT`, and `4` for `SUFFIX`. `CLOSE` follows its exact
+capture close. `LOOP` and `EXIT` mark the repeat edges. `SUFFIX` marks the edge
+into the declared consuming suffix. One close can have more than one relation.
+
+The compiler emits a relation only for a capture in an absence body. Its
+target contains a variable repeat. That repeat contains a pushed witness
+capture. The next child in the same sequence must have positive minimum width.
+Its supported wrappers and every alternative must lead to a consuming state.
+The compiler stops collection at alternatives and control or subprogram
+boundaries. A zero-width next child does not use a later consuming sibling.
+The suffix marker can pass through epsilon lowering. The verifier requires its
+edge to enter a consuming state.
+
+Feature bit 16 is present exactly when relation records and their action
+markers exist. A clear bit requires zero relation records and no markers. An
+empty relation section has count zero and an offset equal to the blob end.
+The physical verifier checks table bounds, dense IDs, slots, owner kind,
+target-start kind, marker roles, and close pairing. It requires loop and exit
+markers from one state. The loop destination must stay in the same absence
+owner. Exit and suffix markers must share an edge. That edge must enter a
+consuming state. The verifier also requires a pushed witness open in that
+absence owner.
+
+The DYNAMIC interpreter uses relation records during capture publication. It
+reads the exact `CLOSE` and `SUFFIX` roles for the current physical owner and
+target slot. It requires every suffix marker for a relation to name one
+destination. That destination must be the failed state.
+
+At the active bound, DYNAMIC checks whether that consuming state can read the
+current subject. It defers a direct close only when the state cannot read
+input. It keeps the close when the state can read input. For a pushed target,
+DYNAMIC restores the target pair only when the journal has the target and
+witness pairs.
+
+RSeq verifies the `LOOP` and `EXIT` roles. The runtime does not infer missing
+relations from graph cycles. Journal growth, path walks, comparisons, marker
+lookups, transfers, and replay charge the existing work budget. The absence
+ensure block frees the journal storage.
 
 All sections must have four-byte alignment.
 

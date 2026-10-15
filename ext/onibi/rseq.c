@@ -8,6 +8,7 @@
 static uint8_t
 onibi_g_action_flags(const OnibiGAction *action)
 {
+    if (action->code == ONIBI_GA_CAPTURE_RELATION) return action->set;
     if (action->code == ONIBI_GA_CAPTURE_CLOSE) return ONIBI_RA_CAPTURE_CLOSE;
     if (action->code == ONIBI_GA_CAPTURE_OPEN_UNSCOPED)
 	return ONIBI_RA_CAPTURE_OPEN_UNSCOPED |
@@ -428,6 +429,7 @@ typedef struct {
     OnibiRSeqSubprogramVector subprograms;
     OnibiRSeqEdgeVector subprogram_entries;
     OnibiIdVector lookbehind_widths;
+    OnibiAbsenceCaptureRelationVector absence_capture_relations;
     OnibiRSeqClassPayloadVector class_payloads;
     OnibiRSeqLiteralPayloadVector literal_payloads;
     OnibiGActionVector actions;
@@ -482,6 +484,8 @@ onibi_rseq_lower_owner_cleanup(OnibiRSeqLowerOwner *owner)
     onibi_rseq_subprogram_vector_free(&owner->subprograms);
     onibi_rseq_edge_vector_free(&owner->subprogram_entries);
     onibi_id_vector_free(&owner->lookbehind_widths);
+    onibi_absence_capture_relation_vector_free(
+	&owner->absence_capture_relations);
     onibi_allocation_owner_cleanup(&owner->allocations);
 }
 
@@ -502,6 +506,7 @@ onibi_rseq_lower_body(VALUE opaque)
 #define subprogram_records (owner->subprograms)
 #define subprogram_entry_records (owner->subprogram_entries)
 #define lookbehind_width_records (owner->lookbehind_widths)
+#define absence_capture_relation_records (owner->absence_capture_relations)
 #define class_payloads (owner->class_payloads)
 #define literal_payloads (owner->literal_payloads)
 #define action_records (owner->actions)
@@ -546,6 +551,13 @@ onibi_rseq_lower_body(VALUE opaque)
     onibi_id_vector_bind(&lookbehind_width_records, &owner->allocations);
     onibi_id_vector_append(&lookbehind_width_records,
 			   &compiled_data->lookbehind_widths);
+    onibi_absence_capture_relation_vector_init(
+	&absence_capture_relation_records);
+    onibi_absence_capture_relation_vector_bind(
+	&absence_capture_relation_records, &owner->allocations);
+    onibi_absence_capture_relation_vector_append(
+	&absence_capture_relation_records,
+	&compiled_data->absence_capture_relations);
     onibi_rseq_lower_fail_if(owner, 2);
     OnibiGirStateId accept_state = compiled_data->accept;
     if (accept_state == ONIBI_GIR_STATE_NONE ||
@@ -681,6 +693,9 @@ onibi_rseq_lower_body(VALUE opaque)
 	(uint64_t)subprogram_records.count * sizeof(OnibiSubprogramDesc);
     uint64_t lookbehind_width_section_size =
 	(uint64_t)lookbehind_width_records.count * sizeof(uint32_t);
+    uint64_t absence_capture_relation_section_size =
+	(uint64_t)absence_capture_relation_records.count *
+	sizeof(OnibiAbsenceCaptureRelation);
     uint64_t physical_size =
 	sizeof(OnibiRSeqHeader) +
 	(uint64_t)sizeof(OnibiRState) * (uint64_t)state_records.count +
@@ -688,15 +703,16 @@ onibi_rseq_lower_body(VALUE opaque)
 	(uint64_t)sizeof(OnibiRAction) * (uint64_t)action_records.count +
 	class_section_size + literal_desc_size + literal_data_size +
 	backref_desc_size + backref_list_size + subprogram_section_size +
-	lookbehind_width_section_size;
+	lookbehind_width_section_size + absence_capture_relation_section_size;
     if (state_records.count > UINT32_MAX || physical_edge_count > UINT32_MAX ||
 	action_records.count > UINT32_MAX ||
 	compiled_data->backrefs.count > UINT32_MAX ||
 	compiled_data->backref_capture_ids.count > UINT32_MAX ||
 	subprogram_records.count > UINT32_MAX ||
 	lookbehind_width_records.count > UINT32_MAX ||
+	absence_capture_relation_records.count > UINT32_MAX ||
 	physical_size > UINT32_MAX) {
-	rb_raise(eRegexpError, "RSeq program exceeds the v4 size limit");
+	rb_raise(eRegexpError, "RSeq program exceeds the v8 size limit");
     }
     VerifiedGIRAnalysis analysis = compiled_data->analysis;
     uint32_t features = analysis.rseq_features;
@@ -798,6 +814,8 @@ onibi_rseq_lower_body(VALUE opaque)
     physical.class_count = class_count;
     physical.subprogram_count = (uint32_t)subprogram_records.count;
     physical.lookbehind_width_count = (uint32_t)lookbehind_width_records.count;
+    physical.absence_capture_relation_count =
+	(uint32_t)absence_capture_relation_records.count;
     physical.capture_count = capture_count;
     physical.semantic_capture_count = analysis.semantic_capture_count;
     physical.counter_count = counter_count;
@@ -829,6 +847,8 @@ onibi_rseq_lower_body(VALUE opaque)
     offset += subprogram_section_size;
     physical.lookbehind_widths_offset = (uint32_t)offset;
     offset += lookbehind_width_section_size;
+    physical.absence_capture_relations_offset = (uint32_t)offset;
+    offset += absence_capture_relation_section_size;
     physical.blob_size = (uint32_t)offset;
     int bitmap_valid = 1;
     int bitmap_have = 0;
@@ -885,6 +905,8 @@ onibi_rseq_lower_body(VALUE opaque)
 	compiled_data->end_search_fold_dmin_bytes;
     physical.end_search_fold_dmax_bytes =
 	compiled_data->end_search_fold_dmax_bytes;
+    if (absence_capture_relation_records.count != 0)
+	physical.features |= ONIBI_RSEQ_FEATURE_ABSENCE_CAPTURE_RELATION;
     if ((physical.features & ONIBI_RSEQ_FEATURE_FIRST_BITMAP) == 0)
 	memset(physical.first_bitmap, 0, sizeof(physical.first_bitmap));
     onibi_allocation_owner_set_phase(&owner->allocations, 7);
@@ -1082,6 +1104,11 @@ onibi_rseq_lower_body(VALUE opaque)
 	(uint32_t *)(RSTRING_PTR(blob) + physical.lookbehind_widths_offset);
     for (size_t i = 0; i < lookbehind_width_records.count; i++)
 	physical_widths[i] = lookbehind_width_records.entries[i];
+    if (absence_capture_relation_records.count != 0)
+	memcpy(RSTRING_PTR(blob) + physical.absence_capture_relations_offset,
+	       absence_capture_relation_records.entries,
+	       absence_capture_relation_records.count *
+		   sizeof(OnibiAbsenceCaptureRelation));
     rb_obj_freeze(blob);
     /* Validate once. Publish only the relocatable blob. The typed GIR vectors
 	 remain compiler-owned and are released after lowering. */

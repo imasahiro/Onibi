@@ -201,6 +201,16 @@ class AbsenceOperatorTest < Minitest::Test
   def test_absence_operator_preserves_captures_from_a_failed_suffix
     pattern = "(?~(?:(a|b)a))"
 
+    assert_absence_failed_probe_control(
+      label: "failed suffix direct capture at active bound",
+      pattern: pattern,
+      subject: "a",
+      start: 0,
+      expected_values: %w[a a],
+      expected_char_ranges: [[0, 1], [0, 1]],
+      expected_byte_ranges: [[0, 1], [0, 1]]
+    )
+
     %w[a ab b abc].each do |input|
       expected = ::Regexp.new(pattern).match(input)
       actual = Onibi::Regexp.new(pattern).match(input)
@@ -762,8 +772,42 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal ["ab", "b", nil], regexp.match("abc").to_a.first(3)
   end
 
+  def test_absence_operator_keeps_captures_across_alternate_failed_suffixes
+    pattern = "(?~((a|b)+)(?:c|d))"
+    assert_absence_failed_probe_control(
+      label: "alternate suffix failure at active bound",
+      pattern: pattern,
+      subject: "a",
+      start: 0,
+      expected_values: ["a", "a", nil],
+      expected_char_ranges: [[0, 1], [0, 1], [nil, nil]],
+      expected_byte_ranges: [[0, 1], [0, 1], [nil, nil]]
+    )
+
+    assert_absence_failed_probe_control(
+      label: "alternate suffix failure before active bound",
+      pattern: pattern,
+      subject: "ax",
+      start: 0,
+      expected_values: ["ax", nil, nil],
+      expected_char_ranges: [[0, 2], [nil, nil], [nil, nil]],
+      expected_byte_ranges: [[0, 2], [nil, nil], [nil, nil]]
+    )
+  end
+
   def test_absence_operator_restores_nested_suffix_group_captures
-    regexp = Onibi::Regexp.new("(?~((a|bc)+)(d|e))")
+    pattern = "(?~((a|bc)+)(d|e))"
+    assert_absence_failed_probe_control(
+      label: "nested suffix direct capture at active bound",
+      pattern: pattern,
+      subject: "bca",
+      start: 0,
+      expected_values: ["bca", "a", nil, nil],
+      expected_char_ranges: [[0, 3], [2, 3], [nil, nil], [nil, nil]],
+      expected_byte_ranges: [[0, 3], [2, 3], [nil, nil], [nil, nil]]
+    )
+
+    regexp = Onibi::Regexp.new(pattern)
 
     assert_equal ["bc", nil, nil, "d"], regexp.match("bcd").to_a.first(4)
     assert_equal ["babc", nil, nil, nil], regexp.match("babcd").to_a.first(4)
@@ -772,6 +816,34 @@ class AbsenceOperatorTest < Minitest::Test
 
     variable = Onibi::Regexp.new("(?~((ab|a)+)(c|d))")
     assert_equal ["ab", nil, nil, "c"], variable.match("abc").to_a.first(4)
+  end
+
+  def test_absence_operator_keeps_a_capture_from_an_earlier_failed_sibling
+    pattern = "(?~\\A((?:a|abz))c)"
+
+    assert_absence_failed_probe_control(
+      label: "direct close from an earlier failed sibling",
+      pattern: pattern,
+      subject: "abx",
+      start: 0,
+      expected_values: %w[abx a],
+      expected_char_ranges: [[0, 3], [0, 1]],
+      expected_byte_ranges: [[0, 3], [0, 1]]
+    )
+  end
+
+  def test_absence_operator_keeps_unopened_fixed_repeat_capture_unset
+    pattern = "(?~(a|b){3})"
+
+    assert_absence_failed_probe_control(
+      label: "fixed repeat capture has no start tag",
+      pattern: pattern,
+      subject: "xabab",
+      start: 0,
+      expected_values: ["xab", nil],
+      expected_char_ranges: [[0, 3], [nil, nil]],
+      expected_byte_ranges: [[0, 3], [nil, nil]]
+    )
   end
 
   def test_absence_operator_clears_nullable_nested_captures

@@ -123,6 +123,7 @@ typedef struct {
     uint32_t slot;
     OnibiBytePos position;
     uint64_t hash;
+    uint64_t logical_id;
 } OnibiSemanticTagEvent;
 struct OnibiSemanticState {
     uint32_t order;
@@ -200,6 +201,7 @@ typedef struct {
     size_t register_count, register_capacity;
     OnibiSemanticTagEvent *tags;
     size_t tag_count, tag_capacity;
+    uint64_t next_tag_identity;
     OnibiOwnedCallFrame *calls;
     size_t call_count, call_capacity;
     OnibiSubprogramLocalSlots *subprogram_local_slots;
