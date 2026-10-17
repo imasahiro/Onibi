@@ -148,7 +148,8 @@ onibi_matchdata_validate_raw(VALUE subject, const OnibiRawMatch *raw)
 			 "Onibi raw match has a half-unmatched register");
 	    continue;
 	}
-	if (begin < 0 || end < 0 || begin > end || end > length)
+	if (begin < 0 || end < 0 || begin > length || end > length ||
+	    (i == 0 && begin > end))
 	    rb_raise(rb_eRangeError,
 		     "Onibi raw match register is out of bounds");
     }

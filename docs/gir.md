@@ -1780,6 +1780,37 @@ publishes a complete pair only when a condition start is set. Pushed captures
 keep their saved pair. Backreference registers stay separate from output and
 condition capture values.
 
+DYNAMIC keeps output slots in a separate state. It applies output writes in
+executed branch order. A direct unscoped start with the same capture-order ID,
+slot, and byte offset is applied once in one output state. This prevents a
+lower-priority entry edge from replaying a shared prefix.
+
+Each frame stores the pushed-output undo mark. A rollback restores both slots
+from each pushed pair. Direct output writes stay in the ordered output history
+across repeat rollback. A positive assertion transfers its output writes only
+after success. A failed or negative assertion child keeps its output state
+isolated.
+
+Each absence probe keeps its own output transcript. The scan transfers a
+transcript only when the capture journal selects its writes for the scan or a
+saved endpoint. A positive probe filters cleared or pushed captures before it
+replays its transcript.
+
+On DYNAMIC call return, the output state restores each caller capture that was
+active at call entry. The restore uses the saved caller capture pair. It runs
+before the call continuation. This keeps child output from replacing an open
+caller capture. Closed captures from the called subprogram stay selected. The
+restore charges each output capture and each visited tag-history node. Before
+each tag read, it validates the node ID and checks the walk bound.
+
+The output-scope registry uses stable indices and a free list. Create and
+release operations do not scan the registry. Scope creation charges two fixed
+work units. Registry growth also charges each added slot. Release makes one
+constant-time free-list update without a poll. Identity insertion charges each
+probed slot. Rehash charges the replacement capacity, each old-table slot, and
+each replacement-table probe. The output state owns the replacement table
+until the rehash finishes. Error cleanup frees that table.
+
 A live nullable-repeat owner identifies a capture by its tag-event node. A
 forced replay can make new nodes for the same tag history. The capture filter
 compares node identity while the owner is live. It compares tag-history values
@@ -2811,6 +2842,12 @@ Byte registers are copied before search cleanup. Character offsets remain lazy.
 Names retain ordered capture-index lists for duplicate-name lookup.
 Select the last participating capture; preserve unmatched and empty capture distinctions.
 The subject, raw registers, and metadata have explicit GC and allocation ownership.
+
+Raw capture pairs must be both unset or both in bounds. Register zero must have
+an ordered range. A later capture can have an in-bounds reversed pair.
+`offset`, `byteoffset`, and `match_length` report that raw pair. Its length can
+be negative. `to_a`, `captures`, and numeric `[]` raise MRI's `ArgumentError`
+when they extract a reversed pair.
 
 The following `RMatch` transfer applies to later MRI integration.
 

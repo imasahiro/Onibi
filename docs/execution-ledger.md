@@ -737,8 +737,73 @@ The selected failed tag chain does not contain ordered writes from sibling faile
 The edge-wide close marker also has unproved cases outside the six frozen shapes.
 See the exact limits and source analysis in the review-02 result packet.
 No commit or publication occurred.
+
+
+## DYNAMIC output-state review repair (2026-10-17)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-reversed-output-01`,
+attempt 4, phase `review-repair`.
+
+DYNAMIC call return now restores output pairs for captures that were active at
+call entry. It restores them from the saved caller capture file before it runs
+the call continuation. This keeps the output state aligned with the semantic
+state after a recursive call.
+
+The output-scope registry now uses stable indices and a free list. Scope
+creation and release do not scan registry entries. Scope creation charges two
+fixed work units. Registry growth also charges each added slot. Release makes
+one constant-time free-list update without a poll. Start identity insertion
+charges every slot probe. Rehash charges the replacement capacity, each old
+table slot, and every replacement-table probe. The output state owns
+replacement storage until the rehash finishes. Interrupt or timeout cleanup
+frees it safely.
+
+The full project suite on the changed source has 1177 runs, 36964 assertions,
+7 failures, and 7 errors. The isolated source-base run has 1172 runs, 36777
+assertions, 7 failures, and 7 errors. All 14 failure and error identities
+match the base run. The two new recursive-call failures from attempt 3 are
+fixed. The suite still has known baseline failures.
+
+The public resource E2Es were frozen before the C correction. The work-budget
+file now passes 7 tests and 58 assertions. DYNAMIC differential passes 10 and
+19023. The full absence file passes 94 and 929. Both frozen MRI runs match all
+27 rows with DYNAMIC and zero fallback. Semantic, capture, assertion, call,
+atomic, verifier, resource, timeout, and interrupt checks pass.
+
+The payload file still has its pre-existing three-register expectation. MRI
+and Onibi both return two registers for that named-capture pattern. The
+focused invalid-register check passes.
+
+A clean warning build passes. It reports two known warnings in unchanged
+`gir.c` and `rseq.c`. Format, lint, and diff checks pass. Exact commands,
+results, artifacts, and hashes are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-reversed-output-01/worker/review-04/result.md`.
+No commit or publication occurred.
 Exact commands, output hashes, source hashes, and repeatable matrix outputs are in
 /Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/worker/review-02/.
+
+## DYNAMIC call-history resource repair (2026-10-17)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-reversed-output-01`, attempt 5,
+phase `final-resource-repair`.
+
+Output call restore now charges each tag-history node that it visits. It checks
+each node ID before access and bounds the walk by the arena tag count. The old
+semantic restore calls pass a null context. They keep their prior polling
+behavior.
+
+The recursive check passes 1 test and 4 assertions. DYNAMIC differential passes
+10 tests and 19023 assertions. Work-budget checks pass 7 tests and 58
+assertions. Timeout and interrupt checks pass. The full absence check passes 94
+tests and 929 assertions. Two frozen 27-row MRI runs match with DYNAMIC and
+zero fallback.
+
+The full census has 1177 tests, 36964 assertions, 7 failures, and 7 errors.
+It has the same 14 failure and error identities as review 04. A clean warning
+build passes with two known warnings in unchanged `gir.c` and `rseq.c`. Format,
+lint, syntax, trace, diff, and distclean checks pass. The result, exact commands,
+source patch, and hashes are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-reversed-output-01/worker/review-05/`.
 
 
 ## Absence capture compiler tuples (2026-10-15)
@@ -1022,4 +1087,56 @@ MRI reports capture `[2,1]` and raises ArgumentError from `to_a`. The base
 reports an unset capture. This repair reports `[1,1]`. Neither matches MRI.
 The next unit must resolve output history versus condition state.
 Evidence: `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-failed-action-01/worker/evidence-03/result.md`.
+Remote publication remains pending.
+
+
+## Ordered absence output captures and reversed ranges (2026-10-17)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-reversed-output-01`, attempt 3.
+DYNAMIC keeps output capture slots separate from condition and semantic state.
+It follows executed branch order. It restores pushed pairs at rollback marks.
+It keeps direct writes across repeat rollback. Assertion and absence transcripts
+transfer only when their parent path selects them. Shared direct starts are
+applied once by capture-order ID, slot, and byte offset.
+
+The target E2Es preserve MRI's reversed capture pair `[2,1]` on `bab` and
+`[4,3]` on `ébab`. They check raw offsets, negative `match_length`, and
+`ArgumentError` from `to_a`, `captures`, and `[](1)`. They confirm DYNAMIC and
+zero fallback. Normal empty, unset, fixed-three, repeat-count, and nested-form
+controls match MRI.
+
+The full absence file passes 94 tests and 929 assertions. The focused reversed
+range E2Es pass 3 tests and 152 assertions. The invalid payload check passes
+1 test and 22 assertions. Semantic state passes 19/107. Tagged capture checks
+pass 16/4,840; nullable UTF-8 checks pass 11/126. The GIR verifier passes
+51/122. The physical verifier passes 31/158. Subprogram checks pass 6/46.
+Work-budget checks pass 5/29. Semantic regression checks pass 15/24. Tagged
+resource checks pass 2/20. Absence timeout checks pass 1/11. Positive and
+negative lookahead controls pass 2/3. Timeout and interrupt probes both raise.
+The later short match matches MRI after each event.
+
+Both frozen MRI matrix runs match all 27 rows. Every row uses DYNAMIC with zero
+fallback. A clean warning build passes with two known warnings in unchanged
+`gir.c` and `rseq.c`. Ruby syntax, RuboCop, clang-format, and `git diff --check`
+pass. The full project suite did not run.
+
+The full MatchData payload file reports 10 tests and 47 assertions. It has one
+pre-existing failure: `test_native_diagnostic_constructor_copies_raw_search_result`
+expects 3 registers. MRI and Onibi return 2 for its named-capture pattern. The
+pre-code run has the same failure. The focused range validation check passes.
+
+Exact commands, exit codes, source and bundle hashes, logs, and matrix outputs
+are in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-reversed-output-01/worker/implementation-03/result.md`.
+No commit or publication occurred.
+
+## Reversed output ranges: root acceptance (2026-10-17)
+
+Root accepted ordered output capture slots and reversed capture payloads.
+The 94 absence tests pass. All 27 frozen MRI matrix rows match.
+DYNAMIC differential checks pass 19,023 assertions. The full census reports
+1,177 tests and 36,964 assertions, with seven failures and seven errors.
+All 14 identities match the isolated base. No new failure remains.
+Root verified final source, patch and evidence hashes.
+Evidence: `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-reversed-output-01/worker/review-05/result.md`.
+The baseline failure queue and final acceptance gates remain open.
 Remote publication remains pending.

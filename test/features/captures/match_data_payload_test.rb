@@ -74,6 +74,12 @@ class MatchDataPayloadTest < Minitest::Test
     assert_raises_with_message(RangeError, /out of bounds/) do
       payload(regexp, "a", [[0, 2], [0, 1]])
     end
+    assert_raises_with_message(RangeError, /full range is out of bounds/) do
+      payload(regexp, "a", [[1, 0], [0, 1]])
+    end
+    assert_raises_with_message(RangeError, /out of bounds/) do
+      payload(regexp, "a", [[0, 1], [2, 0]])
+    end
     assert_raises_with_message(RangeError, /no full capture/) do
       payload(regexp, "a", [[-2, -2]])
     end

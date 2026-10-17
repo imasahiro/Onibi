@@ -118,6 +118,62 @@ typedef struct {
     uint32_t depth;
 } OnibiAtomicState;
 typedef OnibiAtomicState OnibiAbsenceState;
+typedef enum {
+    ONIBI_DYNAMIC_OUTPUT_ACTION = 0,
+    ONIBI_DYNAMIC_OUTPUT_DIRECT = 1,
+    ONIBI_DYNAMIC_OUTPUT_PUSH = 2,
+    ONIBI_DYNAMIC_OUTPUT_RESTORE = 3
+} OnibiDynamicOutputWriteKind;
+typedef struct {
+    uint32_t capture;
+    OnibiBytePos begin;
+    OnibiBytePos end;
+} OnibiDynamicOutputUndo;
+typedef struct {
+    uint16_t slot;
+    uint8_t flags;
+    uint8_t kind;
+    OnibiBytePos position;
+    OnibiBytePos previous_begin;
+    OnibiBytePos previous_end;
+    uint32_t source_state;
+    uint32_t edge_index;
+    uint32_t destination;
+    uint32_t action_index;
+    uint32_t capture_order;
+} OnibiDynamicOutputWrite;
+typedef struct {
+    OnibiDynamicOutputWrite *writes;
+    size_t count;
+    size_t capacity;
+} OnibiDynamicOutputBatch;
+typedef struct {
+    uint32_t capture_order;
+    uint16_t slot;
+    uint8_t occupied;
+    OnibiBytePos position;
+} OnibiDynamicOutputStartIdentity;
+typedef struct OnibiDynamicOutputState {
+    OnibiBytePos *slots;
+    uint32_t slot_count;
+    OnibiDynamicOutputUndo *undo;
+    size_t undo_count;
+    size_t undo_capacity;
+    OnibiDynamicOutputStartIdentity *direct_starts;
+    size_t direct_start_count;
+    size_t direct_start_capacity;
+    OnibiDynamicOutputStartIdentity *direct_start_rehash;
+    OnibiDynamicOutputWrite *transcript;
+    size_t transcript_count;
+    size_t transcript_capacity;
+    size_t registry_index;
+    uint8_t record_transcript;
+} OnibiDynamicOutputState;
+typedef struct {
+    OnibiDynamicOutputState *state;
+    /* Registry indices use index+1. Zero means no free entry. */
+    size_t next_free_plus_one;
+} OnibiDynamicOutputScope;
 typedef struct {
     OnibiTagEventId parent;
     uint32_t slot;
@@ -154,11 +210,15 @@ typedef struct {
     uint32_t cycle_root;
     /* Preceding encoded-character offset; zero at input start. */
     OnibiBytePos previous_position;
+    size_t output_mark;
+    uint32_t output_batch;
+    uint8_t output_only;
 } OnibiDynamicFrame;
 typedef struct {
     OnibiBytePos position;
     OnibiBytePos previous_position;
     OnibiSemanticState semantic;
+    uint32_t output_batch;
 } OnibiDynamicAbsenceEndpoint;
 typedef struct {
     uint32_t parent;
@@ -230,6 +290,14 @@ typedef struct {
     size_t frame_count, frame_capacity;
     OnibiDynamicAbsenceEndpoint *absence_endpoints;
     size_t absence_endpoint_count, absence_endpoint_capacity;
+    OnibiDynamicOutputState output_root;
+    OnibiDynamicOutputState *active_output_state;
+    OnibiDynamicOutputBatch *output_batches;
+    size_t output_batch_count, output_batch_capacity;
+    OnibiDynamicOutputScope *output_scopes;
+    size_t output_scope_count, output_scope_capacity;
+    size_t output_scope_free_head;
+    uint32_t active_output_batch;
     OnibiDynamicCycleNode *cycles;
     size_t cycle_count, cycle_capacity;
     OnibiDynamicKeyBucket *key_buckets;
