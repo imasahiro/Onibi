@@ -391,6 +391,51 @@ onibi_token_find_ascii_delimiter(const OnibiTokenScanState *scan, long start,
     return -1;
 }
 
+/* Find an ASCII delimiter without treating encoded trail bytes or escaped
+ * characters as syntax. */
+static long
+onibi_token_find_unescaped_ascii_delimiter(const OnibiTokenScanState *scan,
+					   long start, unsigned char delimiter)
+{
+    if (start < 0 || start > scan->length) return -1;
+    const char *source = scan->bytes;
+    const char *cursor = source + start;
+    const char *end = source + scan->length;
+    while (cursor < end) {
+	int character_width = 0;
+	int character =
+	    rb_enc_ascget(cursor, end, &character_width, scan->encoding);
+	if (character >= 0) {
+	    if (character_width <= 0) return -1;
+	    if (character == delimiter) return (long)(cursor - source);
+	    cursor += character_width;
+	    if (character != '\\') continue;
+	    if (cursor >= end) return -1;
+	    int escaped_width = 0;
+	    int escaped_character =
+		rb_enc_ascget(cursor, end, &escaped_width, scan->encoding);
+	    if (escaped_character >= 0) {
+		if (escaped_width <= 0) return -1;
+		cursor += escaped_width;
+		continue;
+	    }
+	    int encoded_length =
+		rb_enc_precise_mbclen(cursor, end, scan->encoding);
+	    if (!ONIGENC_MBCLEN_CHARFOUND_P(encoded_length)) return -1;
+	    int width = ONIGENC_MBCLEN_CHARFOUND_LEN(encoded_length);
+	    if (width <= 0 || cursor + width > end) return -1;
+	    cursor += width;
+	    continue;
+	}
+	int encoded_length = rb_enc_precise_mbclen(cursor, end, scan->encoding);
+	if (!ONIGENC_MBCLEN_CHARFOUND_P(encoded_length)) return -1;
+	int width = ONIGENC_MBCLEN_CHARFOUND_LEN(encoded_length);
+	if (width <= 0 || cursor + width > end) return -1;
+	cursor += width;
+    }
+    return -1;
+}
+
 /* Recognize one complete inline option grammar.  Invalid candidates are not
  * consumed.  The caller can then tokenize the opening parenthesis normally,
  * which preserves the parser's error and byte-range behavior. */
@@ -1076,6 +1121,15 @@ onibi_tokenize_internal(VALUE src, int extended,
 				.extended_stack = {0},
 				.extended_depth = 0};
     for (long i = 0; i < scan.length; i++) {
+	if (!scan.in_class && scan.length - i >= 3 && scan.bytes[i] == '(' &&
+	    scan.bytes[i + 1] == '?' && scan.bytes[i + 2] == '#') {
+	    long close =
+		onibi_token_find_unescaped_ascii_delimiter(&scan, i + 3, ')');
+	    if (close >= 0) {
+		i = close;
+		continue;
+	    }
+	}
 	long start = i;
 	OnibiTokenKind kind = ONIBI_TOKEN_LITERAL;
 	unsigned char byte = (unsigned char)scan.bytes[i];

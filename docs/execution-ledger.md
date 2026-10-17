@@ -1158,3 +1158,17 @@ The full census reports 1,177 tests, 36,968 assertions, 5 failures, and 7 errors
 A clean warning build passes. It reports two known warnings in unchanged `gir.c` and `rseq.c`. The focused RuboCop check, clang-format, Ruby syntax, and diff checks pass. Full RuboCop reports 70 offenses across 154 files. No Ruby file changed. `make distclean` passes.
 
 Exact commands, logs, hashes, matrix results, census comparison, and patch are in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-inline-modifier-baseline-01/worker/result.md`. No commit or publication occurred.
+
+## Pattern-comment baseline repair (2026-10-17)
+
+The C tokenizer now skips pattern comments outside character classes. It stops at the first unescaped close parenthesis. It reads source characters with the source encoding. Comments emit no token and create no group or capture. GIR records this rule.
+
+PatternCommentTest passes 8 tests and 83 assertions. Extended-mode, inline-modifier, syntax-differential, and compile-outcome E2Es pass. Sixteen supported MRI controls match captures, match results, and offsets. Thirteen public controls use RSeq with no fallback.
+
+The compile-outcome cleanup test now uses a nested quantifier that MRI accepts and the Onibi parser rejects. It still checks token cleanup before the error returns.
+
+The full census reports 1,182 tests, 37,050 assertions, 5 failures, and 5 errors. Both target pattern-comment errors are resolved. No new failure or error identity remains. Ten other baseline identities remain.
+
+A clean warning build passes. It reports the same two warnings in unchanged gir.c and rseq.c. Focused RuboCop, clang-format, Ruby syntax, and diff checks pass. Final make distclean passes.
+
+Exact commands, logs, paired MRI controls, native-routing results, census comparison, hashes, and source patch are in /Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-pattern-comments-baseline-01/worker/result.md. No commit or publication occurred.

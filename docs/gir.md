@@ -1934,6 +1934,11 @@ MRI validates the original source and requested options before tokenization.
 The tokenizer reads source bytes with the source encoding.
 It encodes decoded Unicode scalars with the effective regexp encoding from MRI.
 
+Outside character classes, `(?#...)` is a pattern comment. The tokenizer skips
+through the first unescaped `)` at a source-encoding character boundary and
+emits no token. The comment creates no group or capture. MRI validates an
+unterminated comment before tokenization.
+
 In a class, `\uHHHH` and braced `\u{...}` escapes produce one literal token
 per scalar. Fixed-width escapes use four hex digits. Braced items use one to
 six hex digits. Reject values above U+10FFFF and surrogate values.

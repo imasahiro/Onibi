@@ -15,9 +15,9 @@ class CompileOutcomeTest < Minitest::Test
 
   def test_initialization_error_releases_tokens_before_reraising
     error = assert_raises(Onibi::RegexpError) do
-      # MRI accepts this comment, but the Onibi parser rejects it. This
-      # reaches the protected compiler path after tokenization succeeds.
-      Onibi::Regexp.new("(?#x)a")
+      # MRI accepts this nested quantifier, but the Onibi parser rejects it
+      # after tokenization succeeds.
+      Onibi::Regexp.new(".?{0,2}")
     end
 
     assert_equal "unexpected token in expression", error.message
