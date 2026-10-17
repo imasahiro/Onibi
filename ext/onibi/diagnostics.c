@@ -2028,6 +2028,14 @@ onibi_compile_outcome_internal_diagnostics(VALUE self)
     return Qnil;
 }
 
+static VALUE
+onibi_initialization_failure_diagnostics(VALUE klass, VALUE pattern,
+					 VALUE details)
+{
+    (void)klass;
+    return onibi_rseq_initialization_failure_diagnostics(pattern, details);
+}
+
 typedef ONIBI_VECTOR(int) OnibiVectorDiagnostic;
 
 typedef struct {

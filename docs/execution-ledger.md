@@ -1172,3 +1172,34 @@ The full census reports 1,182 tests, 37,050 assertions, 5 failures, and 5 errors
 A clean warning build passes. It reports the same two warnings in unchanged gir.c and rseq.c. Focused RuboCop, clang-format, Ruby syntax, and diff checks pass. Final make distclean passes.
 
 Exact commands, logs, paired MRI controls, native-routing results, census comparison, hashes, and source patch are in /Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-pattern-comments-baseline-01/worker/result.md. No commit or publication occurred.
+
+## Nested quantifier composition repair (2026-10-17)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-nested-quantifier-baseline-01`, attempt 2, phase `cleanup-and-parser-repair`.
+
+The parser now nests each accepted postfix quantifier around the prior atom.
+The GIR contract requires the compiler to preserve MRI's ordered choices and
+capture changes. It forbids repeat flattening without MRI evidence.
+
+The cleanup E2E uses a private, per-instance diagnostic context. It injects
+an internal error after tokenization through `onibi_initialize`. The normal
+protected error path frees the token vector and re-raises the error. The E2E
+checks token counts, storage release, error class, no fallback, and a later
+normal compilation.
+
+The focused quantifier E2E passes 2 tests and 25 assertions. Two frozen MRI
+matrix runs match all 27 rows. Every row uses native DYNAMIC execution with no
+fallback. The 84-row composition controls match MRI after error-wrapper
+normalization. They include 60 native rows and 21 explicit fallback rows for
+unsupported possessive or zero-width forms.
+
+The cleanup, compiler safety, parser, absence, comment, modifier, GIR verifier,
+physical verifier, work-budget, and regular-fast E2Es pass. The full census
+reports 1,182 tests, 37,074 assertions, 5 failures, and 4 errors. It resolves
+the target quantifier error and adds no failure or error identity. Four other
+errors and five other failures remain from the baseline.
+
+A clean warning build passes with two known warnings in unchanged `gir.c` and
+`rseq.c`. Focused RuboCop, Ruby syntax, clang-format, and diff checks pass.
+Final `make distclean` passes. Commands, logs, hashes, matrix results, and the
+census comparison are in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-nested-quantifier-baseline-01/worker/repair-02/`.

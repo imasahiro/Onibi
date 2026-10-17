@@ -99,6 +99,17 @@ onibi_c_repeat_interval_p(const OnibiTokenVector *tokens, long open, long end)
     return close >= 0 && onibi_c_repeat_shape_p(tokens, open, close);
 }
 
+static int
+onibi_c_quantifier_start_p(const OnibiTokenVector *tokens, long index, long end)
+{
+    if (index >= end) return 0;
+    const OnibiTokenRecord *token = onibi_token_at(tokens, index);
+    if (token->kind != ONIBI_TOKEN_QUANTIFIER) return 0;
+    if (token->byte == '*' || token->byte == '+' || token->byte == '?')
+	return 1;
+    return token->byte == '{' && onibi_c_repeat_interval_p(tokens, index, end);
+}
+
 static OnibiAstId
 onibi_c_parse_class_part(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 			 const OnibiTokenRecord *anchor, long begin, long end)
@@ -481,10 +492,8 @@ onibi_c_parse_range(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 		node->start = modifier->start;
 		node->flags |= ONIBI_AST_NODE_GREEDY | ONIBI_AST_NODE_HAS_MAX;
 		atom = quantifier;
-		goto append_atom;
+		goto parse_more_quantifiers;
 	    }
-	    if (onibi_ast_node_const(arena, atom)->kind == ONIBI_AST_QUANTIFIER)
-		rb_raise(eRegexpError, "nested quantifier");
 	    OnibiAstId quantifier =
 		onibi_ast_arena_add(arena, ONIBI_AST_QUANTIFIER, modifier);
 	    OnibiAstNode *node = onibi_ast_node_at(arena, quantifier);
@@ -505,8 +514,11 @@ onibi_c_parse_range(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 		}
 	    }
 	    atom = quantifier;
+	    goto parse_more_quantifiers;
 	}
-    append_atom:
+    parse_more_quantifiers:
+	if (onibi_c_quantifier_start_p(tokens, i, end))
+	    goto parse_atom_modifiers;
 	onibi_ast_add_child(arena, sequence, atom);
     }
     return sequence;

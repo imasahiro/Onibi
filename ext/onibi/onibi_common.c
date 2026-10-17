@@ -597,6 +597,8 @@ struct onibi_regexp_t {
     OnibiCompileErrorKind compile_error_kind;
     OnibiUnsupportedReason unsupported_reason;
     OnibiUnsupportedReason fallback_reason;
+    /* Per-instance context for private initialization diagnostics. */
+    void *initialization_failure_diagnostic;
     /* Private compile telemetry. It records lowering work for focused tests. */
     OnibiLoweringWork lowering_work;
     double timeout_seconds;

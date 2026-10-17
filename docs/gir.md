@@ -274,6 +274,12 @@ Absent
 OptionScope
 ```
 
+When MRI accepts consecutive postfix quantifiers, the parser nests each
+quantifier around the previous atom. Each quantifier keeps its own bounds,
+greedy or lazy mode, and possessive mode. The compiler and executors MUST
+preserve MRI's ordered choices and capture changes. They MUST NOT flatten
+nested repeats without evidence that all observable results stay equal to MRI.
+
 Inline options must be resolved before G-IR generation.
 
 ---

@@ -1182,11 +1182,22 @@ onibi_alloc(VALUE klass)
 }
 
 typedef struct {
+    int inject_after_tokenize;
+    int failure_injected;
+    size_t token_count_before_cleanup;
+    size_t token_count_after_cleanup;
+    int token_storage_released;
+    OnibiCompileErrorKind compile_error_kind;
+    int fallback_selected;
+} OnibiInitializationFailureDiagnostic;
+
+typedef struct {
     VALUE source;
     VALUE options;
     const OnibiTokenVector *tokens;
     OnibiLoweringWork *lowering_work;
     OnibiCompileOutcome *compile_outcome;
+    OnibiInitializationFailureDiagnostic *initialization_failure;
 } OnibiProgramArgs;
 
 static int
@@ -1253,6 +1264,16 @@ onibi_build_program(VALUE argument)
     VALUE source = args->source;
     VALUE options = args->options;
     const OnibiTokenVector *tokens = args->tokens;
+    if (args->initialization_failure &&
+	args->initialization_failure->inject_after_tokenize) {
+	OnibiInitializationFailureDiagnostic *diagnostic =
+	    args->initialization_failure;
+	diagnostic->failure_injected = 1;
+	diagnostic->token_count_before_cleanup = tokens->count;
+	args->compile_outcome->error_kind = ONIBI_COMPILE_INTERNAL_ERROR;
+	args->compile_outcome->unsupported_reason = ONIBI_UNSUPPORTED_NONE;
+	rb_raise(eRegexpError, "injected internal initialization failure");
+    }
     if (onibi_tokens_have_unsupported_posix(tokens)) {
 	onibi_compile_outcome_unsupported(args->compile_outcome,
 					  ONIBI_UNSUPPORTED_CLASS);
@@ -1600,6 +1621,9 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     rb_scan_args(argc, argv, "11", &pattern, &options);
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+    OnibiInitializationFailureDiagnostic *initialization_failure =
+	(OnibiInitializationFailureDiagnostic *)
+	    obj->initialization_failure_diagnostic;
     VALUE inherited_timeout = Qnil;
     if (rb_obj_is_kind_of(pattern, cRegexp)) {
 	onibi_regexp_t *prior;
@@ -1642,7 +1666,8 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 
     /* Let MRI validate the original bytes and options before the tokenizer
      * reads them. Its regexp carries the effective encoding and option bits. */
-    OnibiProgramArgs regexp_args = {source, INT2NUM(opts), NULL, NULL, NULL};
+    OnibiProgramArgs regexp_args = {source, INT2NUM(opts), NULL,
+				    NULL,   NULL,	   NULL};
     int regexp_state = 0;
     obj->regexp = rb_protect(onibi_make_mri_regexp,
 			     (VALUE)(uintptr_t)&regexp_args, &regexp_state);
@@ -1676,8 +1701,9 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     memset(&obj->lowering_work, 0, sizeof(obj->lowering_work));
     OnibiCompileOutcome compile_outcome = {ONIBI_COMPILE_OK,
 					   ONIBI_UNSUPPORTED_NONE};
-    OnibiProgramArgs program_args = {compilation_source, INT2NUM(opts), &tokens,
-				     &obj->lowering_work, &compile_outcome};
+    OnibiProgramArgs program_args = {
+	compilation_source,  INT2NUM(opts),    &tokens,
+	&obj->lowering_work, &compile_outcome, initialization_failure};
     int program_state = 0;
     VALUE parsed = Qnil;
     int parse_only = (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE) != 0;
@@ -1724,15 +1750,79 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 	    }
 	}
     }
-    if (!onibi_compile_outcome_select_fallback(obj, &compile_outcome,
-					       program_state) &&
-	program_state) {
+    int fallback_selected = onibi_compile_outcome_select_fallback(
+	obj, &compile_outcome, program_state);
+    if (initialization_failure) {
+	initialization_failure->compile_error_kind = compile_outcome.error_kind;
+	initialization_failure->fallback_selected = fallback_selected;
+    }
+    if (!fallback_selected && program_state) {
 	onibi_token_vector_free(&tokens);
+	if (initialization_failure) {
+	    initialization_failure->token_count_after_cleanup = tokens.count;
+	    initialization_failure->token_storage_released =
+		tokens.items == NULL && tokens.count == 0 &&
+		tokens.capacity == 0 && tokens.bytes == NULL &&
+		tokens.bytes_count == 0 && tokens.bytes_capacity == 0;
+	}
 	rb_jump_tag(program_state);
     }
     onibi_token_vector_free(&tokens);
     rb_obj_freeze(self);
     return self;
+}
+
+typedef struct {
+    VALUE regexp;
+    VALUE pattern;
+    OnibiInitializationFailureDiagnostic diagnostic;
+} OnibiInitializationFailureCall;
+
+static VALUE
+onibi_initialization_failure_call(VALUE opaque)
+{
+    OnibiInitializationFailureCall *call =
+	(OnibiInitializationFailureCall *)(uintptr_t)opaque;
+    VALUE argv[1] = {call->pattern};
+    return onibi_initialize(1, argv, call->regexp);
+}
+
+static VALUE
+onibi_rseq_initialization_failure_diagnostics(VALUE pattern, VALUE details)
+{
+    Check_Type(details, T_HASH);
+    OnibiInitializationFailureCall call = {
+	rb_obj_alloc(cRegexp), pattern, {.inject_after_tokenize = 1}};
+    onibi_regexp_t *regexp;
+    TypedData_Get_Struct(call.regexp, onibi_regexp_t, &onibi_type, regexp);
+    regexp->initialization_failure_diagnostic = &call.diagnostic;
+    int state = 0;
+    (void)rb_protect(onibi_initialization_failure_call, (VALUE)(uintptr_t)&call,
+		     &state);
+    regexp->initialization_failure_diagnostic = NULL;
+
+    rb_hash_aset(details, ID2SYM(rb_intern("failure_injected")),
+		 call.diagnostic.failure_injected ? Qtrue : Qfalse);
+    rb_hash_aset(details, ID2SYM(rb_intern("token_count_before_cleanup")),
+		 SIZET2NUM(call.diagnostic.token_count_before_cleanup));
+    rb_hash_aset(details, ID2SYM(rb_intern("token_count_after_cleanup")),
+		 SIZET2NUM(call.diagnostic.token_count_after_cleanup));
+    rb_hash_aset(details, ID2SYM(rb_intern("token_storage_released")),
+		 call.diagnostic.token_storage_released ? Qtrue : Qfalse);
+    rb_hash_aset(details, ID2SYM(rb_intern("compile_error_kind")),
+		 ID2SYM(rb_intern(call.diagnostic.compile_error_kind ==
+					  ONIBI_COMPILE_INTERNAL_ERROR
+				      ? "internal"
+				      : "other")));
+    rb_hash_aset(details, ID2SYM(rb_intern("fallback_selected")),
+		 call.diagnostic.fallback_selected ? Qtrue : Qfalse);
+    RB_GC_GUARD(call.regexp);
+
+    if (!state)
+	rb_raise(eRegexpError,
+		 "initialization failure injection did not raise");
+    rb_jump_tag(state);
+    return Qnil;
 }
 
 /* Ruby's public regexp position is a character index.  The VM receives only
