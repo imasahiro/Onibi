@@ -282,9 +282,7 @@ onibi_rseq_consume_character(const OnibiRSeqView *view,
 					 &codepoint, &width))
 	    return 0;
 	(void)codepoint;
-	int multiline =
-	    (state->flags & ONIBI_RSEQ_STATE_FLAG_NEGATED) != 0 ||
-	    (view->header->flags & ONIBI_RSEQ_HEADER_FLAG_MULTILINE) != 0;
+	int multiline = (state->flags & ONIBI_RSEQ_STATE_FLAG_NEGATED) != 0;
 	if (!multiline &&
 	    ONIGENC_IS_MBC_NEWLINE(
 		encoding, (const unsigned char *)RSTRING_PTR(str) + position,

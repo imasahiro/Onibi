@@ -566,6 +566,9 @@ Its flags specify newline behavior.
 
 The `m` regexp option must be resolved before execution.
 
+The runtime MUST use each wildcard state's resolved option. The RSeq header's
+`MULTILINE` bit MUST NOT override the state.
+
 ---
 
 ## 11.4 G_GRAPHEME

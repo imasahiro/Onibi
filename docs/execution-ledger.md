@@ -1140,3 +1140,21 @@ Root verified final source, patch and evidence hashes.
 Evidence: `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-reversed-output-01/worker/review-05/result.md`.
 The baseline failure queue and final acceptance gates remain open.
 Remote publication remains pending.
+
+## Inline modifier scope restoration (2026-10-17)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-inline-modifier-baseline-01`, attempt 1, phase `cause-and-repair`.
+
+The shared runtime used the RSeq header's initial `MULTILINE` bit for each wildcard. This overrode each wildcard state's resolved `m` option inside negative scopes. The runtime now reads newline behavior from the wildcard state. The G-IR contract states that the header bit cannot override the wildcard state. No parser, compiler, RSeq layout, or fallback path changed.
+
+Both assigned modifier E2Es pass: 19 tests and 37 assertions. All 23 MRI controls match. The three affected controls use RSeq without fallback.
+
+Extended-mode, syntax, subexpression, anchor, regular-fast, DYNAMIC, absence, and verifier E2Es pass. The absence suite passes 94 tests and 929 assertions. DYNAMIC differential checks pass 10 tests and 19,023 assertions.
+
+Two frozen MRI matrix runs match all 27 rows. Each row uses DYNAMIC with zero fallback. The artifacts are byte-identical.
+
+The full census reports 1,177 tests, 36,968 assertions, 5 failures, and 7 errors. It resolves the two modifier failures. It adds no failure or error identity. Twelve baseline identities remain.
+
+A clean warning build passes. It reports two known warnings in unchanged `gir.c` and `rseq.c`. The focused RuboCop check, clang-format, Ruby syntax, and diff checks pass. Full RuboCop reports 70 offenses across 154 files. No Ruby file changed. `make distclean` passes.
+
+Exact commands, logs, hashes, matrix results, census comparison, and patch are in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-inline-modifier-baseline-01/worker/result.md`. No commit or publication occurred.
