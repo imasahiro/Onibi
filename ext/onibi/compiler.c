@@ -192,9 +192,15 @@ onibi_class_property_ctype(const onibi_gir_builder_t *builder,
 	*negated = !*negated;
     }
     rb_encoding *encoding = rb_enc_from_index(builder->encoding_index);
+    VALUE utf8_name =
+	rb_enc_str_new((const char *)name, (long)length, rb_utf8_encoding());
+    VALUE encoded_name = rb_str_export_to_enc(utf8_name, encoding);
+    const OnigUChar *begin = (const OnigUChar *)RSTRING_PTR(encoded_name);
     int ctype = ONIGENC_PROPERTY_NAME_TO_CTYPE(
-	encoding, (const OnigUChar *)name, (const OnigUChar *)name + length);
+	encoding, begin, begin + RSTRING_LEN(encoded_name));
     if (ctype < 0) rb_raise(eRegexpError, "invalid character property name");
+    RB_GC_GUARD(utf8_name);
+    RB_GC_GUARD(encoded_name);
     return (uint32_t)ctype;
 }
 
@@ -202,10 +208,15 @@ static uint32_t
 onibi_class_named_ctype(const onibi_gir_builder_t *builder, const char *name)
 {
     rb_encoding *encoding = rb_enc_from_index(builder->encoding_index);
-    const OnigUChar *begin = (const OnigUChar *)name;
-    int ctype =
-	ONIGENC_PROPERTY_NAME_TO_CTYPE(encoding, begin, begin + strlen(name));
+    VALUE utf8_name =
+	rb_enc_str_new(name, (long)strlen(name), rb_utf8_encoding());
+    VALUE encoded_name = rb_str_export_to_enc(utf8_name, encoding);
+    const OnigUChar *begin = (const OnigUChar *)RSTRING_PTR(encoded_name);
+    int ctype = ONIGENC_PROPERTY_NAME_TO_CTYPE(
+	encoding, begin, begin + RSTRING_LEN(encoded_name));
     if (ctype < 0) rb_raise(eRegexpError, "invalid character property name");
+    RB_GC_GUARD(utf8_name);
+    RB_GC_GUARD(encoded_name);
     return (uint32_t)ctype;
 }
 
@@ -1310,6 +1321,48 @@ onibi_ast_slice_number(const OnibiAstArena *arena, OnibiTokenSlice slice,
     return 1;
 }
 
+static int
+onibi_encoded_ascii_char(unsigned char ascii, rb_encoding *encoding,
+			 unsigned char *buffer, size_t capacity)
+{
+    int width = rb_enc_code_to_mbclen((int)ascii, encoding);
+    if (width <= 0 || (size_t)width > capacity) return 0;
+    int written = rb_enc_mbcput((unsigned int)ascii, (char *)buffer, encoding);
+    return written == width ? written : 0;
+}
+
+static OnibiTokenSlice
+onibi_conditional_capture_slice(const OnibiAstArena *arena,
+				OnibiTokenSlice slice, rb_encoding *encoding)
+{
+    if (!slice.present || slice.length < 2 ||
+	slice.offset > arena->bytes_count ||
+	slice.length > arena->bytes_count - slice.offset)
+	return slice;
+    const unsigned char *bytes = arena->bytes + slice.offset;
+    if (bytes[0] == '<' && bytes[slice.length - 1] == '>') {
+	slice.offset++;
+	slice.length -= 2;
+	return slice;
+    }
+
+    unsigned char open[16];
+    unsigned char close[16];
+    int open_width =
+	onibi_encoded_ascii_char('<', encoding, open, sizeof(open));
+    int close_width =
+	onibi_encoded_ascii_char('>', encoding, close, sizeof(close));
+    if (open_width <= 0 || close_width <= 0 ||
+	slice.length < (size_t)(open_width + close_width) ||
+	memcmp(bytes, open, (size_t)open_width) != 0 ||
+	memcmp(bytes + slice.length - (size_t)close_width, close,
+	       (size_t)close_width) != 0)
+	return slice;
+    slice.offset += (size_t)open_width;
+    slice.length -= (size_t)(open_width + close_width);
+    return slice;
+}
+
 static OnibiAstId
 onibi_resolved_named_capture(const OnibiAstArena *arena,
 			     const OnibiResolvedArena *semantics,
@@ -1517,13 +1570,8 @@ onibi_resolve_semantic_node(OnibiParsed *parsed, OnibiAstId id,
 	semantic->subprogram_id = (*next_subprogram)++;
     }
     else if (node->kind == ONIBI_AST_CONDITIONAL) {
-	OnibiTokenSlice condition = node->name;
-	if (condition.present && condition.length >= 2 &&
-	    arena->bytes[condition.offset] == '<' &&
-	    arena->bytes[condition.offset + condition.length - 1] == '>') {
-	    condition.offset++;
-	    condition.length -= 2;
-	}
+	OnibiTokenSlice condition = onibi_conditional_capture_slice(
+	    arena, node->name, rb_enc_from_index(parsed->encoding_index));
 	long number = 0;
 	OnibiAstId target =
 	    onibi_ast_slice_number(arena, condition, &number)

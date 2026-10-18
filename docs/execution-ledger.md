@@ -1203,3 +1203,64 @@ A clean warning build passes with two known warnings in unchanged `gir.c` and
 `rseq.c`. Focused RuboCop, Ruby syntax, clang-format, and diff checks pass.
 Final `make distclean` passes. Commands, logs, hashes, matrix results, and the
 census comparison are in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-nested-quantifier-baseline-01/worker/repair-02/`.
+
+## Non-ASCII-compatible character-class repair (2026-10-17)
+
+Initial relay result: `task-class-encoding-baseline-01`, attempt 1, phase `cause-and-repair`.
+The coordinator accepted the completed repair on 2026-10-19. See the review below.
+
+The tokenizer scans a temporary UTF-8 view for non-ASCII-compatible source.
+It maps token spans back to byte offsets in the original source.
+The parser compares class range endpoints as Unicode codepoints.
+The compiler encodes Unicode property names before MRI lookup.
+The runtime allows non-ASCII-compatible source encodings when RSeq has a class descriptor.
+Class-less programs keep MRI fallback for these source encodings.
+
+The 244-row MRI census has zero semantic mismatches after error-wrapper normalization.
+Of 200 UTF-16 and UTF-32 class rows, 188 use native RSeq without fallback.
+The other 12 need incomplete multi-character case folds and use MRI fallback.
+An equivalent UTF-8 pattern uses the same explicit fold fallback.
+The GIR states that incomplete folds use MRI.
+
+The encoding E2E passes 24 runs and 196 assertions.
+The character-class corpus E2E passes 3 runs and 76 assertions.
+The full census reports 1,183 runs, 37,200 assertions, 5 failures, and 1 error.
+It resolves the three target errors and adds no failure or error identity.
+Six other baseline identities remain.
+
+A clean warning build passes with two known warnings in unchanged `gir.c` and `rseq.c`.
+Focused RuboCop, Ruby syntax, changed-line clang-format, diff checks, and final distclean pass.
+The E2E, route census, full census, hashes, and patch are in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-class-encoding-baseline-01/worker/`.
+No commit or publication occurred.
+
+### Integrated encoding review (2026-10-19)
+
+Status: ACCEPTED for the bounded UTF-16 and UTF-32 class profile.
+The review also covers literals, repeats, capture names, and byte escapes in
+mixed class programs. Capture metadata preserves source encoding.
+Range selectors retain MRI's separate binary-name rules.
+Class-less programs and unsupported escape forms retain explicit fallback.
+This acceptance does not complete the gem PoC.
+
+The encoding E2E passes 31 tests and 1,562 assertions with seed 51748.
+The escape cursor E2E passes one test and 154 assertions.
+The 335-row mixed encoding matrix has zero differences after error-class normalization.
+The matrix compares captures, offsets, encodings, names, and error bytes.
+Route evidence records native execution and fallback separately.
+The test compares each encoding with MRI before it checks native routing.
+MRI rejects incomplete UTF-32 byte escapes, so those cases have no execution route.
+
+The full suite reports 1,190 tests, 38,566 assertions, five failures, and one error.
+Its six failure and error identities match the inherited baseline exactly.
+They concern octal syntax, line anchors, two capture-count expectations,
+nesting-limit errors, and caller-local backreference state.
+No new failure identity remains.
+
+The forced warning build passes with the two known warnings in `gir.c` and `rseq.c`.
+Focused RuboCop, changed-line clang-format, and `git diff --check` pass.
+The repeatable runner records exact commands, environment, exit codes, and logs:
+`/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/final-review-03/verify.py`.
+Its `commands.json`, `matrix-comparison.json`, and `census-comparison.json`
+provide acceptance evidence. `compare.py` repeats the result comparisons.
+The earlier relay evidence above remains valid for the original class corpus.
+Publication and remote integration remain pending.

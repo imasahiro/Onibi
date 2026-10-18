@@ -1937,8 +1937,15 @@ The compiler must normalize:
 - Unicode properties.
 
 MRI validates the original source and requested options before tokenization.
-The tokenizer reads source bytes with the source encoding.
+The tokenizer scans ASCII-compatible source bytes with the source encoding.
+For non-ASCII-compatible source, it scans a temporary UTF-8 view and maps
+token spans back to byte offsets in the original source.
 It encodes decoded Unicode scalars with the effective regexp encoding from MRI.
+Capture identity names retain the source encoding. Numeric references, option
+names, and property names retain their scanner representation.
+The compiler encodes property names for MRI's encoding callbacks.
+Repeat syntax uses the source width of its opening brace for adjacency checks.
+Hexadecimal and octal escapes collect bytes using the effective regexp encoding.
 
 Outside character classes, `(?#...)` is a pattern comment. The tokenizer skips
 through the first unescaped `)` at a source-encoding character boundary and
@@ -1990,6 +1997,11 @@ Descriptor flags store whole-class negation.
 The compiler puts one-character case-fold closure in the descriptor data.
 
 The executor applies whole-class negation after descriptor evaluation.
+The executor decodes each subject character through MRI's encoding callbacks
+before it checks codepoint ranges or encoding character types.
+RSeq programs with class descriptors can execute with non-ASCII-compatible
+source and subject encodings when MRI reports compatible encodings.
+Class-less programs with these source encodings remain on MRI.
 
 Verified GIR analysis marks folds that still need multi-character paths.
 
@@ -2854,6 +2866,9 @@ $2
 For the gem PoC, the transfer is `OnibiRawMatch -> Onibi::MatchData`.
 Byte registers are copied before search cleanup. Character offsets remain lazy.
 Names retain ordered capture-index lists for duplicate-name lookup.
+The native name index retains each capture name's source encoding.
+Range methods accept binary selectors by exact bytes, but reject embedded NUL.
+Capture value methods use encoding-sensitive name lookup.
 Select the last participating capture; preserve unmatched and empty capture distinctions.
 The subject, raw registers, and metadata have explicit GC and allocation ownership.
 

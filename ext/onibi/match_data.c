@@ -174,8 +174,30 @@ onibi_matchdata_copy_names(const onibi_regexp_t *regexp)
 
 typedef struct {
     VALUE target;
+    VALUE name_encodings;
     uint32_t num_regs;
 } OnibiMatchDataNamedCopy;
+
+static VALUE
+onibi_matchdata_name_encoding_map(VALUE names)
+{
+    VALUE result = rb_hash_new();
+    if (NIL_P(names)) return result;
+    if (!RB_TYPE_P(names, T_ARRAY))
+	rb_raise(rb_eTypeError, "Onibi regexp capture names are invalid");
+
+    for (long i = 0; i < RARRAY_LEN(names); i++) {
+	VALUE name = rb_ary_entry(names, i);
+	if (!RB_TYPE_P(name, T_STRING))
+	    rb_raise(rb_eTypeError, "Onibi regexp capture names are invalid");
+	VALUE key = rb_str_dup(name);
+	rb_enc_associate(key, rb_ascii8bit_encoding());
+	rb_obj_freeze(key);
+	rb_hash_aset(result, key, name);
+    }
+    rb_obj_freeze(result);
+    return result;
+}
 
 static int
 onibi_matchdata_copy_named_capture(VALUE key, VALUE value, VALUE opaque)
@@ -185,6 +207,10 @@ onibi_matchdata_copy_named_capture(VALUE key, VALUE value, VALUE opaque)
     if (!RB_TYPE_P(key, T_STRING) || !RB_TYPE_P(value, T_ARRAY))
 	rb_raise(rb_eTypeError, "Onibi regexp capture metadata is invalid");
     VALUE copied_key = rb_str_dup(key);
+    VALUE source_name = rb_hash_lookup(copy->name_encodings, copied_key);
+    if (NIL_P(source_name))
+	rb_raise(rb_eTypeError, "Onibi regexp capture name is invalid");
+    rb_enc_associate(copied_key, rb_enc_get(source_name));
     VALUE copied_value = rb_ary_dup(value);
     for (long i = 0; i < RARRAY_LEN(copied_value); i++) {
 	VALUE index = rb_ary_entry(copied_value, i);
@@ -193,6 +219,7 @@ onibi_matchdata_copy_named_capture(VALUE key, VALUE value, VALUE opaque)
 	    rb_raise(rb_eRangeError,
 		     "Onibi capture metadata index is out of range");
     }
+    RB_GC_GUARD(source_name);
     rb_obj_freeze(copied_key);
     rb_obj_freeze(copied_value);
     rb_hash_aset(copy->target, copied_key, copied_value);
@@ -204,11 +231,15 @@ onibi_matchdata_copy_named_index(const onibi_regexp_t *regexp,
 				 uint32_t num_regs)
 {
     VALUE result = rb_hash_new();
-    OnibiMatchDataNamedCopy copy = {result, num_regs};
-    if (!NIL_P(regexp->named_captures))
+    VALUE name_encodings = Qnil;
+    if (!NIL_P(regexp->named_captures)) {
+	name_encodings = onibi_matchdata_name_encoding_map(regexp->names);
+	OnibiMatchDataNamedCopy copy = {result, name_encodings, num_regs};
 	rb_hash_foreach(regexp->named_captures,
 			onibi_matchdata_copy_named_capture,
 			(VALUE)(uintptr_t)&copy);
+    }
+    RB_GC_GUARD(name_encodings);
     rb_obj_freeze(result);
     return result;
 }
@@ -543,11 +574,29 @@ onibi_matchdata_raise_unknown_name(VALUE name)
 }
 
 static long
-onibi_matchdata_named_capture_index(OnibiMatchData *data, VALUE selector)
+onibi_matchdata_named_capture_index(OnibiMatchData *data, VALUE selector,
+				    int reject_binary_null)
 {
     VALUE name = onibi_matchdata_name_string(selector);
     if (name == Qundef) return -1;
+    if (reject_binary_null && RB_TYPE_P(name, T_STRING) &&
+	rb_enc_get(name) == rb_ascii8bit_encoding() &&
+	memchr(RSTRING_PTR(name), '\0', (size_t)RSTRING_LEN(name)) != NULL)
+	rb_raise(rb_eArgError, "string contains null byte");
     VALUE indices = rb_hash_lookup(data->named_index, name);
+    if (NIL_P(indices) && reject_binary_null && RB_TYPE_P(name, T_STRING) &&
+	rb_enc_get(name) == rb_ascii8bit_encoding()) {
+	for (long i = 0; i < RARRAY_LEN(data->names); i++) {
+	    VALUE candidate = rb_ary_entry(data->names, i);
+	    if (!RB_TYPE_P(candidate, T_STRING) ||
+		RSTRING_LEN(candidate) != RSTRING_LEN(name) ||
+		memcmp(RSTRING_PTR(candidate), RSTRING_PTR(name),
+		       (size_t)RSTRING_LEN(name)) != 0)
+		continue;
+	    indices = rb_hash_lookup(data->named_index, candidate);
+	    if (!NIL_P(indices)) break;
+	}
+    }
     if (NIL_P(indices)) onibi_matchdata_raise_unknown_name(name);
     for (long i = RARRAY_LEN(indices) - 1; i >= 0; i--) {
 	VALUE index_value = rb_ary_entry(indices, i);
@@ -590,7 +639,7 @@ onibi_matchdata_aref(int argc, VALUE *argv, VALUE self)
 	return onibi_matchdata_capture_array(self, start, length);
     }
     if (RB_TYPE_P(index, T_STRING) || SYMBOL_P(index)) {
-	long selected = onibi_matchdata_named_capture_index(data, index);
+	long selected = onibi_matchdata_named_capture_index(data, index, 0);
 	return selected < 0 ? Qnil : onibi_matchdata_capture(self, selected);
     }
     return onibi_matchdata_numeric_capture(self, index, count);
@@ -601,7 +650,7 @@ onibi_matchdata_match(VALUE self, VALUE selector)
 {
     if (RB_TYPE_P(selector, T_STRING) || SYMBOL_P(selector)) {
 	OnibiMatchData *data = onibi_matchdata_get(self);
-	long selected = onibi_matchdata_named_capture_index(data, selector);
+	long selected = onibi_matchdata_named_capture_index(data, selector, 0);
 	return selected < 0 ? Qnil : onibi_matchdata_capture(self, selected);
     }
 
@@ -687,7 +736,7 @@ onibi_matchdata_values_at(int argc, VALUE *argv, VALUE self)
 
 	if (RB_TYPE_P(selector, T_STRING) || SYMBOL_P(selector)) {
 	    long selected = onibi_matchdata_named_capture_index(
-		onibi_matchdata_get(self), selector);
+		onibi_matchdata_get(self), selector, 0);
 	    VALUE capture =
 		selected < 0 ? Qnil : onibi_matchdata_capture(self, selected);
 	    rb_ary_push(result, capture);
@@ -750,7 +799,7 @@ onibi_matchdata_named_captures(int argc, VALUE *argv, VALUE self)
     VALUE result = rb_hash_new();
     for (long i = 0; i < RARRAY_LEN(data->names); i++) {
 	VALUE name = rb_ary_entry(data->names, i);
-	long index = onibi_matchdata_named_capture_index(data, name);
+	long index = onibi_matchdata_named_capture_index(data, name, 0);
 	VALUE key =
 	    RTEST(keyword_values[0]) ? rb_str_intern(name) : rb_str_dup(name);
 	VALUE value = index < 0 ? Qnil : onibi_matchdata_capture(self, index);
@@ -811,7 +860,7 @@ static long
 onibi_matchdata_byte_index(OnibiMatchData *data, VALUE selector)
 {
     if (RB_TYPE_P(selector, T_STRING) || SYMBOL_P(selector))
-	return onibi_matchdata_named_capture_index(data, selector);
+	return onibi_matchdata_named_capture_index(data, selector, 1);
 
     long index = rb_num2int(selector);
 
@@ -1118,7 +1167,7 @@ onibi_matchdata_deconstruct_keys(VALUE self, VALUE keys)
     if (NIL_P(keys)) {
 	for (long i = 0; i < RARRAY_LEN(data->names); i++) {
 	    VALUE name = rb_ary_entry(data->names, i);
-	    long index = onibi_matchdata_named_capture_index(data, name);
+	    long index = onibi_matchdata_named_capture_index(data, name, 0);
 	    VALUE value =
 		index < 0 ? Qnil : onibi_matchdata_capture(self, index);
 	    rb_hash_aset(result, rb_str_intern(name), value);
@@ -1133,7 +1182,7 @@ onibi_matchdata_deconstruct_keys(VALUE self, VALUE keys)
 	VALUE name = rb_sym2str(key);
 	VALUE indices = rb_hash_lookup(data->named_index, name);
 	if (NIL_P(indices)) continue;
-	long index = onibi_matchdata_named_capture_index(data, name);
+	long index = onibi_matchdata_named_capture_index(data, name, 0);
 	VALUE value = index < 0 ? Qnil : onibi_matchdata_capture(self, index);
 	rb_hash_aset(result, key, value);
     }
