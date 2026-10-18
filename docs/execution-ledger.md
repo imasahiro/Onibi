@@ -1283,3 +1283,26 @@ Commands, MRI proof, logs, source hashes, and parent review are saved under
 `/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/capture-count-01/`.
 `result.json` records the executed checks. `reproduce.py` repeats those checks.
 Publication remains pending.
+
+## Line-start boundary repair (2026-10-19)
+
+Status: ACCEPTED. `BEGIN_LINE` now decodes the preceding character.
+It accepts input start and interior positions after LF.
+It rejects the position after a final LF, as MRI does.
+The shared C assertion preserves character boundaries for UTF-16 and UTF-32.
+
+The frozen MRI matrix has 13 boundary cases and eight encoded class cases.
+All 21 cases agree after the repair. The encoded cases use native execution without fallback.
+The anchor E2E passes six tests and 106 assertions.
+The encoding E2E passes 31 tests and 1,562 assertions.
+The full suite uses seed 51748 and reports 1,192 tests and 38,670 assertions.
+Two failures and one error remain: nesting-limit text, caller-local backreference state, and octal syntax.
+Only the line-start failure resolved. No new failure identity appeared.
+
+The forced warning build passes with the two known warnings.
+Focused RuboCop, C format, and diff checks pass.
+The worker result records exact commands, environment, source hashes, and extension hash:
+`/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/line-start-01/result.json`.
+`line_start_matrix.rb` repeats the MRI comparison. `review.json` records parent acceptance.
+End-line and semi-end assertions still use byte-based checks. Their encoded behavior needs a separate audit.
+Those assertions were outside this repair. Publication remains pending.

@@ -397,6 +397,24 @@ onibi_rseq_backref_consume(VALUE str, OnibiBytePos position,
 }
 
 static int
+onibi_rseq_begin_line_hit(VALUE str, OnibiBytePos pos, rb_encoding *encoding,
+			  OnibiEncodingMode mode)
+{
+    if (pos == 0) return 1;
+    if (pos < 0 || pos >= RSTRING_LEN(str)) return 0;
+
+    OnibiBytePos previous =
+	onibi_dynamic_previous_position(str, pos, encoding, mode);
+    if (previous < 0 || previous >= pos) return 0;
+
+    OnigCodePoint codepoint;
+    long width;
+    return onibi_rseq_decode_character(str, previous, encoding, mode,
+				       &codepoint, &width) &&
+	   previous + width == pos && codepoint == '\n';
+}
+
+static int
 onibi_rseq_position_assertion_hit(OnibiRAssertKind kind, VALUE str,
 				  OnibiBytePos pos, OnibiBytePos search_origin,
 				  rb_encoding *encoding, OnibiEncodingMode mode)
@@ -406,7 +424,7 @@ onibi_rseq_position_assertion_hit(OnibiRAssertKind kind, VALUE str,
     case ONIBI_RAP_BEGIN_BUFFER: hit = pos == 0; break;
     case ONIBI_RAP_END_BUFFER: hit = pos == RSTRING_LEN(str); break;
     case ONIBI_RAP_BEGIN_LINE:
-	hit = pos == 0 || RSTRING_PTR(str)[pos - 1] == '\n';
+	hit = onibi_rseq_begin_line_hit(str, pos, encoding, mode);
 	break;
     case ONIBI_RAP_END_LINE:
 	hit = pos == RSTRING_LEN(str) || RSTRING_PTR(str)[pos] == '\n';

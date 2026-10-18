@@ -1947,6 +1947,10 @@ The compiler encodes property names for MRI's encoding callbacks.
 Repeat syntax uses the source width of its opening brace for adjacency checks.
 Hexadecimal and octal escapes collect bytes using the effective regexp encoding.
 
+The native line-start assertion accepts byte position zero, including empty input.
+At other positions, it requires a preceding decoded newline and a position before input end.
+It does not treat a newline byte inside another encoded character as a line boundary.
+
 Outside character classes, `(?#...)` is a pattern comment. The tokenizer skips
 through the first unescaped `)` at a source-encoding character boundary and
 emits no token. The comment creates no group or capture. MRI validates an
