@@ -1264,3 +1264,22 @@ Its `commands.json`, `matrix-comparison.json`, and `census-comparison.json`
 provide acceptance evidence. `compare.py` repeats the result comparisons.
 The earlier relay evidence above remains valid for the original class corpus.
 Publication and remote integration remain pending.
+
+## Capture-count test correction (2026-10-19)
+
+Status: ACCEPTED. MRI disables unnamed captures when a pattern has named captures.
+Two old tests expected an unnamed optional group to retain a capture slot.
+Both fixtures now name that group. The unmatched register assertions remain.
+The public scan differential test also retains the original mixed-group pattern.
+No production code changed.
+
+The contract file passes four tests and 27 assertions.
+The payload file passes ten tests and 50 assertions.
+Both use seed 51748. Focused RuboCop and whitespace checks pass.
+The warning build passes with the two existing warnings.
+The full suite reports 1,190 tests, 38,570 assertions, three failures, and one error.
+Only the two target failure identities disappeared. No new identity appeared.
+Commands, MRI proof, logs, source hashes, and parent review are saved under
+`/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/capture-count-01/`.
+`result.json` records the executed checks. `reproduce.py` repeats those checks.
+Publication remains pending.

@@ -108,12 +108,12 @@ class MatchDataPayloadTest < Minitest::Test
   end
 
   def test_native_diagnostic_constructor_copies_raw_search_result
-    regexp = Onibi::Regexp.new("(?<letter>a)(b)?")
+    regexp = Onibi::Regexp.new("(?<letter>a)(?<missing>b)?")
     info = regexp.send(:__onibi_match_data_diagnostics__, "a")
 
     assert_equal 3, info[:num_regs]
     assert_equal [[0, 1], [0, 1], [-1, -1]], info[:raw_registers]
-    assert_equal ["letter"], info[:names]
+    assert_equal %w[letter missing], info[:names]
     assert info[:lazy_character_cache]
   end
 

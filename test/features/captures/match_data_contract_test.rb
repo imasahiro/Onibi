@@ -9,7 +9,7 @@ class MatchDataContractTest < Minitest::Test
       raise "supported Onibi match must not call MRI Regexp#match"
     end
 
-    regexp = Onibi::Regexp.new("(?<letter>a)(b)?")
+    regexp = Onibi::Regexp.new("(?<letter>a)(?<missing>b)?")
 
     assert_equal [["a", nil]], regexp.scan("a")
   ensure
@@ -20,6 +20,7 @@ class MatchDataContractTest < Minitest::Test
     cases = [
       ["(a)(b)", "ab"],
       ["(?<x>a)(?<y>b)", "ab"],
+      ["(?<letter>a)(b)?", "a"],
       ["(?<x>a)(?<x>b)", "ab"],
       ["(?<x>a)?b", "b"],
       ["((a)?)", "a"],
