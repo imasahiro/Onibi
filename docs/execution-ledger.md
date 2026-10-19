@@ -1329,3 +1329,29 @@ Exact commands, environment, logs, source hashes, frozen results, and parent rev
 `/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/end-line-01/`.
 `end_line_matrix.rb` repeats the MRI comparison. `result.json` records the checks.
 Publication remains pending.
+
+## Numeric escape support decision (2026-10-19)
+
+Status: AUDIT ACCEPTED; implementation pending.
+Octal bytes and numbered backreferences remain in the supported MRI-compatible subset.
+GIR sections 34 and 42 define these features. Section 133.1 requires compatible results.
+The existing syntax tests require both octal `\10` and capture-10 references.
+The audit closes the support decision in TASK-BASE02-OCTAL-SCOPE.
+It does not close the implementation defects.
+
+The frozen matrix contains 35 patterns and 11 differing patterns.
+Without prior captures, MRI reads `\10` and `\11` as octal bytes.
+It reads `\18` as an octal byte followed by `8`.
+The measured `\80`, `\81`, and `\99` forms are literal digits.
+Multi-digit references depend on captures opened before the escape.
+Single-digit forward references retain their separate rule.
+Inside classes, `\1`, `\10`, and `\8` expose a separate scanner defect.
+The repair must preserve the single source scan and encoded-byte assembly.
+
+The warning build passes with two existing warnings.
+The two existing target methods report two tests, three assertions, and one error at `\10`.
+No repository source or test changed during the audit. No full suite was repeated.
+Exact probes, outputs, source hashes, contract references, and review are under
+`/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/octal-audit-01/`.
+The parent verified all source hashes and independently counted the 11 differences.
+`numeric_octal_matrix.rb` repeats the audit. Its binary-input fallback control is not native support evidence.

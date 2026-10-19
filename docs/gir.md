@@ -1658,6 +1658,14 @@ RELATIVE
 WITH_LEVEL
 ```
 
+Numeric escape classification must follow MRI before reference resolution.
+Outside classes, multi-digit escapes depend on captures opened before the escape.
+A later capture does not change an earlier octal escape into a reference.
+Single-digit forward references retain MRI's separate reference rule.
+Inside classes, digit escapes denote octal bytes or literal digits, never capture references.
+The accepted octal audit records the measured cases. These rules are requirements;
+the remaining numeric-escape repair is not yet accepted.
+
 The parser must resolve names to capture-number lists.
 
 The compiler must preserve the current MRI resolution order for duplicate names.
