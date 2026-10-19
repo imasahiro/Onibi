@@ -1381,3 +1381,32 @@ Worker evidence is in `class-digits-01/`; parent checks and acceptance are in it
 under `/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/`.
 `parent-review/verify.py` repeats the corrected checks and records exact commands and environment.
 Publication remains pending.
+
+## Outside-class numeric escapes (2026-10-20)
+
+Status: ACCEPTED. The tokenizer counts captures as their opening tokens appear.
+Multi-digit decimal escapes refer only to captures already opened.
+Other runs start octal bytes or literal digits under MRI's rules.
+Single-digit forward references retain their existing behavior.
+Bounded decimal accumulation prevents overflow on long digit runs.
+The repair adds no source rescan or matcher source checks.
+
+Public MRI E2Es preceded the C change. They include capture 101, forward references,
+open captures, noncapturing groups, comments, and long digit suffixes.
+All 35 frozen audit patterns now match MRI, including the accepted class cases.
+The syntax suite passes 39 tests and 106 assertions.
+The escape-cursor and encoding suites pass one/154 and 31/1,562 respectively.
+Constructor and lexer-error controls also pass.
+The full suite uses seed 51748 and reports 1,196 tests and 38,958 assertions.
+The octal error is resolved. Only the two known failures remain:
+nesting-limit message text and excluded caller-local MRI backreference state.
+
+The first full-suite checkpoint incorrectly reported an octal error.
+The parent read the raw logs. All three saved full runs have two failures and zero errors.
+The incorrect checkpoint remains as audit history; the raw logs define acceptance.
+The final warning build, focused E2E, RuboCop, C format, diff check, and distclean pass.
+Two unchanged C warnings remain.
+Evidence and exact commands are under
+`/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/numeric-escape-01/`.
+`result.json` records checks and hashes. `review.json` records parent acceptance.
+Publication remains pending.

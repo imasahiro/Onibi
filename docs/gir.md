@@ -1664,8 +1664,11 @@ A later capture does not change an earlier octal escape into a reference.
 Single-digit forward references retain MRI's separate reference rule.
 Inside classes, digit escapes denote octal bytes or literal digits, never capture references.
 Class digit escapes are accepted as native literals.
-The accepted octal audit records the remaining outside-class cases.
-Their capture-dependent classification repair is not yet accepted.
+The tokenizer tracks opened captures during the existing source scan.
+It resolves a complete multi-digit decimal run only against that count.
+Otherwise, digits `1` through `7` start up to three octal digits; `8` and `9` remain literal.
+Decimal accumulation stops when it exceeds the opened-capture count.
+The accepted MRI audit and E2Es cover this classification, including long digit runs.
 
 The parser must resolve names to capture-number lists.
 

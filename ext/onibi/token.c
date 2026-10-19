@@ -332,6 +332,7 @@ typedef struct {
     long repeat_close;
     int extended_stack[256];
     long extended_depth;
+    long opened_capture_count;
 } OnibiTokenScanState;
 
 /* Treat braces as interval syntax only when their complete body has the
@@ -920,31 +921,47 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 		    (OnibiTokenSlice){decoded_offset, decoded_length, 1};
 	}
     }
-    /* Three octal digits form one byte.  Resolve this form before the
-     * numeric backreference rule. */
-    int three_digit_octal = escaped >= '1' && escaped <= '7' &&
-			    i + 2 < scan->length && source[i + 2] >= '0' &&
-			    source[i + 2] <= '7' && i + 3 < scan->length &&
-			    source[i + 3] >= '0' && source[i + 3] <= '7';
-    if (!scan->in_class && !three_digit_octal && escaped >= '1' &&
-	escaped <= '9' && i + 1 < scan->length && source[i + 1] >= '0' &&
-	source[i + 1] <= '9') {
+    /* Resolve a multi-digit reference against captures opened before this
+     * escape. Stop as soon as its value exceeds that bounded count, so a long
+     * digit run cannot overflow the numeric accumulator. */
+    int unresolved_numeric_run = 0;
+    int multi_digit_numeric_run = !scan->in_class && escaped >= '1' &&
+				  escaped <= '9' && i + 2 < scan->length &&
+				  source[i + 2] >= '0' && source[i + 2] <= '9';
+    if (multi_digit_numeric_run) {
 	long number = escaped - '0';
 	long digit = i + 2;
-	while (digit < scan->length && source[digit] >= '0' &&
-	       source[digit] <= '9') {
-	    number = onibi_checked_decimal_append(
-		number, (unsigned char)(source[digit] - '0'));
-	    i = digit++;
+	int matches_opened_capture = number <= scan->opened_capture_count;
+	while (matches_opened_capture && digit < scan->length &&
+	       source[digit] >= '0' && source[digit] <= '9') {
+	    unsigned char decimal_digit = (unsigned char)(source[digit] - '0');
+	    long capture_count = scan->opened_capture_count;
+	    if (number > capture_count / 10 ||
+		(number == capture_count / 10 &&
+		 decimal_digit > (unsigned char)(capture_count % 10))) {
+		matches_opened_capture = 0;
+		break;
+	    }
+	    number = onibi_checked_decimal_append(number, decimal_digit);
+	    digit++;
+	}
+	if (matches_opened_capture &&
+	    (digit == scan->length || source[digit] < '0' ||
+	     source[digit] > '9')) {
+	    recognition->kind = ONIBI_TOKEN_BACKREF;
+	    recognition->capture_number = number;
+	    recognition->has_capture_number = 1;
+	    i = digit - 1;
 	    cursor_on_last_consumed = 1;
 	}
-	recognition->kind = ONIBI_TOKEN_BACKREF;
-	recognition->capture_number = number;
-	recognition->has_capture_number = 1;
+	else {
+	    unresolved_numeric_run = 1;
+	}
     }
     if (!recognition->has_capture_number && escaped >= '1' && escaped <= '7' &&
-	(scan->in_class || (i + 2 < scan->length && source[i + 2] >= '0' &&
-			    source[i + 2] <= '7'))) {
+	(scan->in_class || unresolved_numeric_run ||
+	 (i + 2 < scan->length && source[i + 2] >= '0' &&
+	  source[i + 2] <= '7'))) {
 	size_t decoded_offset = tokens->bytes_count;
 	size_t decoded_length = 1;
 	int value = 0;
@@ -1008,7 +1025,8 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 	recognition->kind = ONIBI_TOKEN_ANCHOR;
     else if (!scan->in_class && escaped == 'K')
 	recognition->kind = ONIBI_TOKEN_MATCH_RESET;
-    else if (!scan->in_class && escaped >= '1' && escaped <= '9')
+    else if (!scan->in_class && escaped >= '1' && escaped <= '9' &&
+	     !(unresolved_numeric_run && escaped >= '8'))
 	recognition->kind = ONIBI_TOKEN_BACKREF;
     else if (onibi_class_escape_p(escaped))
 	recognition->kind = ONIBI_TOKEN_ESCAPE;
@@ -1166,7 +1184,8 @@ onibi_tokenize_scan(VALUE src, int extended, rb_encoding *effective_encoding,
 				.class_body_starts = {0},
 				.repeat_close = -1,
 				.extended_stack = {0},
-				.extended_depth = 0};
+				.extended_depth = 0,
+				.opened_capture_count = 0};
     for (long i = 0; i < scan.length; i++) {
 	if (!scan.in_class && scan.length - i >= 3 && scan.bytes[i] == '(' &&
 	    scan.bytes[i + 1] == '?' && scan.bytes[i + 2] == '#') {
@@ -1337,6 +1356,11 @@ onibi_tokenize_scan(VALUE src, int extended, rb_encoding *effective_encoding,
 	    (unsigned char)(option_negative ? 1 : 0),
 	    (unsigned char)from_escape};
 	onibi_token_record_push(tokens, record);
+	if (kind == ONIBI_TOKEN_GROUP_START) {
+	    if (scan.opened_capture_count == LONG_MAX)
+		rb_raise(eRegexpError, "too many capture groups in regexp");
+	    scan.opened_capture_count++;
+	}
 	if (kind == ONIBI_TOKEN_GROUP_END && scan.extended_depth > 0) {
 	    int prior_extended = scan.extended_stack[--scan.extended_depth];
 	    if (prior_extended >= 0) scan.extended = prior_extended;
