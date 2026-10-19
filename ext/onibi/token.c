@@ -926,8 +926,9 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 			    i + 2 < scan->length && source[i + 2] >= '0' &&
 			    source[i + 2] <= '7' && i + 3 < scan->length &&
 			    source[i + 3] >= '0' && source[i + 3] <= '7';
-    if (!three_digit_octal && escaped >= '1' && escaped <= '9' &&
-	i + 1 < scan->length && source[i + 1] >= '0' && source[i + 1] <= '9') {
+    if (!scan->in_class && !three_digit_octal && escaped >= '1' &&
+	escaped <= '9' && i + 1 < scan->length && source[i + 1] >= '0' &&
+	source[i + 1] <= '9') {
 	long number = escaped - '0';
 	long digit = i + 2;
 	while (digit < scan->length && source[digit] >= '0' &&
@@ -942,7 +943,8 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 	recognition->has_capture_number = 1;
     }
     if (!recognition->has_capture_number && escaped >= '1' && escaped <= '7' &&
-	i + 2 < scan->length && source[i + 2] >= '0' && source[i + 2] <= '7') {
+	(scan->in_class || (i + 2 < scan->length && source[i + 2] >= '0' &&
+			    source[i + 2] <= '7'))) {
 	size_t decoded_offset = tokens->bytes_count;
 	size_t decoded_length = 1;
 	int value = 0;

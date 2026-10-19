@@ -149,6 +149,19 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
      [true, false, true, false]]
   ].freeze
 
+  CLASS_DIGIT_ESCAPE_CASES = [
+    ["octal_one_digit", "[\\1]", [["\x01", true], ["1", false], ["\x02", false]]],
+    ["octal_two_digits", "[\\10]", [["\b", true], ["1", false], ["0", false]]],
+    ["octal_three_digits", "[\\101]", [["A", true], ["1", false], ["0", false]]],
+    ["literal_eight", "[\\8]", [["8", true], ["\x08", false]]],
+    ["literal_nine", "[\\9]", [["9", true], ["\x09", false]]],
+    ["zero_escape", "[\\0]", [["\0", true], ["0", false]]],
+    ["zero_with_octal_suffix", "[\\01]", [["\x01", true], ["0", false]]],
+    ["seven_escape", "[\\7]", [["\x07", true], ["7", false]]],
+    ["octal_prefix_then_literal_eight", "[\\18]",
+     [["\x01", true], ["8", true], ["1", false], ["\x18", false]]]
+  ].freeze
+
   INCOMPLETE_CASEFOLD_CLASS_FLAG = 2
   def test_common_control_character_escapes_match_their_literal_characters
     { "n" => "\n", "r" => "\r", "t" => "\t", "f" => "\f", "v" => "\v", "a" => "\a",
@@ -429,6 +442,43 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     assert Onibi::Regexp.new("[\\u{1F600}]").match?("😀")
   end
 
+  def test_numeric_escapes_inside_classes_match_mri_natively
+    failures = []
+
+    CLASS_DIGIT_ESCAPE_CASES.each do |label, pattern, subjects|
+      mri_regexp = ::Regexp.new(pattern)
+      begin
+        onibi_regexp = Onibi::Regexp.new(pattern)
+      rescue StandardError => e
+        failures << "#{label}: Onibi compile raised #{e.class}: #{e.message}"
+        next
+      end
+
+      subjects.each do |subject, expected_match|
+        mri_result = numeric_class_escape_match_snapshot(mri_regexp, subject)
+        onibi_result = numeric_class_escape_match_snapshot(onibi_regexp, subject)
+        failures << "#{label}: frozen MRI result changed for #{subject.inspect}" unless
+          mri_result.first == expected_match
+        failures << "#{label}: Onibi differs from MRI for #{subject.inspect}" unless
+          onibi_result == mri_result
+
+        diagnostics = onibi_regexp.send(:__onibi_diagnostics__, subject)
+        failures << "#{label}: native route changed for #{subject.inspect}" unless
+          diagnostics.fetch(:rseq) && diagnostics.fetch(:exec_kind).zero? &&
+          diagnostics.fetch(:regular).positive? && diagnostics.fetch(:fallback).zero? &&
+          diagnostics.fetch(:fallback_reason) == :none &&
+          diagnostics.fetch(:compile_error_kind) == :ok &&
+          diagnostics.fetch(:executor_error_kind) == :none
+      rescue StandardError => e
+        failures << "#{label}: #{e.class} for #{subject.inspect}: #{e.message}"
+      end
+    rescue StandardError => e
+      failures << "#{label}: MRI compile raised #{e.class}: #{e.message}"
+    end
+
+    assert_empty failures, failures.join("\n")
+  end
+
   def test_control_escapes_match_control_characters
     assert Onibi::Regexp.new("\\cA").match?("\x01")
     assert Onibi::Regexp.new("\\C-A").match?("\x01")
@@ -651,5 +701,10 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     { regexp_error: false, message: nil }
   rescue StandardError => e
     { regexp_error: e.is_a?(::RegexpError), message: e.message }
+  end
+
+  def numeric_class_escape_match_snapshot(regexp, subject)
+    match = regexp.match(subject)
+    [regexp.match?(subject), match&.to_a, match&.byteoffset(0)]
   end
 end

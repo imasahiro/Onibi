@@ -1355,3 +1355,29 @@ Exact probes, outputs, source hashes, contract references, and review are under
 `/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/octal-audit-01/`.
 The parent verified all source hashes and independently counted the 11 differences.
 `numeric_octal_matrix.rb` repeats the audit. Its binary-input fallback control is not native support evidence.
+
+## Character-class digit escapes (2026-10-20)
+
+Status: ACCEPTED. The scanner excludes class escapes from numbered references.
+Inside classes, `\1` through `\7` start octal bytes. `\8` and `\9` remain literal digits.
+The existing byte-assembly path remains unchanged.
+Public MRI E2Es were frozen before the C change.
+The 35-pattern audit resolves exactly three class differences.
+Its eight outside-class differences remain unchanged.
+
+Parent acceptance corrected the worker's test environment and seed commands.
+Standalone Ruby loaded Minitest 6.0.6; Bundler loaded Minitest 5.26.2.
+The worker's full-suite argument selected seed 5837, not 51748.
+The parent repeated affected checks with Bundler and explicit seed 51748.
+The encoding suite passes 31 tests and 1,562 assertions.
+The escape-cursor suite passes one test and 154 assertions.
+The syntax suite retains only the known outside-class octal error.
+The full suite reports 1,195 tests, 38,952 assertions, two failures, and one error.
+The three failure/error identities match the accepted baseline exactly.
+
+The forced warning build, focused RuboCop, changed C format, and diff checks pass.
+The two known compiler warnings remain.
+Worker evidence is in `class-digits-01/`; parent checks and acceptance are in its `parent-review/` directory,
+under `/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/`.
+`parent-review/verify.py` repeats the corrected checks and records exact commands and environment.
+Publication remains pending.

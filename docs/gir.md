@@ -1663,8 +1663,9 @@ Outside classes, multi-digit escapes depend on captures opened before the escape
 A later capture does not change an earlier octal escape into a reference.
 Single-digit forward references retain MRI's separate reference rule.
 Inside classes, digit escapes denote octal bytes or literal digits, never capture references.
-The accepted octal audit records the measured cases. These rules are requirements;
-the remaining numeric-escape repair is not yet accepted.
+Class digit escapes are accepted as native literals.
+The accepted octal audit records the remaining outside-class cases.
+Their capture-dependent classification repair is not yet accepted.
 
 The parser must resolve names to capture-number lists.
 
