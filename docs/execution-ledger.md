@@ -1306,3 +1306,26 @@ The worker result records exact commands, environment, source hashes, and extens
 `line_start_matrix.rb` repeats the MRI comparison. `review.json` records parent acceptance.
 End-line and semi-end assertions still use byte-based checks. Their encoded behavior needs a separate audit.
 Those assertions were outside this repair. Publication remains pending.
+
+## Encoded end-line assertions (2026-10-19)
+
+Status: ACCEPTED. `END_LINE` and `SEMI_END_BUFFER` now decode the next character.
+The first accepts input end or a boundary before LF.
+The second also requires that LF to end the input.
+Neither treats a newline byte inside another character as LF.
+
+Before the C change, the worker froze 174 MRI cases and the public E2Es.
+The matrix covers ASCII-8BIT, UTF-8, UTF-16LE/BE, and UTF-32LE/BE.
+All 174 cases now match frozen MRI outputs on native routes with zero fallback.
+The anchor E2E passes eight tests and 386 assertions.
+The encoding E2E passes 31 tests and 1,562 assertions.
+The full suite reports 1,194 tests and 38,950 assertions with seed 51748.
+Its two failures and one error have the same three identities as the prior census.
+The prior line-start repair remains covered.
+
+The forced warning build, focused RuboCop, C format, diff check, and distclean pass.
+The two existing C warnings remain. This result does not prove all encoding behavior.
+Exact commands, environment, logs, source hashes, frozen results, and parent review are under
+`/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/end-line-01/`.
+`end_line_matrix.rb` repeats the MRI comparison. `result.json` records the checks.
+Publication remains pending.

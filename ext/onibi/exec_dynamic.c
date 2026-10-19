@@ -427,12 +427,24 @@ onibi_rseq_position_assertion_hit(OnibiRAssertKind kind, VALUE str,
 	hit = onibi_rseq_begin_line_hit(str, pos, encoding, mode);
 	break;
     case ONIBI_RAP_END_LINE:
-	hit = pos == RSTRING_LEN(str) || RSTRING_PTR(str)[pos] == '\n';
+    case ONIBI_RAP_SEMI_END_BUFFER: {
+	long subject_length = RSTRING_LEN(str);
+	if (pos == subject_length) {
+	    hit = 1;
+	    break;
+	}
+	if (pos < 0 || pos >= subject_length) break;
+
+	OnigCodePoint codepoint;
+	long width;
+	if (!onibi_rseq_decode_character(str, pos, encoding, mode, &codepoint,
+					 &width))
+	    break;
+	long remaining = subject_length - pos;
+	hit = width > 0 && width <= remaining && codepoint == '\n' &&
+	      (kind == ONIBI_RAP_END_LINE || width == remaining);
 	break;
-    case ONIBI_RAP_SEMI_END_BUFFER:
-	hit = pos == RSTRING_LEN(str) ||
-	      (pos + 1 == RSTRING_LEN(str) && RSTRING_PTR(str)[pos] == '\n');
-	break;
+    }
     case ONIBI_RAP_SEARCH_ORIGIN: hit = pos == search_origin; break;
     case ONIBI_RAP_WORD_BOUNDARY:
     case ONIBI_RAP_NONWORD_BOUNDARY: {

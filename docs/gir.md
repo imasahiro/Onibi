@@ -1950,6 +1950,9 @@ Hexadecimal and octal escapes collect bytes using the effective regexp encoding.
 The native line-start assertion accepts byte position zero, including empty input.
 At other positions, it requires a preceding decoded newline and a position before input end.
 It does not treat a newline byte inside another encoded character as a line boundary.
+The native end-line assertion accepts input end or the boundary before a decoded LF.
+The semi-end assertion accepts input end or the boundary before one final decoded LF.
+Both use the decoded character width, including UTF-16 and UTF-32 widths.
 
 Outside character classes, `(?#...)` is a pattern comment. The tokenizer skips
 through the first unescaped `)` at a source-encoding character boundary and
