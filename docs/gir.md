@@ -5103,6 +5103,11 @@ The gem PoC is complete when all of these conditions are true.
 7. Unsupported features are explicit and do not cause unexpected process failures.
 8. The PoC does not depend on ZJIT or MRI source-tree changes.
 
+The gem has an intentional limit of 256 nested groups.
+The tokenizer raises `Onibi::RegexpError` before recursive parsing when this limit is exceeded.
+The current diagnostic is `regexp nesting is too deep`; exact wording is not a stable public API promise.
+MRI can accept deeper patterns. This gem resource limit remains explicit.
+
 The complete legacy, MRI, and Ruby Spec suites are not PoC acceptance gates.
 
 ## 133.2 MRI replacement acceptance

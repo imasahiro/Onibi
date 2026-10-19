@@ -19,7 +19,8 @@ RAC01 confirms the main-Ractor-only boundary. Child-Ractor support remains exclu
 The accepted BASE01 census has 52 failure rows: 43 supported defects, one explicit limit,
 one obsolete expectation, and seven open scope rows.
 Cases 2, 13, and 46 share an accepted capture-numbering repair. Cases 21–45 need an audit before repair.
-Case 17 has an explicit 256-level limit. Its exact error text remains a decision.
+Case 17 has an explicit 256-level limit. The 2026-10-20 audit accepted the current diagnostic.
+The old exact-message test expectation still needs a separate correction.
 Case 49 expects native MRI backreference state. GIR 58 excludes it; keep the failure visible.
 BASE01 also records 70 lint findings across seven test files. TASK-BASE02 maps them separately.
 
@@ -707,6 +708,11 @@ If support is accepted, create separate repair cards for each proven invariant.
 Done: the support decision names accepted forms and routes. Keep both original methods visible.
 
 ### TASK-BASE02-DEPTH-ERROR-DECISION — Nesting-limit error text
+
+Status: decision accepted on 2026-10-20. Keep the current limit and `Onibi::RegexpError`.
+No current document promises exact message text. The current diagnostic is `regexp nesting is too deep`.
+Next: correct only the obsolete test message, retaining all depth and error-class checks.
+The execution ledger links the six-case audit and source-order evidence.
 
 Case: `#17`. Reproduce `RegexpNestingLimitTest#test_pattern_nesting_limit_is_reported_before_recursive_parse`.
 The 256-level limit is explicit. The test expects `regexp compilation limit exceeded: pattern_nesting`.

@@ -1410,3 +1410,25 @@ Evidence and exact commands are under
 `/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/numeric-escape-01/`.
 `result.json` records checks and hashes. `review.json` records parent acceptance.
 Publication remains pending.
+
+## Nesting error contract decision (2026-10-20)
+
+Status: AUDIT ACCEPTED. Preserve the intentional 256-level group nesting limit.
+Current documents require an explicit controlled error, but promise no exact message text.
+The current `Onibi::RegexpError` message is `regexp nesting is too deep`.
+The token guard runs before recursive parser entry.
+
+Capture and noncapture probes at depths 255 and 256 construct and match natively.
+At depth 257, both raise the current error with ASCII-8BIT message encoding.
+MRI 4.0.6 accepts all six controls. This is an intentional gem resource limit.
+The existing nesting test still fails its old exact-message expectation.
+Correcting that expectation is a separate pending test repair. Preserve its depth and error-class checks.
+No source or test changed during this audit.
+
+The warning build passes with two existing warnings. The bounded probe and cleanup pass.
+The focused test reports one test, four assertions, one failure, and zero errors at seed 51748.
+No full suite was repeated. The last full census still has two known failures.
+Commands, probe script, raw results, source hashes, and parent decision are under
+`/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/nesting-audit-01/`.
+`result.json` and `review.json` record the evidence and acceptance.
+Publication remains pending.
