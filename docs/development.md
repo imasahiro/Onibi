@@ -194,9 +194,36 @@ Record repeatable commands and results with each test review.
 Use MRI differential tests for public behavior.
 Compare success, errors, byte offsets, captures, encodings, and option handling.
 
-The complete existing suite is not an early PoC gate.
+The complete existing suite is not the PoC gate.
 It can include unsupported features until their milestones start.
 Do not weaken correct expectations to make the total result green.
+
+### Gem acceptance and legacy coverage
+
+Run the gem acceptance gate with `bundle exec rake test:acceptance`.
+It builds the extension and loads both default test file globs.
+It excludes only
+`RegexpUtilityTest#test_last_match_matches_mri_and_match_question_does_not_change_it`.
+The runner checks that this exact test exists once and that other tests exist.
+It rejects Minitest filter variables and command-line arguments.
+Set `SEED` to choose the test order. The default seed is `51748`.
+
+Run `bundle exec rake test` to run the complete legacy suite.
+This command keeps the excluded test visible with its normal result.
+GIR 58 excludes MRI caller-local backreference updates from the gem contract.
+The test remains unchanged because it checks behavior outside that contract.
+
+CI runs the acceptance gate as a hard check.
+CI also saves the complete legacy stdout, stderr, and exit status as an artifact.
+The legacy step accepts a passing suite or the one documented failure.
+Any other failure, error, or skip fails the workflow.
+The legacy step does not change the acceptance result.
+
+At seed `51748`, the current local full suite reports 1,196 runs and 38,958
+assertions, with one failure, zero errors, and zero skips.
+The only failure is the excluded backreference test.
+The local acceptance result and exact commands are in the CI gate review evidence.
+Local results do not confirm remote GitHub CI.
 
 Each milestone defines its required test set.
 The complete MRI and Ruby Spec suites become gates during MRI integration.

@@ -1459,3 +1459,24 @@ The two known C warnings remain. The full suite was not repeated for this unit.
 Complete logs, source hashes, patch, and parent review are under
 `/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/lint-hygiene-01/`.
 Publication remains pending.
+
+## Local gem acceptance gate (2026-10-21)
+
+Status: ACCEPTED locally. `bundle exec rake test:acceptance` runs the current suite
+except the exact excluded caller-local backreference test. The runner rejects filter inputs
+and checks that the excluded identity and other tests exist.
+`bundle exec rake test` retains the complete legacy suite and its normal exit status.
+CI saves legacy stdout, stderr, and exit status. Unexpected failures, errors, and skips fail CI.
+
+At seed 51748, acceptance passes 1,195 tests and 38,956 assertions, without failures, errors, or skips.
+The retained legacy run has 1,196 tests, 38,958 assertions, and only the documented failure.
+Full RuboCop passes for 155 files. Syntax, workflow shell fixtures, YAML parsing, and cleanup pass.
+The warning build retains two existing C warnings.
+Actionlint was unavailable. Remote GitHub CI and installed-gem checks remain pending.
+Bundler loads Minitest from the 5.27.0 gem path; its source reports version 5.26.2.
+
+Final evidence and parent review are under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/ci-gate-04/`.
+The result links valid earlier logs from attempts 02 and 03.
+Two workers lost assignment state. A later worker stopped at the account usage limit.
+Ownership transfers and recovery packets are recorded outside the repository. Publication remains pending.
