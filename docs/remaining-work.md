@@ -169,8 +169,8 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 39 | TASK-BASE02-DEPTH-ERROR-DECISION | Accepted | BASE02 | The 256-level limit and current diagnostic have accepted E2E evidence. |
 | 40 | TASK-BASE02-LINT-HYGIENE | Accepted | BASE02 | All 70 findings have safe fixes or documented semantic exceptions. |
 | 41 | TASK-CI01 | Accepted locally | BASE02, blocking cards, and absence follow-up repairs | Gem gate and legacy reporting pass local checks; remote CI remains pending. |
-| 42 | TASK-PKG01 | Ready | CI01 local gate | A clean installed gem passes smoke checks. |
-| 43 | TASK-POC01 | Waiting | RAC01, CI01, PKG01 | Evidence for all eight PoC conditions. |
+| 42 | TASK-PKG01 | Accepted locally | CI01 local gate | Repaired loader and isolated installed gem pass 18 smoke checks. |
+| 43 | TASK-POC01 | Ready for evidence review | RAC01, CI01 local gate, PKG01 | Evidence for all eight PoC conditions. |
 | 44 | TASK-REL01 | Waiting | POC01 | Reviewed PR, passing required checks, and integration record. |
 
 The queue has 47 tasks. BASE02 adds 18 bounded cards before CI01.

@@ -1480,3 +1480,31 @@ Final evidence and parent review are under
 The result links valid earlier logs from attempts 02 and 03.
 Two workers lost assignment state. A later worker stopped at the account usage limit.
 Ownership transfers and recovery packets are recorded outside the repository. Publication remains pending.
+
+## Installed loader and package acceptance (2026-10-21)
+
+Status: ACCEPTED locally. The first isolated install built the C extension,
+but the Ruby loader required itself again and returned without loading the bundle.
+The loader now requests the platform native suffix. It uses the checkout bundle
+when present and propagates missing or invalid extension errors.
+Only `lib/onibi/onibi.rb` changed in production.
+
+The repaired isolated gem passes 18 public smoke checks outside the checkout.
+Native match, capture access, scan, and gsub report zero fallback and no intercepted MRI calls.
+The explicit NOENCODING control reports one fallback. The invalid constructor raises `Onibi::RegexpError`.
+Checkout loading and missing-extension controls pass.
+Acceptance passes 1,195 tests and 38,956 assertions at seed 51748, with no failures, errors, or skips.
+Focused RuboCop, syntax, diff checks, and cleanup pass. Two existing C warnings remain.
+All 118 packaged files match the tested source. Only the loader differs from the original package.
+The pre-existing ignored package artifact was restored.
+
+Parent review corrected two smoke assumptions without changing the original artifact.
+RubyGems can load the installed bundle from its gem lib directory.
+The original constructor literal contained byte 0x01; both engines accept it.
+The corrected smoke uses an unmatched parenthesis and verifies the expected errors.
+
+The repaired gem SHA256 is `d96c7d99760d6c1f2396e5a88bec5ad700e443ec4e1e33e9b9f88b91a19f4514`.
+Complete logs, gem, hashes, raw probes, and parent review are under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/loader-01/`.
+The original package failure remains under sibling `package-01/`.
+Remote CI, final PoC evidence review, and publication remain pending.

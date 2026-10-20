@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
-begin
-  require File.expand_path("../../ext/onibi/onibi", __dir__)
-rescue LoadError
-  begin
-    require "onibi/onibi"
-  rescue LoadError
-    # The extension is built by RubyGems during installation.
-  end
+require "rbconfig"
+
+extension_name = "onibi.#{RbConfig::CONFIG.fetch("DLEXT")}"
+checkout_extension = File.expand_path("../../ext/onibi/#{extension_name}", __dir__)
+
+if File.file?(checkout_extension)
+  require checkout_extension
+else
+  require "onibi/#{extension_name}"
 end
