@@ -72,6 +72,8 @@ class MatchApiTest < Minitest::Test
     $_ = nil
   end
 
+  # This test checks the exact MRI backreference global.
+  # rubocop:disable Style/SpecialGlobalVars
   def test_case_equality_preserves_prior_state_on_native_success_and_clears_on_miss
     regexp = Onibi::Regexp.new("a")
 
@@ -83,6 +85,7 @@ class MatchApiTest < Minitest::Test
     assert_equal false, regexp.public_send(:===, "x")
     assert_nil Onibi::Regexp.last_match
   end
+  # rubocop:enable Style/SpecialGlobalVars
 
   def test_case_equality_returns_false_for_non_string_inputs
     regexp = Onibi::Regexp.new("a")

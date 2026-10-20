@@ -1447,3 +1447,15 @@ Exact commands, complete logs, hashes, and parent review are under
 `/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/nesting-test-01/`.
 `result.json` records evidence. `review.json` records acceptance.
 Publication remains pending.
+
+## Census test lint correction (2026-10-20)
+
+Status: ACCEPTED. All 70 findings across the seven TASK-BASE02-LINT-HYGIENE files are resolved.
+Documented exceptions preserve 66 exact backreference and operator expressions. Four safe style fixes resolve the remaining findings.
+Test identities and expected values remain unchanged. No production code changed.
+Both baseline and final E2Es pass 74 tests and 886 assertions at seed 51748.
+Focused RuboCop, syntax checks, diff checks, warning build, and cleanup pass.
+The two known C warnings remain. The full suite was not repeated for this unit.
+Complete logs, source hashes, patch, and parent review are under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/lint-hygiene-01/`.
+Publication remains pending.

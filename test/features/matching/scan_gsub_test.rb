@@ -47,8 +47,8 @@ class ScanGsubTest < Minitest::Test
   def test_native_replacement_expands_special_and_long_numeric_references
     regexp = Onibi::Regexp.new("(a)(b)?")
     input = "ab"
-    {"\\&" => "ab", "\\0" => "ab", "\\+" => "b",
-     "\\`" => "", "\\'" => ""}.each do |replacement, expected|
+    { "\\&" => "ab", "\\0" => "ab", "\\+" => "b",
+      "\\`" => "", "\\'" => "" }.each do |replacement, expected|
       assert_equal expected, regexp.gsub(input, replacement)
     end
     assert_equal "a0", Onibi::Regexp.new("(a)").gsub("a", '\\10')

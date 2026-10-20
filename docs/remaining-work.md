@@ -167,7 +167,7 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 37 | TASK-BASE02-OCTAL-SCOPE | Waiting | BASE02 | Decide the scope of octal and backreference disambiguation. |
 | 38 | TASK-BASE02-NONASCII-ENCODING-SCOPE | Waiting | BASE02 | Decide the scope of non-ASCII-compatible pattern encodings. |
 | 39 | TASK-BASE02-DEPTH-ERROR-DECISION | Accepted | BASE02 | The 256-level limit and current diagnostic have accepted E2E evidence. |
-| 40 | TASK-BASE02-LINT-HYGIENE | Waiting | BASE02 | Map and resolve 70 test-source lint findings safely. |
+| 40 | TASK-BASE02-LINT-HYGIENE | Accepted | BASE02 | All 70 findings have safe fixes or documented semantic exceptions. |
 | 41 | TASK-CI01 | Waiting | BASE02, blocking cards, and absence follow-up repairs | Reproducible gem acceptance checks in CI. |
 | 42 | TASK-PKG01 | Waiting | CI01 | A clean installed gem passes smoke checks. |
 | 43 | TASK-POC01 | Waiting | RAC01, CI01, PKG01 | Evidence for all eight PoC conditions. |
@@ -711,11 +711,11 @@ Done: the support decision names accepted forms and routes. Keep both original m
 
 Status: decision accepted on 2026-10-20. Keep the current limit and `Onibi::RegexpError`.
 No current document promises exact message text. The current diagnostic is `regexp nesting is too deep`.
-Next: correct only the obsolete test message, retaining all depth and error-class checks.
+The test correction is accepted. All depth and error-class checks remain.
 The execution ledger links the six-case audit and source-order evidence.
 
 Case: `#17`. Reproduce `RegexpNestingLimitTest#test_pattern_nesting_limit_is_reported_before_recursive_parse`.
-The 256-level limit is explicit. The test expects `regexp compilation limit exceeded: pattern_nesting`.
+The 256-level limit is explicit. The test now expects `regexp nesting is too deep`.
 Current source reports `regexp nesting is too deep` as `Onibi::RegexpError`.
 Candidate file, only if the text is an API promise: `ext/onibi/parser.c`.
 Dependency: accepted BASE02 mapping. Review GIR 133.1 and review-result P-10.

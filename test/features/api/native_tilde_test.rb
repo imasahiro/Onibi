@@ -2,6 +2,8 @@
 
 require "test_helper"
 
+# These tests assert MRI match globals around the `~` operator by exact spelling.
+# rubocop:disable Style/SpecialGlobalVars
 class NativeTildeTest < Minitest::Test
   def test_native_positions_match_mri_without_mri_match
     cases = [["a", "ba"], ["a", "z"], ["(a)", "ba"], ["(a)", "z"],
@@ -81,3 +83,4 @@ class NativeTildeTest < Minitest::Test
     $_ = nil
   end
 end
+# rubocop:enable Style/SpecialGlobalVars
