@@ -1432,3 +1432,18 @@ Commands, probe script, raw results, source hashes, and parent decision are unde
 `/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/nesting-audit-01/`.
 `result.json` and `review.json` record the evidence and acceptance.
 Publication remains pending.
+
+## Nesting error test correction (2026-10-20)
+
+Status: ACCEPTED. The existing public E2E now expects the accepted current diagnostic.
+Depths 255 and 256 still construct and match. Depth 257 still requires `Onibi::RegexpError`.
+No production code changed.
+
+The focused E2E passes one test and four assertions at seed 51748.
+The full suite reports 1,196 tests, 38,958 assertions, one failure, and zero errors or skips.
+Only the excluded caller-local MRI backreference test fails.
+The warning build retains two known warnings. RuboCop, Ruby syntax, diff checks, and cleanup pass.
+Exact commands, complete logs, hashes, and parent review are under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/nesting-test-01/`.
+`result.json` records evidence. `review.json` records acceptance.
+Publication remains pending.

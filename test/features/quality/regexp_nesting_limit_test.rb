@@ -11,7 +11,7 @@ class RegexpNestingLimitTest < Minitest::Test
 
     pattern = "#{"(" * (LIMIT + 1)}a#{")" * (LIMIT + 1)}"
     error = assert_raises(Onibi::RegexpError) { Onibi::Regexp.new(pattern) }
-    assert_equal "regexp compilation limit exceeded: pattern_nesting", error.message
+    assert_equal "regexp nesting is too deep", error.message
   end
 
   private

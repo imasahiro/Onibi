@@ -20,7 +20,7 @@ The accepted BASE01 census has 52 failure rows: 43 supported defects, one explic
 one obsolete expectation, and seven open scope rows.
 Cases 2, 13, and 46 share an accepted capture-numbering repair. Cases 21–45 need an audit before repair.
 Case 17 has an explicit 256-level limit. The 2026-10-20 audit accepted the current diagnostic.
-The old exact-message test expectation still needs a separate correction.
+The old exact-message test expectation was corrected on 2026-10-20.
 Case 49 expects native MRI backreference state. GIR 58 excludes it; keep the failure visible.
 BASE01 also records 70 lint findings across seven test files. TASK-BASE02 maps them separately.
 
@@ -166,7 +166,7 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 36 | TASK-BASE02-CLASS-SUBTRACTION-SCOPE | Waiting | BASE02 | Decide whether nested class subtraction is in scope. |
 | 37 | TASK-BASE02-OCTAL-SCOPE | Waiting | BASE02 | Decide the scope of octal and backreference disambiguation. |
 | 38 | TASK-BASE02-NONASCII-ENCODING-SCOPE | Waiting | BASE02 | Decide the scope of non-ASCII-compatible pattern encodings. |
-| 39 | TASK-BASE02-DEPTH-ERROR-DECISION | Waiting | BASE02 | Decide whether nesting-limit error text is an API promise. |
+| 39 | TASK-BASE02-DEPTH-ERROR-DECISION | Accepted | BASE02 | The 256-level limit and current diagnostic have accepted E2E evidence. |
 | 40 | TASK-BASE02-LINT-HYGIENE | Waiting | BASE02 | Map and resolve 70 test-source lint findings safely. |
 | 41 | TASK-CI01 | Waiting | BASE02, blocking cards, and absence follow-up repairs | Reproducible gem acceptance checks in CI. |
 | 42 | TASK-PKG01 | Waiting | CI01 | A clean installed gem passes smoke checks. |
