@@ -764,6 +764,16 @@ Check load, constructor, native match, MatchData access, scan, gsub, explicit fa
 Done: the installed artifact passes the declared smoke cases on supported MRI.
 Keep the artifact and logs outside committed product documentation.
 
+### TASK-API-TILDE — Explicit fallback match-reset repair
+
+The public MRI probe found a mismatch for `x\K(?<letter>\X)` on UTF-8 `あxa`.
+MRI `~` returns character offset 1. Onibi returns character offset 2.
+The explicit grapheme fallback reads the post-reset group-zero start.
+Repair `onibi_tilde` in `ext/onibi/match.c` without changing native eligibility.
+Freeze public MRI success, miss, capture, and prior-state controls before C edits.
+Verify native controls and the acceptance gate with compiler warnings enabled.
+Then refresh affected installed-package evidence and the PoC table.
+
 ### TASK-POC01 — Completion evidence
 
 Map each of GIR 133.1's eight conditions to a passing command or accepted evidence artifact.
@@ -803,8 +813,8 @@ A new worker receives exact artifact paths and an immutable packet when dispatch
 
 ## API01 follow-up findings (2026-09-28)
 
-Track binary `MatchData#names` string encoding as a bounded gem follow-up.
+The 2026-10-21 public probes match binary `MatchData#names` encoding for three tested cases.
 The accepted design has no exclusion for this difference. API04 corrected the symbol-key report: API01 serialization converted keys to strings. Native keyword behavior matches MRI for both checked ASCII fixtures.
 API02 and API03 use the corrected method-specific selector rules in `docs/task-42b1-matchdata-design.md`.
 
-C25B follow-up: audit fallback `~` with `\K`; its unchanged path reads group-zero start. Native repair does not establish fallback parity.
+C25B follow-up confirmed the fallback `~` mismatch with `\K`. See TASK-API-TILDE above.

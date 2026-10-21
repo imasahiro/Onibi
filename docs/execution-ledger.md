@@ -1508,3 +1508,21 @@ Complete logs, gem, hashes, raw probes, and parent review are under
 `/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/loader-01/`.
 The original package failure remains under sibling `package-01/`.
 Remote CI, final PoC evidence review, and publication remain pending.
+
+## PoC evidence audit (2026-10-21)
+
+Status: findings accepted; PoC acceptance remains open.
+Binary capture-name probes match MRI for ASCII binary, UTF-8 non-ASCII, and binary non-ASCII names.
+The three cases use native execution with zero fallback.
+Explicit grapheme fallback for `x\K(?<letter>\X)` on UTF-8 `あxa` returns 2; MRI returns 1.
+These values are character offsets. Onibi reads the post-reset match start.
+Both runtimes return nil and clear prior match state on the tested miss.
+Conditions 2 and 6 remain open because of this mismatch.
+Condition 7 also needs the complete unsupported-feature rejection inventory.
+The audit reused accepted local acceptance and package evidence. It ran no new full suite.
+No production source changed. Remote CI and publication remain pending.
+Reports, repeatable probes, exact commands, logs, and review are under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/poc-audit-03/`.
+That report references the original probes in sibling `poc-audit-01/`.
+The parent corrected a reversed explanation and incorrect byte-offset labels during review.
+Account use reached 93%; the user stop rule deferred TASK-API-TILDE.

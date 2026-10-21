@@ -89,9 +89,11 @@ The extension does not enable the Ractor-safe boundary.
 
 ### Open acceptance work
 
-Binary `MatchData#names` encoding remains open.
-The explicit fallback path for `~` with `\K` and match reset remains untested.
-Public caller, GC, timeout, interrupt, Ractor, CI, and package gates remain open.
+Binary capture-name probes match MRI for three tested source/name encoding cases.
+Explicit fallback `~` with `\K` has a known mismatch: it returns the post-reset match start.
+MRI returns the original search-attempt start. The repair remains open.
+Local CI and installed-package checks pass. Remote CI remains unverified.
+The unsupported-feature rejection inventory remains incomplete.
 See [`remaining-work.md`](remaining-work.md) for the current task order.
 The gem has not passed all eight PoC conditions in GIR section 133.1.
 
