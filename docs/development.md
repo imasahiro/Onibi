@@ -93,7 +93,8 @@ Binary capture-name probes match MRI for three tested source/name encoding cases
 Explicit fallback `~` with `\K` now returns MRI's original search-attempt start.
 Public success, miss, capture, and match-state regression checks pass.
 Local CI and installed-package checks pass. Remote CI remains unverified.
-The unsupported-feature rejection inventory remains incomplete.
+Six unsupported reason values have direct evidence. The `limit` route still needs reachability review.
+Input-eligibility branch coverage and verifier guarantees still need final reconciliation.
 See [`remaining-work.md`](remaining-work.md) for the current task order.
 The gem has not passed all eight PoC conditions in GIR section 133.1.
 

@@ -1541,3 +1541,24 @@ A clean rebuild compiled the repair before final checks.
 Exact commands, complete logs, source hashes, patch, and parent review are under
 `/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/tilde-fallback-01/`.
 Fresh installed-package evidence, the unsupported-feature inventory, remote CI, and publication remain pending.
+
+## Refreshed package and unsupported-reason evidence (2026-10-22)
+
+Status: package ACCEPTED; unsupported inventory PARTIAL.
+The fresh gem contains 118 files that match source `6fced5ed`.
+All 18 installed smoke checks pass outside the checkout.
+Three name cases and two tilde cases match frozen MRI outputs, except documented native MatchData identity.
+The gem SHA256 is `7aa7fb69053a7e7add5bc74d03dd19119206dbb2b62860cf860323b385d7c1c9`.
+The previous ignored package artifact was restored byte-for-byte. No checkout build was needed.
+Exact package commands, logs, hashes, and review are under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/package-refresh-01/`.
+
+The inventory maps all seven unsupported reason values to producer sites.
+Five values have existing test evidence. Four external cases now verify `zero_width_repeat` fallback against MRI.
+Their frozen inputs, commands, outputs, and comparison are in sibling `unsupported-parent-probe/`.
+The partial inventory and parent review are in sibling `unsupported-audit-02/`.
+The parent corrected the reason count and restored the reference to accepted TASK-RAC01 evidence.
+Condition 7 remains open for limit reachability and input-gate/verifier evidence reconciliation.
+No new supported-subset mismatch was found. No PoC completion claim is made.
+Account use reached 93%; the user stop rule deferred the next unit.
+Remote CI and publication remain pending. PR #421 remains draft on another branch.
