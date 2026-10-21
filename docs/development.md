@@ -90,8 +90,8 @@ The extension does not enable the Ractor-safe boundary.
 ### Open acceptance work
 
 Binary capture-name probes match MRI for three tested source/name encoding cases.
-Explicit fallback `~` with `\K` has a known mismatch: it returns the post-reset match start.
-MRI returns the original search-attempt start. The repair remains open.
+Explicit fallback `~` with `\K` now returns MRI's original search-attempt start.
+Public success, miss, capture, and match-state regression checks pass.
 Local CI and installed-package checks pass. Remote CI remains unverified.
 The unsupported-feature rejection inventory remains incomplete.
 See [`remaining-work.md`](remaining-work.md) for the current task order.

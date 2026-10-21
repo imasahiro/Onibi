@@ -82,5 +82,66 @@ class NativeTildeTest < Minitest::Test
   ensure
     $_ = nil
   end
+
+  def test_explicit_fallback_with_match_reset_returns_search_attempt_position
+    source = 'x\K(?<letter>\X)'
+    regexp = Onibi::Regexp.new(source)
+    mri = ::Regexp.new(source)
+
+    %w[bxa あxa].each do |input|
+      $_ = input
+      expected_position = ~mri
+      expected_match = $~
+      assert_equal 1, expected_position
+      assert_equal 2, expected_match.begin(0)
+
+      /prior/.match("prior")
+      prior = $~
+      $_ = input
+      actual_position = ~regexp
+      actual_match = $~
+
+      assert_equal expected_position, actual_position
+      assert_equal expected_match.to_a, actual_match.to_a
+      assert_equal expected_match.offset(0), actual_match.offset(0)
+      assert_same actual_match, Onibi::Regexp.last_match
+      assert_same input, $_
+      refute_same prior, actual_match
+    end
+  ensure
+    $_ = nil
+  end
+
+  def test_explicit_fallback_with_match_reset_clears_prior_match_on_miss
+    source = 'x\K(?<letter>\X)'
+    regexp = Onibi::Regexp.new(source)
+    mri = ::Regexp.new(source)
+    input = "あyz"
+
+    $_ = input
+    assert_nil(~mri)
+    assert_nil $~
+
+    /prior/.match("prior")
+    prior = $~
+    $_ = input
+
+    assert_nil(~regexp)
+    assert_nil $~
+    assert_nil Onibi::Regexp.last_match
+    assert_same input, $_
+    refute_nil prior
+  ensure
+    $_ = nil
+  end
+
+  def test_explicit_fallback_with_match_reset_reports_grapheme_fallback
+    regexp = Onibi::Regexp.new('x\K(?<letter>\X)')
+    info = regexp.send(:__onibi_diagnostics__, "あxa")
+
+    assert_equal 1, info[:fallback]
+    assert_equal :grapheme, info[:fallback_reason]
+    assert_equal :unsupported, info[:compile_error_kind]
+  end
 end
 # rubocop:enable Style/SpecialGlobalVars

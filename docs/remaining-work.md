@@ -764,15 +764,14 @@ Check load, constructor, native match, MatchData access, scan, gsub, explicit fa
 Done: the installed artifact passes the declared smoke cases on supported MRI.
 Keep the artifact and logs outside committed product documentation.
 
-### TASK-API-TILDE — Explicit fallback match-reset repair
+### TASK-API-TILDE — Explicit fallback match-reset repair (accepted locally)
 
-The public MRI probe found a mismatch for `x\K(?<letter>\X)` on UTF-8 `あxa`.
-MRI `~` returns character offset 1. Onibi returns character offset 2.
-The explicit grapheme fallback reads the post-reset group-zero start.
-Repair `onibi_tilde` in `ext/onibi/match.c` without changing native eligibility.
-Freeze public MRI success, miss, capture, and prior-state controls before C edits.
-Verify native controls and the acceptance gate with compiler warnings enabled.
-Then refresh affected installed-package evidence and the PoC table.
+The public MRI probe found and the 2026-10-22 repair corrected a mismatch for `x\K(?<letter>\X)` on UTF-8 `あxa`.
+MRI `~` returns character offset 1. Onibi now returns the same offset.
+The explicit grapheme fallback now uses `rb_reg_match`; native eligibility stays unchanged.
+Public MRI controls preceded the C edit and confirmed the baseline failure.
+Acceptance passes 1,198 tests and 38,982 assertions with compiler warnings enabled.
+Next: refresh affected installed-package evidence and the PoC table.
 
 ### TASK-POC01 — Completion evidence
 

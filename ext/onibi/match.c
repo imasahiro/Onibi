@@ -709,12 +709,7 @@ onibi_tilde(VALUE self)
     if (status == ONIBI_EXEC_STATUS_FALLBACK) {
 	onibi_regexp_t *obj;
 	TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-	VALUE match = rb_funcall(obj->regexp, id_match, 1, input);
-	return NIL_P(match)
-		   ? Qnil
-		   : LONG2NUM(onibi_ruby_character_position(
-			 input, NUM2LONG(rb_funcall(match, id_bytebegin, 1,
-						    INT2NUM(0)))));
+	return rb_reg_match(obj->regexp, input);
     }
     if (attempt_start < 0 || attempt_start > RSTRING_LEN(input))
 	rb_raise(eRegexpError, "Onibi match attempt start is unavailable");

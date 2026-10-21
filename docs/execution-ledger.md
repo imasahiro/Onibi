@@ -1526,3 +1526,18 @@ Reports, repeatable probes, exact commands, logs, and review are under
 That report references the original probes in sibling `poc-audit-01/`.
 The parent corrected a reversed explanation and incorrect byte-offset labels during review.
 Account use reached 93%; the user stop rule deferred TASK-API-TILDE.
+
+## Explicit tilde fallback reset repair (2026-10-22)
+
+Status: ACCEPTED locally. `onibi_tilde` now uses `rb_reg_match` for explicit fallback.
+The return value uses the original search-attempt character offset, including patterns with `\K`.
+Native eligibility and native execution stay unchanged.
+Public regression cases preceded the C edit and reproduced the expected offset failure.
+Final tilde checks pass 7 tests and 67 assertions; native reset controls pass 1 test and 82 assertions.
+Acceptance passes 1,198 tests and 38,982 assertions at seed 51748, without failures, errors, or skips.
+Focused lint, syntax, diff checks, and cleanup pass. Two known C warnings remain.
+The initial incremental build did not recompile the included C source.
+A clean rebuild compiled the repair before final checks.
+Exact commands, complete logs, source hashes, patch, and parent review are under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/tilde-fallback-01/`.
+Fresh installed-package evidence, the unsupported-feature inventory, remote CI, and publication remain pending.
