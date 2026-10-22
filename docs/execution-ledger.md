@@ -1562,3 +1562,23 @@ Condition 7 remains open for limit reachability and input-gate/verifier evidence
 No new supported-subset mismatch was found. No PoC completion claim is made.
 Account use reached 93%; the user stop rule deferred the next unit.
 Remote CI and publication remain pending. PR #421 remains draft on another branch.
+
+## Local gem PoC acceptance (2026-10-22)
+
+Status: ACCEPTED locally for GIR 133.1. Remote CI and publication remain pending.
+The parent reviewed all eight conditions against the accepted 1,198-test gate and installed package.
+The class-descriptor limit probe uses 2,732 members and 8,198 source bytes.
+MRI accepts the pattern. Onibi matches its results through explicit `limit` fallback without process failure.
+All seven unsupported reason categories now have direct evidence.
+Eight saved encoding cases match MRI. Two parent probes cover zero-width input and non-binary encoding incompatibility.
+Exception parity combines with source guard order; no post-exception diagnostic counters are claimed.
+Existing negative RSeq tests call the production validator on corrupted copies.
+Production programs stay frozen. Separate executor tests verify hard errors do not select fallback.
+The prior TASK-RAC01 main-Ractor boundary remains valid; native child-Ractor support is outside scope.
+Numeric representation guards have structural evidence. Not every integer ceiling was executed.
+Two known C warnings remain. No production file changed during this closure review.
+Final parent acceptance is recorded under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/condition7-parent-review/`.
+Sibling `condition7-close-01/evidence/`, `input-gate-map-01/`, and parent probe directories retain exact commands and outputs.
+A worker lost assignment after saving probes. The parent preserved them and narrowed the replacement task.
+This acceptance does not claim full MRI replacement or remote CI success.

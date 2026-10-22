@@ -93,10 +93,10 @@ Binary capture-name probes match MRI for three tested source/name encoding cases
 Explicit fallback `~` with `\K` now returns MRI's original search-attempt start.
 Public success, miss, capture, and match-state regression checks pass.
 Local CI and installed-package checks pass. Remote CI remains unverified.
-Six unsupported reason values have direct evidence. The `limit` route still needs reachability review.
-Input-eligibility branch coverage and verifier guarantees still need final reconciliation.
+All seven unsupported reason values have direct evidence. Input guards and verifier rejection have reviewed evidence.
 See [`remaining-work.md`](remaining-work.md) for the current task order.
-The gem has not passed all eight PoC conditions in GIR section 133.1.
+Local evidence satisfies all eight gem PoC conditions in GIR section 133.1.
+Remote CI and publication remain pending. This is not full MRI replacement acceptance.
 
 Compilation is an initialization-time operation. The tokenizer reads the
 source once. The parser, GIR compiler, and RSeq lowerer consume that token

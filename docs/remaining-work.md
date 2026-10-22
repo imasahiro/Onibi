@@ -773,18 +773,17 @@ Public MRI controls preceded the C edit and confirmed the baseline failure.
 Acceptance passes 1,198 tests and 38,982 assertions with compiler warnings enabled.
 Next: refresh affected installed-package evidence and the PoC table.
 
-### TASK-POC01-LIMITS — Remaining condition 7 evidence
+### TASK-POC01-LIMITS — Condition 7 evidence (accepted locally)
 
-Six unsupported reason values now have direct evidence, including four zero-width-repeat cases.
-Review the `limit` producer sites and determine which bounds are publicly reachable.
-Do not use large allocations to test integer ceilings. Record structural guarantees for those bounds.
-Map each input-eligibility return branch to existing encoding tests before adding probes.
-Reconcile malformed-view handling with existing physical-verifier tests and immutable publication.
-Reuse the accepted TASK-RAC01 boundary audit after checking relevant source changes.
-Do not reopen the Ractor gate only because its probes are outside the repository.
-Then update the eight-condition table. Remote CI and publication remain separate.
+All seven unsupported reason values have direct evidence.
+A bounded class-descriptor probe selects `limit` fallback and matches MRI.
+Input guards use existing tests, saved encoding probes, and two parent probes.
+Verifier tests reject corrupted copies through the production validator. Published programs remain frozen.
+The accepted TASK-RAC01 boundary remains main-Ractor-only.
+Numeric representation ceilings have source evidence; no large allocation tests are claimed.
+The parent accepted the eight-condition table. Remote CI and publication remain separate.
 
-### TASK-POC01 — Completion evidence
+### TASK-POC01 — Completion evidence (accepted locally)
 
 Map each of GIR 133.1's eight conditions to a passing command or accepted evidence artifact.
 List every explicit unsupported feature and verify that it fails or falls back as documented.
