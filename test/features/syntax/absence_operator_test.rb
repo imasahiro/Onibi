@@ -103,6 +103,92 @@ class AbsenceOperatorTest < Minitest::Test
     assert_nil actual
   end
 
+  def test_absence_failed_probe_clears_incomplete_direct_capture
+    assert_absence_failed_probe_control(
+      label: "failed absence probe clears an incomplete direct capture",
+      pattern: "(?~((a|ab){2,}))",
+      subject: "abab",
+      start: 0,
+      expected_values: ["ab", nil, nil],
+      expected_char_ranges: [[0, 2], [nil, nil], [nil, nil]],
+      expected_byte_ranges: [[0, 2], [nil, nil], [nil, nil]]
+    )
+  end
+
+  def test_absence_failed_probe_marks_incomplete_capture_unset_for_condition
+    assert_absence_failed_probe_control(
+      label: "failed absence probe marks an incomplete capture unset",
+      pattern: "\\A(?~((a|ab){2,}))(?(1)b|a)",
+      subject: "abab",
+      start: 0,
+      expected_values: ["aba", nil, nil],
+      expected_char_ranges: [[0, 3], [nil, nil], [nil, nil]],
+      expected_byte_ranges: [[0, 3], [nil, nil], [nil, nil]]
+    )
+  end
+
+  def test_absence_failed_probe_preserves_unrelated_capture
+    assert_absence_failed_probe_control(
+      label: "failed absence probe preserves an unrelated capture",
+      pattern: "\\A(x)(?~((a|ab){2,}))",
+      subject: "xabab",
+      start: 0,
+      expected_values: ["xab", "x", nil, nil],
+      expected_char_ranges: [[0, 3], [0, 1], [nil, nil], [nil, nil]],
+      expected_byte_ranges: [[0, 3], [0, 1], [nil, nil], [nil, nil]]
+    )
+  end
+
+  def test_absence_failed_probe_preserves_prior_direct_body_capture
+    assert_absence_failed_probe_control(
+      label: "failed probe preserves an unrelated direct body capture",
+      pattern: "(?~((?:ab)(c)(?:d|de){2,}))",
+      subject: "abcdde",
+      start: 0,
+      expected_values: ["abcd", nil, "c"],
+      expected_char_ranges: [[0, 4], [nil, nil], [2, 3]],
+      expected_byte_ranges: [[0, 4], [nil, nil], [2, 3]]
+    )
+  end
+
+  def test_absence_restores_pushed_capture_for_suffix_condition
+    pattern = "\\A(?~((a|b){2,}))(?(2)z|a)"
+    expected = ::Regexp.new(pattern).match("ab")
+    actual = Onibi::Regexp.new(pattern).match("ab")
+
+    assert_equal ["a", "ab", nil], expected.to_a
+    expected_ranges = (0...expected.length).map do |index|
+      [expected.begin(index), expected.end(index)]
+    end
+    assert_equal [[0, 1], [0, 2], [nil, nil]], expected_ranges
+    assert_equal expected.to_a, actual&.to_a
+    assert_equal expected.offset(0), actual&.offset(0)
+    assert_equal expected.offset(1), actual&.offset(1)
+    assert_nil actual&.begin(2)
+    assert_nil actual&.end(2)
+  end
+
+  def test_absence_restores_non_nil_call_capture_snapshot
+    pattern = "\\A(?<x>a|b)(?~\\g<x>)"
+    expected = ::Regexp.new(pattern).match("ab")
+    actual = Onibi::Regexp.new(pattern).match("ab")
+
+    assert_equal %w[a a], expected.to_a
+    assert_equal expected.to_a, actual&.to_a
+    assert_equal expected.offset(1), actual&.offset(1)
+  end
+
+  def test_absence_rollback_covers_unused_backreference_branch
+    pattern = "\\A(?~(a))(?:a|\\1)"
+    expected = ::Regexp.new(pattern).match("ab")
+    actual = Onibi::Regexp.new(pattern).match("ab")
+
+    assert_equal ["a", nil], expected.to_a
+    assert_equal expected.to_a, actual&.to_a
+    assert_nil actual&.begin(1)
+    assert_nil actual&.end(1)
+  end
+
   def test_repeated_absence_capture_uses_the_zero_width_endpoint
     pattern = "((?~a))*+"
     expected = ::Regexp.new(pattern).match("b")
@@ -114,6 +200,16 @@ class AbsenceOperatorTest < Minitest::Test
 
   def test_absence_operator_preserves_captures_from_a_failed_suffix
     pattern = "(?~(?:(a|b)a))"
+
+    assert_absence_failed_probe_control(
+      label: "failed suffix direct capture at active bound",
+      pattern: pattern,
+      subject: "a",
+      start: 0,
+      expected_values: %w[a a],
+      expected_char_ranges: [[0, 1], [0, 1]],
+      expected_byte_ranges: [[0, 1], [0, 1]]
+    )
 
     %w[a ab b abc].each do |input|
       expected = ::Regexp.new(pattern).match(input)
@@ -143,7 +239,141 @@ class AbsenceOperatorTest < Minitest::Test
     end
   end
 
+  def test_absence_endpoint_publishes_all_late_probe_captures
+    assert_absence_failed_probe_control(
+      label: "late probe publishes multiple captures",
+      pattern: "(?~(a+)(b+))c",
+      subject: "cxxaabb",
+      start: 0,
+      expected_values: %w[c a b],
+      expected_char_ranges: [[0, 1], [4, 5], [5, 6]],
+      expected_byte_ranges: [[0, 1], [4, 5], [5, 6]]
+    )
+  end
+
+  def test_absence_endpoint_clears_capture_from_later_unset_probe
+    assert_absence_failed_probe_control(
+      label: "later positive probe leaves capture unset",
+      pattern: "(?~(?:(a)|b))c",
+      subject: "cxxab",
+      start: 0,
+      expected_values: ["c", nil],
+      expected_char_ranges: [[0, 1], [nil, nil]],
+      expected_byte_ranges: [[0, 1], [nil, nil]]
+    )
+  end
+
+  def test_absence_endpoint_publishes_condition_capture_before_suffix
+    assert_absence_failed_probe_control(
+      label: "late probe capture selects following conditional",
+      pattern: "(?~(a))c(?(1)d|e)",
+      subject: "cdxxa",
+      start: 0,
+      expected_values: %w[cd a],
+      expected_char_ranges: [[0, 2], [4, 5]],
+      expected_byte_ranges: [[0, 2], [4, 5]]
+    )
+  end
+
+  def test_absence_endpoint_keeps_prefix_backreference_registers
+    assert_absence_failed_probe_control(
+      label: "late probe output keeps prefix backreference register",
+      pattern: "\\A(c)(?~(a))\\1",
+      subject: "ccxa",
+      start: 0,
+      expected_values: %w[cc c a],
+      expected_char_ranges: [[0, 2], [0, 1], [3, 4]],
+      expected_byte_ranges: [[0, 2], [0, 1], [3, 4]]
+    )
+  end
+
+  def test_absence_endpoint_publication_charges_large_saved_endpoint_set
+    pattern = "(?~(z))"
+    endpoint_count = 512
+    subject = "#{"a" * endpoint_count}z!"
+    expected = ::Regexp.new(pattern).match(subject)
+
+    small_budget = Onibi::Regexp.new(pattern, timeout: 0.001)
+    assert_raises(Onibi::Regexp::TimeoutError) do
+      small_budget.match("#{"a" * 20_000}z!")
+    end
+
+    regexp = Onibi::Regexp.new(pattern)
+    actual = regexp.match(subject)
+    assert_equal expected.to_a, actual.to_a
+    assert_equal absence_match_snapshot(expected), absence_match_snapshot(actual)
+    assert_instance_of Onibi::MatchData, actual
+
+    info = regexp.send(:__onibi_diagnostics__, subject)
+    assert_equal 2, info[:exec_kind]
+    assert_operator info[:dynamic], :>, 0
+    assert_equal 0, info[:fallback]
+    assert_equal 1, info[:status]
+    assert_equal expected.bytebegin(0), info[:match_start]
+    assert_equal expected.byteend(0), info[:match_end]
+    assert_operator info[:work_charged], :>=, 17 * endpoint_count
+  end
+
+  def test_nested_absence_endpoint_transfer_work_grows_linearly
+    pattern = "(?~(?:(?!(?=\\A(?~((z)|a))x))x))"
+    endpoint_counts = [32, 64]
+    work_by_endpoint_count = endpoint_counts.to_h do |endpoint_count|
+      subject = "#{"b" * (2 * endpoint_count)}z!"
+      expected = ::Regexp.new(pattern).match(subject)
+      regexp = Onibi::Regexp.new(pattern)
+      actual = regexp.match(subject)
+
+      assert_equal expected.to_a, actual.to_a, endpoint_count
+      assert_equal absence_match_snapshot(expected),
+                   absence_match_snapshot(actual), endpoint_count
+
+      info = regexp.send(:__onibi_diagnostics__, subject)
+      assert_equal 2, info[:exec_kind]
+      assert_operator info[:dynamic], :>, 0
+      assert_equal 0, info[:fallback]
+      assert_equal 1, info[:status]
+      assert_operator info[:tag_events], :>=, endpoint_count
+      [endpoint_count, info[:work_charged]]
+    end
+
+    assert_operator work_by_endpoint_count.fetch(64), :<=,
+                    3 * work_by_endpoint_count.fetch(32),
+                    "nested endpoint transfer work must grow linearly"
+  end
+
+  def test_absence_sparse_pending_capture_scan_charges_unset_slots
+    unused_capture_count = 256
+    suffix = Array.new(unused_capture_count) { "(?!(?:q(a)))" }.join
+    pattern = "(?~(?:b(?~(?:(a?)(?=a)))))#{suffix}"
+    subject = "bab"
+    expected = ::Regexp.new(pattern).match(subject)
+    regexp = Onibi::Regexp.new(pattern)
+    actual = regexp.match(subject)
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal absence_match_snapshot(expected),
+                 absence_match_snapshot(actual)
+
+    info = regexp.send(:__onibi_diagnostics__, subject)
+    assert_equal 2, info[:exec_kind]
+    assert_operator info[:dynamic], :>, 0
+    assert_equal 0, info[:fallback]
+    assert_equal 1, info[:status]
+    assert_operator info[:work_charged], :>=, 13_000,
+                    "sparse pending scan work must include unset slots"
+  end
+
   def test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix
+    assert_absence_failed_probe_control(
+      label: "later positive probe capture reaches an earlier endpoint",
+      pattern: "(?~(a+))b",
+      subject: "abcabc",
+      start: 0,
+      expected_values: %w[b a],
+      expected_char_ranges: [[1, 2], [3, 4]],
+      expected_byte_ranges: [[1, 2], [3, 4]]
+    )
+
     ["(?~(a+))b", "(?~((a|b)+))c"].each do |pattern|
       %w[b ab abb abc abcabc].each do |input|
         expected = ::Regexp.new(pattern).match(input)
@@ -242,6 +472,16 @@ class AbsenceOperatorTest < Minitest::Test
   def test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary
     pattern = "(?~(?:(a?)(?=a)))"
 
+    assert_absence_failed_probe_control(
+      label: "positive lookahead capture at the absence boundary",
+      pattern: pattern,
+      subject: "ab",
+      start: 0,
+      expected_values: ["b", ""],
+      expected_char_ranges: [[1, 2], [1, 1]],
+      expected_byte_ranges: [[1, 2], [1, 1]]
+    )
+
     %w[ab abb abc].each do |input|
       expected = ::Regexp.new(pattern).match(input)
       actual = Onibi::Regexp.new(pattern).match(input)
@@ -249,6 +489,194 @@ class AbsenceOperatorTest < Minitest::Test
       assert_equal expected.to_a, actual.to_a, input
       assert_equal expected.offset(0), actual.offset(0), input
     end
+  end
+
+  def test_absence_operator_keeps_parent_capture_before_a_failed_negative_assertion
+    assert_absence_failed_probe_control(
+      label: "parent capture before a failing negative assertion",
+      pattern: "(?~(?:(a?)(?!b)))",
+      subject: "ab",
+      start: 0,
+      expected_values: ["b", ""],
+      expected_char_ranges: [[1, 2], [1, 1]],
+      expected_byte_ranges: [[1, 2], [1, 1]]
+    )
+  end
+
+  def test_absence_operator_discards_capture_writes_from_failed_assertion_children
+    cases = [
+      [
+        "failed positive assertion child",
+        "(?~(?:(?=(a)z)))",
+        "ab",
+        ["ab", nil],
+        [[0, 2], [nil, nil]]
+      ],
+      [
+        "failed negative assertion child",
+        "(?~(?:(?!(a))))",
+        "a",
+        ["a", nil],
+        [[0, 1], [nil, nil]]
+      ]
+    ]
+
+    cases.each do |label, pattern, subject, expected_values, ranges|
+      assert_absence_failed_probe_control(
+        label: label,
+        pattern: pattern,
+        subject: subject,
+        start: 0,
+        expected_values: expected_values,
+        expected_char_ranges: ranges,
+        expected_byte_ranges: ranges
+      )
+    end
+  end
+
+  def test_absence_operator_rolls_back_pushed_capture_before_a_failed_assertion
+    assert_absence_failed_probe_control(
+      label: "pushed capture before a failing positive assertion",
+      pattern: "(?~(?:(a)+(?=z)))",
+      subject: "aax",
+      start: 0,
+      expected_values: ["aax", nil],
+      expected_char_ranges: [[0, 3], [nil, nil]],
+      expected_byte_ranges: [[0, 3], [nil, nil]]
+    )
+  end
+
+  def test_nested_absence_keeps_parent_capture_before_a_failed_assertion
+    assert_absence_failed_probe_control(
+      label: "nested absence capture before a failing positive assertion",
+      pattern: "(?~(?:b(?~(?:(a?)(?=a)))))",
+      subject: "bab",
+      start: 0,
+      expected_values: ["ba", ""],
+      expected_char_ranges: [[0, 2], [1, 1]],
+      expected_byte_ranges: [[0, 2], [1, 1]]
+    )
+  end
+
+  def test_nested_absence_preserves_reversed_output_capture_ranges
+    target = "(?~(?:b(?~(?:(?=(?:(a?){9}){2}a)(?=a)))))"
+    cases = [
+      ["target", target, "bab", [[0, 2], [2, 1]]],
+      ["repeat 8", target.sub("{9}", "{8}"), "bab", [[0, 2], [2, 1]]],
+      ["repeat 10", target.sub("{9}", "{10}"), "bab", [[0, 2], [2, 1]]],
+      [
+        "no inner absence",
+        "(?~(?:b(?:(?=(?:(a?){9}){2}a)(?=a))))",
+        "bab",
+        [[0, 0], [2, 1]]
+      ],
+      [
+        "no outer absence",
+        "(?~(?:(?=(?:(a?){9}){2}a)(?=a)))",
+        "bab",
+        [[0, 1], [2, 1]]
+      ],
+      [
+        "normal empty pair",
+        "(?~(?:b(?~(?:(a?)(?=a)))))",
+        "bab",
+        [[0, 2], [1, 1]]
+      ],
+      ["unset pair", "(?~(?:(?=(a)z)))", "ab", [[0, 2], [nil, nil]]],
+      ["fixed three", "(?~(a|b){3})", "xabab", [[0, 3], [nil, nil]]]
+    ]
+    byte_offsets = lambda do |match|
+      (0...match.length).map { |index| match.byteoffset(index) }
+    end
+
+    cases.each do |label, pattern, subject, expected_offsets|
+      expected = ::Regexp.new(pattern).match(subject)
+      regexp = Onibi::Regexp.new(pattern)
+      actual = regexp.match(subject)
+
+      assert_equal expected_offsets, byte_offsets.call(expected), label
+      assert_equal expected_offsets, byte_offsets.call(actual), label
+
+      diagnostics = regexp.send(:__onibi_diagnostics__, subject)
+      assert_equal 2, diagnostics[:exec_kind], label
+      assert_equal 0, diagnostics[:fallback], label
+
+      if expected_offsets[1] == [2, 1]
+        assert_equal [2, 1], expected.offset(1), label
+        assert_equal [2, 1], actual.offset(1), label
+        assert_equal [2, 1], actual.byteoffset(1), label
+        assert_equal 2, actual.begin(1), label
+        assert_equal 1, actual.end(1), label
+        assert_equal(-1, actual.match_length(1), label)
+
+        [[:to_a], [:captures], [:[], 1]].each do |method, *arguments|
+          expected_error = assert_raises(ArgumentError, label) do
+            expected.public_send(method, *arguments)
+          end
+          actual_error = assert_raises(ArgumentError, label) do
+            actual.public_send(method, *arguments)
+          end
+          assert_equal expected_error.message, actual_error.message, label
+        end
+      else
+        assert_equal expected.to_a, actual.to_a, label
+        assert_equal expected.captures, actual.captures, label
+        assert_equal expected[1], actual[1], label
+      end
+    end
+  end
+
+  def test_nested_absence_output_range_controls_preserve_normal_and_unset_pairs
+    cases = [
+      ["normal empty pair", "(?~(?:b(?~(?:(a?)(?=a)))))", "bab"],
+      ["unset pair", "(?~(?:(?=(a)z)))", "ab"],
+      ["fixed three", "(?~(a|b){3})", "xabab"]
+    ]
+
+    cases.each do |label, pattern, subject|
+      expected = ::Regexp.new(pattern).match(subject)
+      regexp = Onibi::Regexp.new(pattern)
+      actual = regexp.match(subject)
+
+      assert_equal expected.to_a, actual.to_a, label
+      assert_equal expected.offset(0), actual.offset(0), label
+      assert_equal expected.offset(1), actual.offset(1), label
+      assert_equal expected.byteoffset(1), actual.byteoffset(1), label
+
+      diagnostics = regexp.send(:__onibi_diagnostics__, subject)
+      assert_equal 2, diagnostics[:exec_kind], label
+      assert_equal 0, diagnostics[:fallback], label
+    end
+  end
+
+  def test_nested_absence_preserves_utf8_reversed_output_capture_ranges
+    pattern = "(?~(?:b(?~(?:(?=(?:(a?){9}){2}a)(?=a)))))"
+    subject = "ébab"
+    expected = ::Regexp.new(pattern).match(subject)
+    regexp = Onibi::Regexp.new(pattern)
+    actual = regexp.match(subject)
+
+    assert_equal [[0, 3], [3, 2]], [expected.offset(0), expected.offset(1)]
+    assert_equal [[0, 4], [4, 3]], [expected.byteoffset(0), expected.byteoffset(1)]
+    assert_equal expected.offset(0), actual.offset(0)
+    assert_equal expected.offset(1), actual.offset(1)
+    assert_equal expected.byteoffset(0), actual.byteoffset(0)
+    assert_equal expected.byteoffset(1), actual.byteoffset(1)
+    assert_equal(-1, actual.match_length(1))
+
+    [[:to_a], [:captures], [:[], 1]].each do |method, *arguments|
+      expected_error = assert_raises(ArgumentError) do
+        expected.public_send(method, *arguments)
+      end
+      actual_error = assert_raises(ArgumentError) do
+        actual.public_send(method, *arguments)
+      end
+      assert_equal expected_error.message, actual_error.message
+    end
+
+    diagnostics = regexp.send(:__onibi_diagnostics__, subject)
+    assert_equal 2, diagnostics[:exec_kind]
+    assert_equal 0, diagnostics[:fallback]
   end
 
   def test_absence_operator_clears_empty_capture_at_input_end
@@ -542,6 +970,15 @@ class AbsenceOperatorTest < Minitest::Test
   end
 
   def test_absence_operator_does_not_export_quantifier_body_captures
+    fixed_pattern = "(?~(a|b){2})"
+    fixed_expected = ::Regexp.new(fixed_pattern).match("xabab")
+    fixed_actual = Onibi::Regexp.new(fixed_pattern).match("xabab")
+
+    assert_equal %w[xa b], fixed_expected.to_a
+    assert_equal fixed_expected.to_a, fixed_actual&.to_a
+    assert_equal fixed_expected.offset(0), fixed_actual&.offset(0)
+    assert_equal fixed_expected.offset(1), fixed_actual&.offset(1)
+
     match = Onibi::Regexp.new("(?~(a|b){2,})").match("xabab")
 
     assert_equal "xab", match[0]
@@ -649,15 +1086,60 @@ class AbsenceOperatorTest < Minitest::Test
   end
 
   def test_absence_operator_restores_outer_quantifier_suffix_captures
-    regexp = Onibi::Regexp.new("(?~((a|b)+)c)")
+    pattern = "(?~((a|b)+)c)"
+    assert_absence_failed_probe_control(
+      label: "outer quantifier later bound failure",
+      pattern: pattern,
+      subject: "aac",
+      start: 0,
+      expected_values: ["aa", "a", nil],
+      expected_char_ranges: [[0, 2], [1, 2], [nil, nil]],
+      expected_byte_ranges: [[0, 2], [1, 2], [nil, nil]]
+    )
+
+    regexp = Onibi::Regexp.new(pattern)
 
     assert_equal ["a", nil, nil], regexp.match("a").to_a.first(3)
     assert_equal ["aa", "a", nil], regexp.match("aac").to_a.first(3)
     assert_equal ["ab", "b", nil], regexp.match("abc").to_a.first(3)
   end
 
+  def test_absence_operator_keeps_captures_across_alternate_failed_suffixes
+    pattern = "(?~((a|b)+)(?:c|d))"
+    assert_absence_failed_probe_control(
+      label: "alternate suffix failure at active bound",
+      pattern: pattern,
+      subject: "a",
+      start: 0,
+      expected_values: ["a", "a", nil],
+      expected_char_ranges: [[0, 1], [0, 1], [nil, nil]],
+      expected_byte_ranges: [[0, 1], [0, 1], [nil, nil]]
+    )
+
+    assert_absence_failed_probe_control(
+      label: "alternate suffix failure before active bound",
+      pattern: pattern,
+      subject: "ax",
+      start: 0,
+      expected_values: ["ax", nil, nil],
+      expected_char_ranges: [[0, 2], [nil, nil], [nil, nil]],
+      expected_byte_ranges: [[0, 2], [nil, nil], [nil, nil]]
+    )
+  end
+
   def test_absence_operator_restores_nested_suffix_group_captures
-    regexp = Onibi::Regexp.new("(?~((a|bc)+)(d|e))")
+    pattern = "(?~((a|bc)+)(d|e))"
+    assert_absence_failed_probe_control(
+      label: "nested suffix direct capture at active bound",
+      pattern: pattern,
+      subject: "bca",
+      start: 0,
+      expected_values: ["bca", "a", nil, nil],
+      expected_char_ranges: [[0, 3], [2, 3], [nil, nil], [nil, nil]],
+      expected_byte_ranges: [[0, 3], [2, 3], [nil, nil], [nil, nil]]
+    )
+
+    regexp = Onibi::Regexp.new(pattern)
 
     assert_equal ["bc", nil, nil, "d"], regexp.match("bcd").to_a.first(4)
     assert_equal ["babc", nil, nil, nil], regexp.match("babcd").to_a.first(4)
@@ -668,11 +1150,212 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal ["ab", nil, nil, "c"], variable.match("abc").to_a.first(4)
   end
 
+  def test_absence_operator_keeps_a_capture_from_an_earlier_failed_sibling
+    pattern = "(?~\\A((?:a|abz))c)"
+
+    assert_absence_failed_probe_control(
+      label: "direct close from an earlier failed sibling",
+      pattern: pattern,
+      subject: "abx",
+      start: 0,
+      expected_values: %w[abx a],
+      expected_char_ranges: [[0, 3], [0, 1]],
+      expected_byte_ranges: [[0, 3], [0, 1]]
+    )
+  end
+
+  def test_absence_operator_keeps_unopened_fixed_repeat_capture_unset
+    pattern = "(?~(a|b){3})"
+
+    assert_absence_failed_probe_control(
+      label: "fixed repeat capture has no start tag",
+      pattern: pattern,
+      subject: "xabab",
+      start: 0,
+      expected_values: ["xab", nil],
+      expected_char_ranges: [[0, 3], [nil, nil]],
+      expected_byte_ranges: [[0, 3], [nil, nil]]
+    )
+  end
+
   def test_absence_operator_clears_nullable_nested_captures
     regexp = Onibi::Regexp.new("(?~((a?|b)+))")
 
     assert_equal ["", nil, nil], regexp.match("").to_a
     assert_equal ["", nil, nil], regexp.match("b").to_a
     assert_equal %w[a a], regexp.match("baaa").to_a.first(2)
+  end
+
+  def test_absence_endpoint_matches_empty_input
+    assert_absence_endpoint_control(
+      label: "empty input",
+      pattern: "(?~a)",
+      subject: "",
+      start: 0,
+      expected_values: [""],
+      expected_char_ranges: [[0, 0]],
+      expected_byte_ranges: [[0, 0]],
+      diagnostics: true
+    )
+  end
+
+  def test_absence_endpoint_preserves_start_zero
+    assert_absence_endpoint_control(
+      label: "start zero",
+      pattern: "(?~(?:b(?~(?=a))))",
+      subject: "xba",
+      start: 0,
+      expected_values: ["xba"],
+      expected_char_ranges: [[0, 3]],
+      expected_byte_ranges: [[0, 3]],
+      diagnostics: true
+    )
+  end
+
+  def test_absence_endpoint_preserves_nonzero_search_start
+    assert_absence_endpoint_control(
+      label: "start one",
+      pattern: "(?~(?:b(?~(?=a))))",
+      subject: "xba",
+      start: 1,
+      expected_values: ["ba"],
+      expected_char_ranges: [[1, 3]],
+      expected_byte_ranges: [[1, 3]],
+      diagnostics: false
+    )
+  end
+
+  def test_absence_endpoint_retries_for_required_suffix
+    assert_absence_endpoint_control(
+      label: "required suffix",
+      pattern: "(?~(?:b(?~(?=a))))a",
+      subject: "ba",
+      start: 0,
+      expected_values: ["ba"],
+      expected_char_ranges: [[0, 2]],
+      expected_byte_ranges: [[0, 2]],
+      diagnostics: true
+    )
+  end
+
+  def test_absence_endpoint_keeps_match_reset_start_separate
+    assert_absence_endpoint_control(
+      label: "match reset",
+      pattern: "(?~(?:b(?~(?=a))))\\K",
+      subject: "ba",
+      start: 0,
+      expected_values: [""],
+      expected_char_ranges: [[2, 2]],
+      expected_byte_ranges: [[2, 2]],
+      diagnostics: true
+    )
+  end
+
+  def test_absence_endpoint_uses_utf8_character_boundaries
+    assert_absence_endpoint_control(
+      label: "UTF-8 boundaries",
+      pattern: "(?~(?:λ(?~(?=α))))",
+      subject: "λα",
+      start: 0,
+      expected_values: ["λα"],
+      expected_char_ranges: [[0, 2]],
+      expected_byte_ranges: [[0, 4]],
+      diagnostics: true
+    )
+  end
+
+  private
+
+  def assert_absence_failed_probe_control(**control)
+    label = control.fetch(:label)
+    pattern = control.fetch(:pattern)
+    subject = control.fetch(:subject)
+    start = control.fetch(:start)
+    expected_values = control.fetch(:expected_values)
+    expected_char_ranges = control.fetch(:expected_char_ranges)
+    expected_byte_ranges = control.fetch(:expected_byte_ranges)
+    regexp = Onibi::Regexp.new(pattern)
+    expected = ::Regexp.new(pattern).match(subject, start)
+    actual = regexp.match(subject, start)
+
+    assert_equal expected_values, expected.to_a, "#{label}: frozen MRI values"
+    assert_equal expected_char_ranges, absence_match_char_ranges(expected),
+                 "#{label}: frozen MRI character ranges"
+    assert_equal expected_byte_ranges, absence_match_byte_ranges(expected),
+                 "#{label}: frozen MRI byte ranges"
+    assert_instance_of Onibi::MatchData, actual, "#{label}: native result type"
+    assert_equal absence_match_snapshot(expected), absence_match_snapshot(actual),
+                 label
+
+    info = regexp.send(:__onibi_diagnostics__, subject)
+    assert_equal 2, info[:exec_kind], "#{label}: DYNAMIC execution class"
+    assert_operator info[:dynamic], :>, 0, "#{label}: DYNAMIC executor ran"
+    assert_equal 0, info[:fallback], "#{label}: MRI fallback count"
+    assert_equal 1, info[:status], "#{label}: diagnostic match status"
+    assert_equal expected.bytebegin(0), info[:match_start],
+                 "#{label}: diagnostic byte start"
+    assert_equal expected.byteend(0), info[:match_end],
+                 "#{label}: diagnostic byte end"
+  end
+
+  def assert_absence_endpoint_control(**control)
+    label = control.fetch(:label)
+    pattern = control.fetch(:pattern)
+    subject = control.fetch(:subject)
+    start = control.fetch(:start)
+    expected_values = control.fetch(:expected_values)
+    expected_char_ranges = control.fetch(:expected_char_ranges)
+    expected_byte_ranges = control.fetch(:expected_byte_ranges)
+    diagnostics = control.fetch(:diagnostics)
+    onibi_regexp = Onibi::Regexp.new(pattern)
+    expected = ::Regexp.new(pattern).match(subject, start)
+    actual = onibi_regexp.match(subject, start)
+
+    if expected.nil?
+      assert_nil actual, label
+      return
+    end
+
+    assert_equal expected_values, expected.to_a, "#{label}: frozen MRI values"
+    assert_equal expected_char_ranges, absence_match_char_ranges(expected),
+                 "#{label}: frozen MRI character ranges"
+    assert_equal expected_byte_ranges, absence_match_byte_ranges(expected),
+                 "#{label}: frozen MRI byte ranges"
+    assert_instance_of Onibi::MatchData, actual, "#{label}: native result type"
+    assert_equal absence_match_snapshot(expected), absence_match_snapshot(actual),
+                 label
+
+    return unless diagnostics
+
+    info = onibi_regexp.send(:__onibi_diagnostics__, subject)
+    assert_equal 2, info[:exec_kind], "#{label}: DYNAMIC execution class"
+    assert_operator info[:dynamic], :>, 0, "#{label}: DYNAMIC executor ran"
+    assert_equal 0, info[:fallback], "#{label}: MRI fallback count"
+    assert_equal 1, info[:status], "#{label}: diagnostic match status"
+    assert_equal expected.bytebegin(0), info[:match_start],
+                 "#{label}: diagnostic byte start"
+    assert_equal expected.byteend(0), info[:match_end],
+                 "#{label}: diagnostic byte end"
+    expected_capture_ranges = (1...expected_values.length).map do |index|
+      expected.byteoffset(index).map { |position| position || -1 }
+    end
+    assert_equal expected_capture_ranges, info[:captures],
+                 "#{label}: diagnostic capture byte ranges"
+  end
+
+  def absence_match_char_ranges(match)
+    match.to_a.each_index.map { |index| match.offset(index) }
+  end
+
+  def absence_match_byte_ranges(match)
+    match.to_a.each_index.map { |index| match.byteoffset(index) }
+  end
+
+  def absence_match_snapshot(match)
+    {
+      values: match.to_a,
+      character_ranges: absence_match_char_ranges(match),
+      byte_ranges: absence_match_byte_ranges(match)
+    }
   end
 end

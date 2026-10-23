@@ -1,0 +1,264 @@
+{
+  "base_commit": "89157b806ad3e57299088adf18dbc44505439097",
+  "seed": 20260927,
+  "ruby": "Homebrew MRI 4.0.6",
+  "results": {
+    "original": {
+      "summary": "1477 runs, 36192 assertions, 52 failures, 322 errors, 0 skips",
+      "log_sha256": "754dab8b2ae3f88a0774c560468eecb0eb96894718a1fed4874f35382a01210e"
+    },
+    "pruned": {
+      "summary": "1079 runs, 34926 assertions, 42 failures, 18 errors, 0 skips",
+      "log_sha256": "4b3c7df445ecbbab38680c6e37aca79915a1cc3bdc995f20459ec47d9fd18798",
+      "failing_tests": [
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_body_capture_presence_is_visible_to_conditionals"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_applies_quantifier_boundary_to_suffix_bodies"
+        },
+        {
+          "kind": "Error",
+          "test": "AbsenceOperatorTest#test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_clears_nested_bounded_captures"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_clears_nested_repeat_captures"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_clears_nullable_captures_on_suffix_failure_at_end"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_does_not_export_quantifier_body_captures"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_handles_nested_equal_length_captures"
+        },
+        {
+          "kind": "Error",
+          "test": "AbsenceOperatorTest#test_absence_operator_handles_overlapping_nested_zero_width_boundaries"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_keeps_a_nullable_body_capture"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_keeps_captures_from_a_zero_width_body"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_preserves_alternation_branch_order"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_preserves_body_captures"
+        },
+        {
+          "kind": "Error",
+          "test": "AbsenceOperatorTest#test_absence_operator_preserves_captures_from_a_failed_suffix"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_propagates_nested_bytecode_endpoints"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_replays_finite_and_positive_quantifier_probes"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_replays_variable_suffix_backtracking"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_restores_deep_nested_repeat_captures"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_restores_nested_repeat_suffix_frames"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_restores_nested_suffix_group_captures"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_restores_outer_quantifier_suffix_captures"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_restores_repeated_suffix_capture_frames"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_tracks_finite_nested_repeat_frames"
+        },
+        {
+          "kind": "Failure",
+          "test": "AbsenceOperatorTest#test_absence_operator_tracks_nullable_nested_repeat_frames"
+        },
+        {
+          "kind": "Failure",
+          "test": "AnchorsOptionsTest#test_line_start_does_not_match_the_empty_line_after_a_final_newline"
+        },
+        {
+          "kind": "Error",
+          "test": "CharacterClassDifferentialTest#test_character_class_corpus_matches_mri"
+        },
+        {
+          "kind": "Failure",
+          "test": "DynamicDifferentialTest#test_named_subprogram_variants_keep_nullable_call_context"
+        },
+        {
+          "kind": "Error",
+          "test": "EncodingContractTest#test_non_ascii_compatible_character_classes_compare_codepoints"
+        },
+        {
+          "kind": "Error",
+          "test": "EncodingContractTest#test_non_ascii_compatible_unicode_classes_honor_ignorecase"
+        },
+        {
+          "kind": "Failure",
+          "test": "InlineModifierTest#test_inline_multiline_disable_modifier_turns_dot_all_off"
+        },
+        {
+          "kind": "Failure",
+          "test": "InlineModifierTest#test_supported_modifier_scopes_match_mri"
+        },
+        {
+          "kind": "Failure",
+          "test": "LookaheadTest#test_ignorecase_long_s_optional_class_stops_before_absolute_end"
+        },
+        {
+          "kind": "Failure",
+          "test": "LookaheadTest#test_ignorecase_reverse_fold_anchor_boundary_through_wrappers"
+        },
+        {
+          "kind": "Failure",
+          "test": "LookaheadTest#test_ignorecase_reverse_literal_repeat_rejects_folded_capture_backreference"
+        },
+        {
+          "kind": "Error",
+          "test": "MacroBenchmarksTest#test_each_workload_matches_ruby_regexp"
+        },
+        {
+          "kind": "Failure",
+          "test": "MacroBenchmarksTest#test_runner_rejects_differential_mismatch"
+        },
+        {
+          "kind": "Failure",
+          "test": "MatchDataIndexTest#test_match_uses_integer_or_name_indices_only"
+        },
+        {
+          "kind": "Error",
+          "test": "MatchDataIndexTest#test_match_value_access_coerces_integer_like_indices_and_rejects_unknown_names"
+        },
+        {
+          "kind": "Error",
+          "test": "MatchDataIndexTest#test_match_value_access_returns_nil_beyond_negative_capture_range"
+        },
+        {
+          "kind": "Failure",
+          "test": "MatchDataIndexTest#test_match_value_access_supports_mri_slice_form"
+        },
+        {
+          "kind": "Error",
+          "test": "MatchDataIndexTest#test_match_values_at_normalizes_negative_range_bounds"
+        },
+        {
+          "kind": "Failure",
+          "test": "MatchDataIndexTest#test_non_finite_indices_raise_mri_range_errors"
+        },
+        {
+          "kind": "Error",
+          "test": "MatchDataTest#test_match_returns_the_value_for_an_index_or_name"
+        },
+        {
+          "kind": "Error",
+          "test": "MatchDataTest#test_values_at_pads_ranges_past_capture_count"
+        },
+        {
+          "kind": "Error",
+          "test": "NamedGroupTest#test_named_group_is_available_by_name_and_number"
+        },
+        {
+          "kind": "Error",
+          "test": "PatternCommentTest#test_pattern_comments_are_ignored"
+        },
+        {
+          "kind": "Error",
+          "test": "PatternCommentTest#test_pattern_comments_do_not_create_captures"
+        },
+        {
+          "kind": "Failure",
+          "test": "QuantifierModeTest#test_casefold_backreference_does_not_cross_absolute_end"
+        },
+        {
+          "kind": "Failure",
+          "test": "QuantifierModeTest#test_casefold_backreference_keeps_mri_direction"
+        },
+        {
+          "kind": "Failure",
+          "test": "QuantifierModeTest#test_multiline_greedy_dot_after_terminal_assertion_matches_mri"
+        },
+        {
+          "kind": "Error",
+          "test": "QuantifierTest#test_nested_quantifiers_follow_mri_composition"
+        },
+        {
+          "kind": "Failure",
+          "test": "RegexpConstructorTest#test_named_capture_numbers_hide_unnamed_groups_like_mri"
+        },
+        {
+          "kind": "Failure",
+          "test": "RegexpNestingLimitTest#test_pattern_nesting_limit_is_reported_before_recursive_parse"
+        },
+        {
+          "kind": "Error",
+          "test": "RegexpSyntaxSemanticsTest#test_ignorecase_closes_unicode_range_casefolds"
+        },
+        {
+          "kind": "Error",
+          "test": "RegexpSyntaxSemanticsTest#test_octal_escapes_match_the_encoded_byte"
+        },
+        {
+          "kind": "Failure",
+          "test": "RegexpUtilityTest#test_last_match_matches_mri_and_match_question_does_not_change_it"
+        },
+        {
+          "kind": "Failure",
+          "test": "UnicodePropertyDifferentialTest#test_reverse_fold_alternation_keeps_branch_source_policy"
+        },
+        {
+          "kind": "Failure",
+          "test": "UnicodePropertyDifferentialTest#test_reverse_fold_class_and_capture_boundaries_match_mri"
+        },
+        {
+          "kind": "Failure",
+          "test": "UnicodePropertyDifferentialTest#test_reverse_simple_fold_source_does_not_split_before_a_literal_tail"
+        }
+      ]
+    },
+    "focused": {
+      "summary": "55 runs, 1363 assertions, 0 failures, 0 errors, 0 skips",
+      "log_sha256": "5fdaf168eb382cbb5ed46786983dd87ee91719e4b06c255479d26549909874be",
+      "failing_tests": []
+    }
+  },
+  "new_failing_tests": [],
+  "changed_failure_kinds": []
+}

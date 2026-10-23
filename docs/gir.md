@@ -274,6 +274,12 @@ Absent
 OptionScope
 ```
 
+When MRI accepts consecutive postfix quantifiers, the parser nests each
+quantifier around the previous atom. Each quantifier keeps its own bounds,
+greedy or lazy mode, and possessive mode. The compiler and executors MUST
+preserve MRI's ordered choices and capture changes. They MUST NOT flatten
+nested repeats without evidence that all observable results stay equal to MRI.
+
 Inline options must be resolved before G-IR generation.
 
 ---
@@ -565,6 +571,9 @@ It is used for:
 Its flags specify newline behavior.
 
 The `m` regexp option must be resolved before execution.
+
+The runtime MUST use each wildcard state's resolved option. The RSeq header's
+`MULTILINE` bit MUST NOT override the state.
 
 ---
 
@@ -1178,8 +1187,8 @@ struct OnibiRAction {
 };
 ```
 
-RSeq v1 uses checked 16-bit capture and counter/progress slots.
-The physical record and blob layout MUST NOT change for nullable owner verification.
+RSeq uses checked 16-bit capture and counter/progress slots.
+The eight-byte action record stays unchanged.
 
 ```text
 capture count                    0..32768
@@ -1214,6 +1223,10 @@ enum OnibiRActionOp {
 ```
 
 `RA_CAPTURE.flags` is `0` for scoped open, `1` for close, or `2` for `RA_CAPTURE_OPEN_UNSCOPED`.
+Bit `0x04` marks a capture open that uses pushed start storage.
+Value `6` combines this bit with an unscoped open.
+The pushed bit is valid only on open actions.
+RSeq v7 requires its capture-rollback feature when any action uses this bit.
 `arg16` stores the capture boundary slot; `arg32` remains zero.
 Unscoped open MUST NOT weaken the transaction rule in Section 20.
 
@@ -1645,6 +1658,18 @@ RELATIVE
 WITH_LEVEL
 ```
 
+Numeric escape classification must follow MRI before reference resolution.
+Outside classes, multi-digit escapes depend on captures opened before the escape.
+A later capture does not change an earlier octal escape into a reference.
+Single-digit forward references retain MRI's separate reference rule.
+Inside classes, digit escapes denote octal bytes or literal digits, never capture references.
+Class digit escapes are accepted as native literals.
+The tokenizer tracks opened captures during the existing source scan.
+It resolves a complete multi-digit decimal run only against that count.
+Otherwise, digits `1` through `7` start up to three octal digits; `8` and `9` remain literal.
+Decimal accumulation stops when it exceeds the opened-capture count.
+The accepted MRI audit and E2Es cover this classification, including long digit runs.
+
 The parser must resolve names to capture-number lists.
 
 The compiler must preserve the current MRI resolution order for duplicate names.
@@ -1722,6 +1747,95 @@ The tested capture becomes semantic capture state.
 # 37. Absence Operator
 
 The absence operator has a dedicated dynamic subprogram state.
+
+The DYNAMIC executor keeps the input cursor, the prior encoded-character
+cursor, and the reported match start as separate values. It keeps the active
+input bound local to each absence call. It records each allowed endpoint with
+its own semantic state. Endpoint cursors stay on encoded-character boundaries.
+Nested calls restore their active bound and prior cursor when they return.
+
+When the forbidden expression matches, DYNAMIC publishes its result tags and
+condition values to the saved endpoint. This also applies when the expression
+starts at that endpoint. The endpoint keeps semantic capture registers from
+before the body for later backreferences. This prevents body captures from
+changing a later backreference.
+
+The compiler scans the resolved tree before normalization removes its context.
+It marks capture opens inside alternatives, variable repeats, negative
+assertions, or called groups. It also marks every referenced capture, even when
+its reference branch is not selected. The scan uses each capture's exact tree
+position. A capture around an alternative does not inherit the alternative's
+flag.
+
+For a marked capture, absence restores both boundary slots and condition values
+from the endpoint state before the body. It preserves an unset pair, a prior
+range, or a pending open. Direct writes to unmarked captures remain visible.
+
+During each absence scan, DYNAMIC keeps one ordered capture journal across
+failed probes. It adds path deltas in MRI priority order when failed frames
+leave the stack. A positive body match drops that probe's journal range. A
+failed probe can apply its range to the scan state and saved endpoints.
+
+A failed assertion keeps parent writes made before child entry. The assertion
+child restores its own checkpoint. Before the parent action rolls back, DYNAMIC
+copies the ordered write identities into a failure continuation. The
+continuation is a DYNAMIC stack frame. It follows sibling priority and adds
+only the parent path delta to the journal.
+
+A nested absence can reject an empty forbidden match at its start. It transfers
+the accepted body history to the parent log before it returns.
+
+Nested endpoint transfer visits each endpoint once. A pending-prefix scan
+charges each capture slot, including an unset slot. The scan reads the prior
+pair from the condition capture file. It appends output tag events as the
+result. These state files have separate owners.
+
+If a later positive probe leaves both condition slots unset, DYNAMIC carries
+the prior output pair forward. Set condition slots from the positive probe take
+priority. The carry changes output tags and condition values. It does not
+change semantic backreference registers or pushed capture rollback.
+
+A direct start clears both output slots. It sets the condition start and clears
+the condition end. It does not publish a half pair. A later direct close
+publishes a complete pair only when a condition start is set. Pushed captures
+keep their saved pair. Backreference registers stay separate from output and
+condition capture values.
+
+DYNAMIC keeps output slots in a separate state. It applies output writes in
+executed branch order. A direct unscoped start with the same capture-order ID,
+slot, and byte offset is applied once in one output state. This prevents a
+lower-priority entry edge from replaying a shared prefix.
+
+Each frame stores the pushed-output undo mark. A rollback restores both slots
+from each pushed pair. Direct output writes stay in the ordered output history
+across repeat rollback. A positive assertion transfers its output writes only
+after success. A failed or negative assertion child keeps its output state
+isolated.
+
+Each absence probe keeps its own output transcript. The scan transfers a
+transcript only when the capture journal selects its writes for the scan or a
+saved endpoint. A positive probe filters cleared or pushed captures before it
+replays its transcript.
+
+On DYNAMIC call return, the output state restores each caller capture that was
+active at call entry. The restore uses the saved caller capture pair. It runs
+before the call continuation. This keeps child output from replacing an open
+caller capture. Closed captures from the called subprogram stay selected. The
+restore charges each output capture and each visited tag-history node. Before
+each tag read, it validates the node ID and checks the walk bound.
+
+The output-scope registry uses stable indices and a free list. Create and
+release operations do not scan the registry. Scope creation charges two fixed
+work units. Registry growth also charges each added slot. Release makes one
+constant-time free-list update without a poll. Identity insertion charges each
+probed slot. Rehash charges the replacement capacity, each old-table slot, and
+each replacement-table probe. The output state owns the replacement table
+until the rehash finishes. Error cleanup frees that table.
+
+A live nullable-repeat owner identifies a capture by its tag-event node. A
+forced replay can make new nodes for the same tag history. The capture filter
+compares node identity while the owner is live. It compares tag-history values
+outside that state.
 
 Example:
 
@@ -1834,6 +1948,38 @@ The compiler must normalize:
 - shorthand classes;
 - Unicode properties.
 
+MRI validates the original source and requested options before tokenization.
+The tokenizer scans ASCII-compatible source bytes with the source encoding.
+For non-ASCII-compatible source, it scans a temporary UTF-8 view and maps
+token spans back to byte offsets in the original source.
+It encodes decoded Unicode scalars with the effective regexp encoding from MRI.
+Capture identity names retain the source encoding. Numeric references, option
+names, and property names retain their scanner representation.
+The compiler encodes property names for MRI's encoding callbacks.
+Repeat syntax uses the source width of its opening brace for adjacency checks.
+Hexadecimal and octal escapes collect bytes using the effective regexp encoding.
+
+The native line-start assertion accepts byte position zero, including empty input.
+At other positions, it requires a preceding decoded newline and a position before input end.
+It does not treat a newline byte inside another encoded character as a line boundary.
+The native end-line assertion accepts input end or the boundary before a decoded LF.
+The semi-end assertion accepts input end or the boundary before one final decoded LF.
+Both use the decoded character width, including UTF-16 and UTF-32 widths.
+
+Outside character classes, `(?#...)` is a pattern comment. The tokenizer skips
+through the first unescaped `)` at a source-encoding character boundary and
+emits no token. The comment creates no group or capture. MRI validates an
+unterminated comment before tokenization.
+
+In a class, `\uHHHH` and braced `\u{...}` escapes produce one literal token
+per scalar. Fixed-width escapes use four hex digits. Braced items use one to
+six hex digits. Reject values above U+10FFFF and surrogate values.
+
+Each token keeps the full source span of its escape and an offset and length
+in the token byte pool. Decoded bytes do not enter syntax scanning again.
+Escaped ampersands, hyphens, close brackets, carets, and backslashes stay
+literal. Only two raw ampersand tokens form class intersection.
+
 RSeq stores immutable class descriptors.
 
 A class descriptor uses this header:
@@ -1870,6 +2016,11 @@ Descriptor flags store whole-class negation.
 The compiler puts one-character case-fold closure in the descriptor data.
 
 The executor applies whole-class negation after descriptor evaluation.
+The executor decodes each subject character through MRI's encoding callbacks
+before it checks codepoint ranges or encoding character types.
+RSeq programs with class descriptors can execute with non-ASCII-compatible
+source and subject encodings when MRI reports compatible encodings.
+Class-less programs with these source encodings remain on MRI.
 
 Verified GIR analysis marks folds that still need multi-character paths.
 
@@ -2034,6 +2185,11 @@ BEGIN_POSITION anchored
 first-character bitmap
 required exact literal
 exact prefix
+absolute-end byte bound for a narrow case-folded backreference form
+absolute-end byte bound for a narrow atomic literal alternation form
+candidate-start byte-delta bound for a narrow lookahead form
+forward class-tail MAP candidate hint for one scoped singleton class form
+MRI-compatible minimum end distance for one repeated capture form
 ```
 
 A prefilter can reject candidate positions.
@@ -2047,6 +2203,179 @@ A prefilter must use byte operations only when the encoding permits them.
 For ASCII-compatible strings with seven-bit content, byte search is permitted.
 
 For other strings, candidate positions must remain valid character boundaries.
+
+For the capture/backreference form, the compiler sets this bound for a UTF-8
+or US-ASCII pattern with `IGNORECASE`. The exact root form contains one
+capture, one reference to that capture, and a final `\z`. The capture must
+contain one direct literal.
+
+The compiler also accepts three wrapped forms. One form has one neutral
+`(?:...)` group with global `IGNORECASE`. Another has one positive `(?i:...)`
+scope. The third has that scope around one neutral group. Each form has one
+capture, its reference, and a final `\z`, in that order. The group must be
+noncapturing. The scope can enable only `i`. The wrapped capture must contain
+one direct, one-byte ASCII literal. The capture, literal, and reference must
+have effective `IGNORECASE`. Without a scope, global `IGNORECASE` is required.
+Top-level options can contain only `IGNORECASE` and optional
+`FIXEDENCODING`. The reference must be numeric or uniquely named.
+
+The compiler leaves other forms unbounded. It does not use `\A`, `\G`,
+`\Z`, `$`, or branch-local anchors for this bound.
+
+The header field `end_search_bound_bytes` is a byte distance from the subject
+end. The matcher starts at the larger of `search_origin` and
+`max(0, subject_byte_length - end_search_bound_bytes)`. It then moves that
+position to a valid character boundary. This field is not a match width.
+The compiler derives this bound by adding the source byte widths of the
+capture and resolved reference. The 17-row MRI differential matrix checks
+selected public results and byte offsets. A frozen 12-row E2E covers the
+wrapped forms and boundary origins. Neither matrix inspects this field. The
+verifier checks canonical field form and an absolute-end action. It does not
+prove the value for arbitrary metadata or every path.
+
+The compiler also uses this field for one nested option-restore form. Its
+root sequence has one positive `(?i:...)` scope, then numeric `\1`, then a
+final `\z`. The scope body has one negative `(?-i:...)` scope around one
+direct ASCII prefix literal, then one capture around one direct ASCII
+literal. The reference must resolve to that capture. No other captures,
+wrappers, option scopes, branches, repeats, or sequence nodes are allowed.
+
+The compiled regexp encoding must be UTF-8 or US-ASCII. Top-level options can
+contain only optional `FIXEDENCODING`. The compiler checks effective options
+on the prefix, capture, reference, and final anchor. It derives the bound by
+checked addition of the prefix, capture, and resolved-reference source byte
+widths. Each width is one byte in this form. The existing `END_SEARCH_BOUND`
+verifier checks its physical field and final end assertion. It does not prove
+the source shape or the compiler's width calculation. Other encodings,
+options, or AST shapes keep the existing search policy. The frozen nine-row
+MRI E2E checks results, captures, offsets, option scope, and anchor priority.
+
+For the atomic literal form, the root sequence contains one atomic group and
+a final `\z`. The group body contains one alternation with two branches.
+Each branch contains one direct UTF-8 literal scalar. Global options include
+`IGNORECASE`; `FIXEDENCODING` is the only optional flag.
+
+The compiler folds each scalar with MRI's encoding interface. Each simple
+fold must contain one code point. The compiler sets the bound to the larger
+normalized byte width. It does not set this bound for other shapes, unknown
+folds, or multi-codepoint folds. A leading `\A` does not use this bound.
+
+The compiler also sets an MRI-compatible minimum end distance for one narrow
+root form. It requires a greedy plus around a capture with one direct UTF-8
+literal scalar. A resolved reference must target that capture, followed by a
+final \z. Global options must be IGNORECASE, with optional
+FIXEDENCODING. Leading anchors, wrappers, scoped options, branches, extra
+atoms, other quantifiers, and unproven folds keep the existing search policy.
+
+The compiler gets the minimum folded byte width from MRI's encoding fold
+interface. It adds that width times the repeat lower bound to the original
+capture source byte width. It uses checked arithmetic. This is an MRI search
+compatibility rule. It can reject a start that direct matching can accept.
+It does not change the native executor. It does not use MRI fallback.
+
+The matcher rejects a subject that is shorter than the minimum distance. It
+uses MRI's candidate range. When the origin is below the range boundary, it
+tests only starts below that boundary. If the origin equals the boundary, it
+tests that origin once. It rejects an origin beyond the boundary.
+A leading \A form does not use this metadata because MRI gives that anchor
+priority over the end-distance check.
+
+The header stores the minimum distance, folded repeat width, and source
+capture width in separate fields. The verifier checks positive canonical
+fields, their sum, one capture, one repeated capture path, one matching
+backreference, and one absolute-end assertion. The certificate does not prove
+the original source spelling or MRI optimizer timing. The verifier checks the
+physical RSeq structure only.
+
+The compiler also sets a one-byte bound for one optional-class form. The
+pattern source must be UTF-8 or US-ASCII. The only allowed options are
+`IGNORECASE`, with optional `FIXEDENCODING`. Its root sequence must contain a
+greedy optional class and a final `\z`. The class must contain one direct
+ASCII alphabetic literal. It must not be negated, nested, intersected, or
+ranged. All other AST shapes and options keep the existing search policy.
+This form excludes `\A` and extra sequence atoms. The matcher advances the
+one-byte candidate to a character boundary.
+A focused MRI E2E matrix checks long s, Kelvin, ASCII, offsets, and existing
+search bounds.
+
+The compiler also emits a candidate-start bound for one narrow form. The root
+sequence must have exactly two nodes: a positive lookahead, then a greedy
+unbounded `.*`. The lookahead body must contain one direct literal or `\z`.
+The parsed options must include `MULTILINE`. They can also include
+`FIXEDENCODING`. Other options and AST forms keep the existing search policy.
+
+The direct literal uses a zero-byte delta. The `\z` form uses a one-byte
+delta. The feature bit distinguishes an active zero delta from no bound. The
+matcher clamps `search_origin + delta` to the subject byte length. It tests
+valid character boundaries at or below that inclusive limit. If an absolute-
+end lower bound is also active, both limits apply.
+
+The verifier checks the feature bit, canonical field form, multiline flag,
+positive lookahead, and the delta relation to an absolute-end assertion. These
+checks do not prove the exact source tree or every path. The 20-row MRI
+differential matrix checks the supported shapes and boundary cases.
+
+The compiler can attach a forward class-tail MAP hint to one narrow form.
+The root sequence must contain only a scoped `i` option and one literal. The
+scope must contain one direct singleton class. The literal must be a
+sensitive ASCII character. An optional leading `\A` is allowed. The pattern
+source must use UTF-8 or US-ASCII. `FIXEDENCODING` is the only allowed parsed
+option. Other AST shapes and options keep the normal candidate search.
+
+The class member must be one scalar. MRI's simple fold data must consume that
+scalar. Each fold item must emit one scalar. The normalized class string
+must be one byte. At least one fold output must have a different UTF-8 width
+from the source scalar. The compiler forms the prefix map from the source
+byte and each distinct first byte of a fold output. It sets the hint only
+when MRI's integer map score strictly beats both the prefix map and the
+exact candidate. The stored tail distances are one byte each. A pinned MRI
+optimizer trace supports these rules. The rules do not clone MRI's general
+optimizer.
+
+The v4 header stores the ASCII tail byte, an optional anchored flag, and
+`dmin_bytes` and `dmax_bytes`. The feature bit requires both byte distances
+to equal one. A clear feature bit requires zero values in all class-tail
+fields. The reserved field must always be zero. The physical verifier checks
+the canonical fields and the class, tail, and optional-anchor RSeq shape.
+It cannot reconstruct the source AST or prove the optimizer score from RSeq.
+
+The matcher uses this hint only for UTF-8 input. It also uses the hint for
+ASCII-only strings tagged as UTF-8. It scans candidate starts in increasing
+character order. A MAP hit must be before an exclusive byte limit. MRI forms
+the interval as `low = hit - dmax_bytes` and
+`high = hit - dmin_bytes`. It moves only `low` to the next character head.
+The interval includes `high`. For distances `1/1`, a candidate can pass only
+when the tail byte follows it by one byte at a character head. An anchored
+hint limits MAP hits to byte positions below two. The matcher does not use
+this hint for reverse search or non-UTF-8 input.
+
+The compiler also supports one fold-derived direct-capture end range. The root
+must contain one scoped `i` capture with one direct UTF-8 scalar, one sensitive
+numeric or named reference to that capture, and a final `\z`. Reject other
+nodes, wrappers, options, leading anchors, and other end-search profiles.
+
+The compiler reads fold items from Onibi's encoding API. A fold item has a
+variable width when its `byte_len` differs from the source scalar byte width,
+or its `code_len` differs from one. Require at least eight alternatives, so
+the source plus alternatives exceeds MRI 4.0.6's limit of eight. Normalize the
+full scalar with `ONIGENC_MBC_CASE_FOLD`. Its output buffer capacity is
+`ONIGENC_MBC_CASE_FOLD_MAXLEN` (18 bytes). After normalization, accept only
+`B` and `N` values from one through seven. `B` is normalized bytes. `N` is
+normalized UTF-8 codepoints. Also require `N <= B <= 4*N`.
+
+RSeq v7 stores a separate feature bit and the fields `B`, `N`, `Dmin`, and
+`Dmax`. The compiler uses checked arithmetic: `Dmin = 2*B` and
+`Dmax = 4*N+B`. The compiler proves source scope, fold eligibility, and full
+normalization. The physical verifier checks field bounds, equations, feature
+conflicts, and the one-capture, one-sensitive-reference, final-end-action
+shape. It does not prove normalized widths from source bytes.
+
+The matcher first compares the full subject byte length with `Dmin`. It raises
+the lower start bound to `max(0, end-Dmax)` only when this bound is higher than
+the requested origin. It rounds the lower bound up to a character head. The
+raw exclusive upper pointer is `end-Dmin+1`. An origin below it uses the
+preceding byte as the inclusive last candidate. An origin equal to it can be
+tested once. Do not test the remaining suffix against `Dmin`.
 
 ---
 
@@ -2063,14 +2392,12 @@ RSeq must not contain a raw subject pointer.
 Example header:
 
 ```c
-struct OnibiRSeqHeader {
+typedef struct {
     uint32_t magic;
     uint16_t version;
     uint8_t exec_kind;
     uint8_t flags;
-
     uint32_t features;
-
     uint32_t state_count;
     uint32_t edge_count;
     uint32_t action_count;
@@ -2080,28 +2407,122 @@ struct OnibiRSeqHeader {
     uint32_t capture_count;
     uint32_t semantic_capture_count;
     uint32_t counter_count;
-
     uint32_t start_edge_base;
     uint32_t start_edge_count;
-
     uint32_t states_offset;
     uint32_t edges_offset;
     uint32_t actions_offset;
     uint32_t classes_offset;
     uint32_t literals_offset;
     uint32_t descriptors_offset;
+    uint32_t backref_count;
+    uint32_t backrefs_offset;
+    uint32_t backref_lists_offset;
     uint32_t subprograms_offset;
     uint32_t lookbehind_widths_offset;
-
     uint32_t blob_size;
-};
+    uint8_t first_bitmap[32];
+    uint8_t prefix_length;
+    uint8_t prefix[31];
+    uint32_t end_search_bound_bytes;
+    uint32_t search_origin_bound_delta_bytes;
+    uint8_t class_tail_map_byte;
+    uint8_t class_tail_map_flags;
+    uint16_t class_tail_map_reserved;
+    uint32_t class_tail_map_dmin_bytes;
+    uint32_t class_tail_map_dmax_bytes;
+    uint32_t end_search_minimum_bytes;
+    uint32_t end_search_minimum_repeat_bytes;
+    uint32_t end_search_minimum_capture_source_bytes;
+    uint32_t end_search_fold_normalized_bytes;
+    uint32_t end_search_fold_normalized_codepoints;
+    uint32_t end_search_fold_dmin_bytes;
+    uint32_t end_search_fold_dmax_bytes;
+    uint32_t absence_capture_relation_count;
+    uint32_t absence_capture_relations_offset;
+} OnibiRSeqHeader;
 ```
 
-The initial RSeq version is:
+The current RSeq version is:
 
 ```text
-1
+8
 ```
+
+Version 2 added `end_search_bound_bytes` to the physical header. Its feature
+bit requires a positive bound and an absolute-end action. A clear feature bit
+requires a zero field.
+
+Version 3 adds `search_origin_bound_delta_bytes`. Its feature bit requires a
+zero or one byte delta, the multiline flag, and a positive lookahead. A zero
+delta must not have an absolute-end assertion. A delta of one byte must have
+one.
+A clear feature bit requires a zero field.
+
+Version 4 adds the forward class-tail MAP candidate fields described in
+section 46. Its feature bit requires an ASCII tail byte, optional anchored
+flag, and byte distances `1/1`. A clear feature bit requires zero values in
+all class-tail fields. The reserved field is always zero.
+
+Version 5 adds the MRI-compatible minimum end-distance fields from section
+46. Its feature bit requires positive total, repeat, and source-width values.
+The total must equal the repeat value plus the source-width value. A clear
+feature bit requires zero values in all three fields.
+
+Version 6 adds the fold-derived end-range fields from section 46.
+
+Version 7 adds capture-start rollback metadata. Feature bit 15 is present
+exactly when a capture action has the pushed-open bit. The verifier reconstructs
+the feature from decoded actions. It rejects old versions, unknown capture
+flags, and the pushed-open bit on a close action.
+
+Version 8 adds the absence capture relation table after lookbehind widths.
+The header stores the table count and byte offset. Each record is 12 bytes:
+physical absence subprogram ID, target close slot, pushed witness close slot,
+target-start kind, and three zero reserved bytes. Both capture slots are odd.
+Target-start kind is `0` for direct and `1` for pushed. The witness open slot
+is its close slot minus one. The relation ID is the one-based record index.
+
+Action `RA_CAPTURE_RELATION` stores the role in `flags`, the target close slot
+in `arg16`, and the relation ID in `arg32`. Roles are `1` for `CLOSE`, `2`
+for `LOOP`, `3` for `EXIT`, and `4` for `SUFFIX`. `CLOSE` follows its exact
+capture close. `LOOP` and `EXIT` mark the repeat edges. `SUFFIX` marks the edge
+into the declared consuming suffix. One close can have more than one relation.
+
+The compiler emits a relation only for a capture in an absence body. Its
+target contains a variable repeat. That repeat contains a pushed witness
+capture. The next child in the same sequence must have positive minimum width.
+Its supported wrappers and every alternative must lead to a consuming state.
+The compiler stops collection at alternatives and control or subprogram
+boundaries. A zero-width next child does not use a later consuming sibling.
+The suffix marker can pass through epsilon lowering. The verifier requires its
+edge to enter a consuming state.
+
+Feature bit 16 is present exactly when relation records and their action
+markers exist. A clear bit requires zero relation records and no markers. An
+empty relation section has count zero and an offset equal to the blob end.
+The physical verifier checks table bounds, dense IDs, slots, owner kind,
+target-start kind, marker roles, and close pairing. It requires loop and exit
+markers from one state. The loop destination must stay in the same absence
+owner. Exit and suffix markers must share an edge. That edge must enter a
+consuming state. The verifier also requires a pushed witness open in that
+absence owner.
+
+The DYNAMIC interpreter uses relation records during capture publication. It
+reads the exact `CLOSE` and `SUFFIX` roles for the current physical owner and
+target slot. It requires every suffix marker for a relation to name one
+destination. That destination must be the failed state.
+
+At the active bound, DYNAMIC checks whether that consuming state can read the
+current subject. It defers a direct close only when the state cannot read
+input. It keeps the close when the state can read input. For a pushed target,
+DYNAMIC restores the target pair only when the journal has the target and
+witness pairs.
+
+RSeq verifies the `LOOP` and `EXIT` roles. The runtime does not infer missing
+relations from graph cycles. Journal growth, path walks, comparisons, marker
+lookups, transfers, failure-prefix copies, and replay charge the existing work
+budget. The absence ensure block frees the journal and pending state.
 
 All sections must have four-byte alignment.
 
@@ -2109,7 +2530,7 @@ The blob must be smaller than 4 GiB.
 
 The compiler must raise `RegexpError` if representation limits are exceeded.
 
-RSeq v1 also uses the action limits in section 22.
+RSeq v2 also uses the action limits in section 22.
 
 The first invalid capture count is `32769`.
 
@@ -2166,7 +2587,7 @@ A reserved destination value represents ACCEPT:
 
 # 50. RSeq State ISA
 
-RSeq v1 defines these state operations.
+The current RSeq format defines these state operations.
 
 ```c
 enum OnibiRStateOp {
@@ -2422,6 +2843,22 @@ Search-start preference does not affect the boolean result.
 
 # 58. `Regexp#match` and `=~`
 
+## Gem PoC contract
+
+Supported native `Onibi::Regexp#match` results use a C `Onibi::MatchData` object.
+The object copies native raw capture ranges and owns a frozen subject snapshot.
+Its supported methods follow MRI results, errors, encodings, and copy behavior.
+It is not an MRI `MatchData`; its `regexp` method returns the owning `Onibi::Regexp`.
+The native path must not rerun MRI to materialize the result.
+Existing explicit unsupported-pattern and input-ineligibility fallback remains permitted.
+
+The custom object must never enter MRI backreference storage or `RMATCH_REGS` consumers.
+Exact MRI type identity and caller-local VM backreferences are outside the gem contract.
+Do not emulate these properties with type overrides or unsafe `rb_backref_set` calls.
+The gem implementation is tracked in the execution ledger.
+
+## Later MRI integration
+
 Methods that expose captures or update backreference state must use ordered semantics.
 
 Before returning, Onibi materializes the capture region.
@@ -2444,6 +2881,23 @@ $2
 ---
 
 # 59. MatchData Integration
+
+For the gem PoC, the transfer is `OnibiRawMatch -> Onibi::MatchData`.
+Byte registers are copied before search cleanup. Character offsets remain lazy.
+Names retain ordered capture-index lists for duplicate-name lookup.
+The native name index retains each capture name's source encoding.
+Range methods accept binary selectors by exact bytes, but reject embedded NUL.
+Capture value methods use encoding-sensitive name lookup.
+Select the last participating capture; preserve unmatched and empty capture distinctions.
+The subject, raw registers, and metadata have explicit GC and allocation ownership.
+
+Raw capture pairs must be both unset or both in bounds. Register zero must have
+an ordered range. A later capture can have an in-bounds reversed pair.
+`offset`, `byteoffset`, and `match_length` report that raw pair. Its length can
+be negative. `to_a`, `captures`, and numeric `[]` raise MRI's `ArgumentError`
+when they extract a reversed pair.
+
+The following `RMatch` transfer applies to later MRI integration.
 
 `RMatch` stores byte-offset register data.
 
@@ -4649,6 +5103,11 @@ The gem PoC is complete when all of these conditions are true.
 7. Unsupported features are explicit and do not cause unexpected process failures.
 8. The PoC does not depend on ZJIT or MRI source-tree changes.
 
+The gem has an intentional limit of 256 nested groups.
+The tokenizer raises `Onibi::RegexpError` before recursive parsing when this limit is exceeded.
+The current diagnostic is `regexp nesting is too deep`; exact wording is not a stable public API promise.
+MRI can accept deeper patterns. This gem resource limit remains explicit.
+
 The complete legacy, MRI, and Ruby Spec suites are not PoC acceptance gates.
 
 ## 133.2 MRI replacement acceptance
@@ -4704,6 +5163,11 @@ The executor merges threads only when their future observable behavior is equal.
 ### Encoding invariant
 
 All input pointer movement follows the active MRI encoding.
+
+Named-group tokens and AST slices retain source bytes.
+The C name index uses one canonical byte iterator for hashing and equality.
+It applies MRI name-escape rules without changing those source slices.
+Duplicate definitions retain source order. Named replacement lookup uses the existing MRI metadata adapter; it does not execute matching.
 
 ### JIT invariant
 

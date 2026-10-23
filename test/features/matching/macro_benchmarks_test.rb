@@ -24,6 +24,12 @@ class MacroBenchmarksTest < Minitest::Test
       actual = workload.extract(Onibi::Regexp, corpus)
 
       assert_equal expected, actual, workload.name
+      next unless workload.name == "access_log"
+
+      regexp = Onibi::Regexp.new(workload.pattern)
+      route = regexp.send(:__onibi_diagnostics__, corpus.input(:access_log))
+      assert route.fetch(:rseq), "access_log must use native RSeq"
+      assert_equal 0, route.fetch(:fallback), "access_log must not fall back"
     end
   end
 

@@ -1,0 +1,14 @@
+TASK-42B6A root verification
+
+Environment: PATH=/opt/homebrew/opt/ruby/bin:$PATH; DEVELOPER_DIR=/Library/Developer/CommandLineTools
+
+ruby -v: status 0; MRI 4.0.6
+(cd ext/onibi && ruby extconf.rb && make): status 0; only onibi_c_ast_has_capture and onibi_rseq_mark_unsupported warnings
+ruby -Ilib -Itest test/features/captures/match_data_value_semantics_test.rb: status 0; 3 runs, 14 assertions, 0 failures, 0 errors, 0 skips
+required regression set: status 0; 50 runs, 665 assertions, 0 failures, 0 errors, 0 skips
+bundle exec rubocop test/features/captures/match_data_value_semantics_test.rb: status 0; no offenses
+clang-format --dry-run --Werror ext/onibi/match_data.c ext/onibi/onibi_matchdata_internal.h ext/onibi/onibi_init.c: status 0
+git diff --check: status 0
+(cd ext/onibi && make distclean): status 0 after build
+
+The initial distclean was skipped because no Makefile existed before the build.

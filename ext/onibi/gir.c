@@ -1,3 +1,7 @@
+#include "onibi_ast_internal.h"
+#include "onibi_gir_internal.h"
+#include "onibi_nfa_internal.h"
+
 /* GIR builder, fragment records, and mutable graph construction. */
 typedef struct {
     OnibiGActionOp code;
@@ -14,20 +18,20 @@ typedef struct {
 } OnibiGAction;
 typedef ONIBI_VECTOR(OnibiGAction) OnibiGActionVector;
 typedef struct {
-    OnibiIdVector starts;
-    OnibiIdVector exits;
+    OnibiNfaStateIdVector starts;
+    OnibiNfaStateIdVector exits;
     OnibiGActionVector start_actions;
     OnibiGActionVector pending_actions;
     int nullable;
     int lazy;
 } onibi_fragment_t;
 typedef struct {
-    OnibiStateId state;
+    OnibiNfaStateId state;
     OnibiGActionVector actions;
 } OnibiGuardEntry;
 typedef ONIBI_VECTOR(OnibiGuardEntry) OnibiGuardVector;
 typedef struct {
-    long id;
+    OnibiGirStateId id;
     OnibiGStateOp opcode;
     uint32_t payload_index;
     uint32_t value;
@@ -38,8 +42,8 @@ typedef struct {
 } OnibiGirStateEntry;
 typedef ONIBI_VECTOR(OnibiGirStateEntry) OnibiGirStateVector;
 typedef struct {
-    long from;
-    long to;
+    OnibiGirStateId from;
+    OnibiGirStateId to;
     long action_offset;
     OnibiGActionVector actions;
 } OnibiGirEdgeEntry;
@@ -70,8 +74,6 @@ typedef struct {
 } OnibiRSeqLiteralPayloadEntry;
 typedef ONIBI_VECTOR(OnibiRSeqLiteralPayloadEntry)
     OnibiRSeqLiteralPayloadVector;
-typedef OnibiSubprogramDesc OnibiRSeqSubprogramEntry;
-typedef ONIBI_VECTOR(OnibiRSeqSubprogramEntry) OnibiRSeqSubprogramVector;
 typedef ONIBI_VECTOR(OnibiBackrefDesc) OnibiBackrefDescVector;
 typedef struct {
     OnibiSubprogramId semantic_id;
@@ -84,11 +86,66 @@ typedef ONIBI_VECTOR(OnibiSubprogramVariant) OnibiSubprogramVariantVector;
 ONIBI_VECTOR_DEFINE(onibi_subprogram_variant_vector,
 		    OnibiSubprogramVariantVector, OnibiSubprogramVariant, 4,
 		    "subprogram variant vector is too large")
+typedef struct {
+    OnibiAstId absence_ast_id;
+    OnibiAstId target_capture_ast_id;
+    OnibiAstId pushed_witness_ast_id;
+    OnibiAstId repeat_ast_id;
+    OnibiAstId sequence_ast_id;
+    OnibiAstId suffix_ast_id;
+    OnibiSubprogramId semantic_owner_id;
+    size_t suffix_child_index;
+    uint16_t target_close_slot;
+    uint16_t pushed_witness_close_slot;
+    uint8_t target_start_kind;
+} OnibiLogicalAbsenceCaptureRelation;
+typedef ONIBI_VECTOR(OnibiLogicalAbsenceCaptureRelation)
+    OnibiLogicalAbsenceCaptureRelationVector;
+ONIBI_VECTOR_DEFINE(onibi_logical_absence_capture_relation_vector,
+		    OnibiLogicalAbsenceCaptureRelationVector,
+		    OnibiLogicalAbsenceCaptureRelation, 4,
+		    "absence capture relation vector is too large")
+typedef struct {
+    uint32_t logical_relation_index;
+    OnibiSubprogramId semantic_owner_id;
+    OnibiSubprogramId physical_owner_id;
+} OnibiAbsenceCaptureRelationOwner;
+typedef ONIBI_VECTOR(OnibiAbsenceCaptureRelationOwner)
+    OnibiAbsenceCaptureRelationOwnerVector;
+ONIBI_VECTOR_DEFINE(onibi_absence_capture_relation_owner_vector,
+		    OnibiAbsenceCaptureRelationOwnerVector,
+		    OnibiAbsenceCaptureRelationOwner, 4,
+		    "absence capture relation owner vector is too large")
+typedef ONIBI_VECTOR(OnibiAbsenceCaptureRelation)
+    OnibiAbsenceCaptureRelationVector;
+ONIBI_VECTOR_DEFINE(onibi_absence_capture_relation_vector,
+		    OnibiAbsenceCaptureRelationVector,
+		    OnibiAbsenceCaptureRelation, 4,
+		    "absence capture relation vector is too large")
 typedef struct OnibiTaggedNfa OnibiTaggedNfa;
+/* Mutable GIR-side subprogram records use GIR IDs.  RSeq lowering checks and
+ * converts these fields to the serialized OnibiStateId type. */
+typedef struct {
+    OnibiGirStateId entry;
+    OnibiGirStateId accept;
+    uint32_t flags;
+    OnibiOptionEnv option_env;
+    uint32_t entry_edge_base;
+    uint32_t width_base;
+    uint16_t entry_edge_count;
+    uint16_t width_count;
+    uint8_t kind;
+    uint8_t effects;
+    uint16_t reserved;
+} OnibiRSeqSubprogramEntry;
+typedef char onibi_gir_subprogram_entry_size_must_be_36
+    [(sizeof(OnibiRSeqSubprogramEntry) == 36) ? 1 : -1];
+typedef ONIBI_VECTOR(OnibiRSeqSubprogramEntry) OnibiRSeqSubprogramVector;
+
 typedef struct {
     OnibiGirStateVector states;
     OnibiGirEdgeVector edges;
-    long next_id;
+    OnibiGirStateId next_id;
     long capture_count;
     long counter_count;
     OnibiGuardVector capture_guards;
@@ -114,6 +171,11 @@ typedef struct {
     uint16_t nullable_scopes[256];
     size_t nullable_scope_count;
     OnibiSubprogramVariantVector subprogram_variants;
+    OnibiLogicalAbsenceCaptureRelationVector absence_capture_relations;
+    OnibiAbsenceCaptureRelationOwnerVector absence_capture_relation_owners;
+    OnibiAbsenceCaptureRelationVector physical_absence_capture_relations;
+    OnibiSubprogramId active_semantic_subprogram_id;
+    OnibiSubprogramId active_physical_subprogram_id;
     int capture_order_required;
     onibi_allocation_owner_t *allocation_owner;
     OnibiTaggedNfa *nfa;
@@ -131,24 +193,24 @@ typedef struct {
     const OnibiIdVector *lookbehind_widths;
     const OnibiSemanticClassVector *classes;
     const OnibiIdVector *progress_slots;
-    long next_id;
+    const OnibiAbsenceCaptureRelationVector *absence_capture_relations;
+    OnibiGirStateId next_id;
     long capture_count;
     long counter_count;
-    long accept;
-    long root_entry;
+    OnibiGirStateId accept;
+    OnibiGirStateId root_entry;
     size_t semantic_subprogram_count;
     uint32_t options;
 } OnibiGIRView;
 ONIBI_VECTOR_DEFINE(onibi_id_vector, OnibiIdVector, OnibiStateId, 8,
 		    "GIR state vector is too large")
 
-static void
-onibi_id_vector_single(OnibiIdVector *vector, OnibiStateId value,
-		       onibi_allocation_owner_t *owner)
+static OnibiStateId
+onibi_gir_state_id_to_rseq_state_id(OnibiGirStateId id)
 {
-    onibi_id_vector_init(vector);
-    onibi_id_vector_bind(vector, owner);
-    onibi_id_vector_push(vector, value);
+    if (id == ONIBI_GIR_STATE_NONE)
+	rb_raise(eRegexpError, "GIR state ID is reserved");
+    return (OnibiStateId)id;
 }
 
 ONIBI_VECTOR_DEFINE(onibi_g_action_vector, OnibiGActionVector, OnibiGAction, 8,
@@ -194,7 +256,7 @@ onibi_guard_vector_bind(OnibiGuardVector *vector,
 
 static const OnibiGuardEntry *
 onibi_guard_vector_find_entry(const OnibiGuardVector *vector,
-			      OnibiStateId state)
+			      OnibiNfaStateId state)
 {
     for (size_t i = 0; i < vector->count; i++)
 	if (vector->entries[i].state == state) return &vector->entries[i];
@@ -202,7 +264,7 @@ onibi_guard_vector_find_entry(const OnibiGuardVector *vector,
 }
 
 static void
-onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state,
+onibi_guard_vector_add(OnibiGuardVector *vector, OnibiNfaStateId state,
 		       const OnibiGActionVector *actions)
 {
     for (size_t i = 0; i < vector->count; i++) {
@@ -410,15 +472,15 @@ typedef struct {
 } OnibiGIREdgeIndexSlot;
 
 typedef struct {
-    long from;
-    long to;
+    OnibiGirStateId from;
+    OnibiGirStateId to;
     const OnibiGActionVector *actions;
     size_t next_outgoing;
     size_t next_incoming;
 } OnibiGIRNullableEdgeIndex;
 
 typedef struct {
-    long to;
+    OnibiGirStateId to;
     const OnibiGActionVector *actions;
     uint32_t subprogram_id;
     uint8_t subprogram;
@@ -466,7 +528,7 @@ onibi_gir_hash_bytes(uint64_t hash, const void *data, size_t length)
 }
 
 static uint64_t
-onibi_gir_action_vector_hash(long from, long to,
+onibi_gir_action_vector_hash(OnibiGirStateId from, OnibiGirStateId to,
 			     const OnibiGActionVector *actions)
 {
     uint64_t hash = UINT64_C(1469598103934665603);
@@ -1033,12 +1095,18 @@ onibi_gir_nullable_validate_all_paths(const OnibiGIRView *view,
 static void
 onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
 			const OnibiGAction *action, int start_action,
-			long edge_from, long edge_to)
+			OnibiGirStateId edge_from, OnibiGirStateId edge_to)
 {
-    if ((unsigned int)action->code > ONIBI_GA_ORDER ||
+    if ((unsigned int)action->code > ONIBI_GA_CAPTURE_RELATION ||
 	action->code == ONIBI_GA_END)
 	onibi_gir_verification_error("action opcode is invalid");
-    if (action->set > 1 || action->positive > 1 || action->has_slot > 1 ||
+
+    int relation_marker = action->code == ONIBI_GA_CAPTURE_RELATION;
+    if ((!relation_marker && action->set > 1) ||
+	(relation_marker &&
+	 (action->set < ONIBI_CAPTURE_RELATION_ROLE_CLOSE ||
+	  action->set > ONIBI_CAPTURE_RELATION_ROLE_SUFFIX)) ||
+	action->positive > 1 || action->has_slot > 1 ||
 	action->has_assert_kind > 1 || action->has_arg32 > 1 ||
 	action->has_subprogram > 1)
 	onibi_gir_verification_error("action payload flag is invalid");
@@ -1059,12 +1127,9 @@ onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
 		action->code == ONIBI_GA_CAPTURE_CLOSE
 		    ? "capture-close payload is invalid"
 		    : "capture-open payload is invalid");
-	if (action->set != 0)
-	    onibi_gir_verification_error(
-		action->code == ONIBI_GA_CAPTURE_CLOSE
-		    ? "capture-close payload is invalid"
-		    : "capture-open payload is invalid");
 	int close = action->code == ONIBI_GA_CAPTURE_CLOSE;
+	if (close && action->set != 0)
+	    onibi_gir_verification_error("capture-close payload is invalid");
 	if (action->slot >= capture_slots ||
 	    ((action->slot & 1U) != (close ? 1U : 0U)))
 	    onibi_gir_verification_error("capture slot is invalid");
@@ -1167,6 +1232,29 @@ onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
 	    action->has_subprogram || action->set || action->positive)
 	    onibi_gir_verification_error("ordered capture action is invalid");
 	break;
+    case ONIBI_GA_CAPTURE_RELATION: {
+	if (action->set < ONIBI_CAPTURE_RELATION_ROLE_CLOSE ||
+	    action->set > ONIBI_CAPTURE_RELATION_ROLE_SUFFIX ||
+	    !action->has_slot || (action->slot & 1U) == 0 ||
+	    action->slot >= (uint32_t)view->capture_count * 2U ||
+	    !action->has_arg32 || action->arg32 == 0 ||
+	    view->absence_capture_relations == NULL ||
+	    action->arg32 > view->absence_capture_relations->count ||
+	    action->has_assert_kind || action->has_subprogram ||
+	    action->positive)
+	    onibi_gir_verification_error(
+		"absence capture relation marker is invalid");
+	const OnibiAbsenceCaptureRelation *relation =
+	    &view->absence_capture_relations->entries[action->arg32 - 1U];
+	if (action->slot != relation->target_close_slot ||
+	    relation->subprogram_id == 0 ||
+	    relation->subprogram_id >= view->subprograms->count ||
+	    view->subprograms->entries[relation->subprogram_id].kind !=
+		ONIBI_SUBPROGRAM_ABSENCE)
+	    onibi_gir_verification_error(
+		"absence capture relation owner is invalid");
+	break;
+    }
     default: onibi_gir_verification_error("action opcode is invalid");
     }
 }
@@ -1175,7 +1263,8 @@ static void
 onibi_gir_verify_action_vector(const OnibiGIRView *view,
 			       OnibiGIRVerifyOwner *owner,
 			       const OnibiGActionVector *actions,
-			       int start_action, long edge_from, long edge_to)
+			       int start_action, OnibiGirStateId edge_from,
+			       OnibiGirStateId edge_to)
 {
     if (actions->count > actions->capacity ||
 	(actions->count != 0 && actions->entries == NULL))
@@ -1183,6 +1272,25 @@ onibi_gir_verify_action_vector(const OnibiGIRView *view,
     for (size_t i = 0; i < actions->count; i++) {
 	onibi_gir_verify_action(view, owner, &actions->entries[i], start_action,
 				edge_from, edge_to);
+	const OnibiGAction *action = &actions->entries[i];
+	if (action->code == ONIBI_GA_CAPTURE_RELATION &&
+	    action->set == ONIBI_CAPTURE_RELATION_ROLE_CLOSE) {
+	    size_t previous = i;
+	    while (previous > 0) {
+		const OnibiGAction *prior = &actions->entries[previous - 1U];
+		if (prior->code != ONIBI_GA_CAPTURE_RELATION ||
+		    prior->set != ONIBI_CAPTURE_RELATION_ROLE_CLOSE ||
+		    prior->slot != action->slot)
+		    break;
+		previous--;
+	    }
+	    if (previous == 0 ||
+		actions->entries[previous - 1U].code !=
+		    ONIBI_GA_CAPTURE_CLOSE ||
+		actions->entries[previous - 1U].slot != action->slot)
+		onibi_gir_verification_error(
+		    "absence capture relation close is not paired");
+	}
     }
 }
 
@@ -1307,7 +1415,8 @@ onibi_gir_verify_body(VALUE opaque)
 				 ONIBI_OPT_NOENCODING;
     if (!view || !view->states || !view->edges || !view->start_edges ||
 	!view->subprogram_entries || !view->subprograms ||
-	!view->lookbehind_widths || !view->progress_slots)
+	!view->lookbehind_widths || !view->progress_slots ||
+	!view->absence_capture_relations)
 	onibi_gir_verification_error("typed GIR input is incomplete");
     if (view->subprograms->count == 0 ||
 	view->subprograms->count > view->subprograms->capacity ||
@@ -1334,18 +1443,47 @@ onibi_gir_verify_body(VALUE opaque)
 	(view->lookbehind_widths->count != 0 &&
 	 view->lookbehind_widths->entries == NULL))
 	onibi_gir_verification_error("lookbehind width set is invalid");
+    if (view->absence_capture_relations->count > UINT32_MAX ||
+	view->absence_capture_relations->count >
+	    view->absence_capture_relations->capacity ||
+	(view->absence_capture_relations->count != 0 &&
+	 view->absence_capture_relations->entries == NULL))
+	onibi_gir_verification_error(
+	    "absence capture relation table is invalid");
     if (view->capture_count < 0 ||
 	(uint64_t)view->capture_count > ONIBI_GIR_MAX_CAPTURE_COUNT)
 	onibi_gir_verification_error("capture count exceeds the operand limit");
     if (view->counter_count < 0 ||
 	(uint64_t)view->counter_count > ONIBI_GIR_MAX_COUNTER_COUNT)
 	onibi_gir_verification_error("counter count exceeds the operand limit");
+    for (size_t i = 0; i < view->absence_capture_relations->count; i++) {
+	const OnibiAbsenceCaptureRelation *relation =
+	    &view->absence_capture_relations->entries[i];
+	if (relation->subprogram_id == 0 ||
+	    relation->subprogram_id >= view->subprograms->count ||
+	    view->subprograms->entries[relation->subprogram_id].kind !=
+		ONIBI_SUBPROGRAM_ABSENCE ||
+	    relation->target_close_slot >= (uint32_t)view->capture_count * 2U ||
+	    relation->pushed_witness_close_slot >=
+		(uint32_t)view->capture_count * 2U ||
+	    (relation->target_close_slot & 1U) == 0 ||
+	    (relation->pushed_witness_close_slot & 1U) == 0 ||
+	    relation->target_close_slot ==
+		relation->pushed_witness_close_slot ||
+	    relation->target_start_kind > ONIBI_RELATION_TARGET_START_PUSHED ||
+	    relation->reserved[0] != 0 || relation->reserved[1] != 0 ||
+	    relation->reserved[2] != 0)
+	    onibi_gir_verification_error(
+		"absence capture relation record is invalid");
+    }
     if ((view->options & ~option_mask) != 0)
 	onibi_gir_verification_error("option environment is unresolved");
-    if (view->states->count == 0 || view->states->count > UINT32_MAX ||
+    if (view->states->count == 0 ||
+	view->states->count >= (size_t)ONIBI_GIR_STATE_NONE ||
 	view->states->count > view->states->capacity ||
-	view->states->entries == NULL || view->next_id < 0 ||
-	(size_t)view->next_id != view->states->count)
+	view->states->entries == NULL ||
+	(size_t)view->next_id != view->states->count ||
+	view->next_id == ONIBI_GIR_STATE_NONE)
 	onibi_gir_verification_error("state IDs are not contiguous");
     if (!view->classes || view->classes->count > UINT32_MAX ||
 	view->classes->count > view->classes->capacity ||
@@ -1411,7 +1549,8 @@ onibi_gir_verify_body(VALUE opaque)
 
     for (size_t i = 0; i < view->states->count; i++) {
 	const OnibiGirStateEntry *state = &view->states->entries[i];
-	if (state->id != (long)i)
+	if (state->id == ONIBI_GIR_STATE_NONE ||
+	    state->id != (OnibiGirStateId)i)
 	    onibi_gir_verification_error("state IDs are not contiguous");
 	if ((unsigned int)state->opcode > ONIBI_G_ABSENT ||
 	    (state->payload_index != 0 && state->opcode != ONIBI_G_BACKREF))
@@ -1484,14 +1623,15 @@ onibi_gir_verify_body(VALUE opaque)
 	}
     }
 
-    long last_source = -1;
+    OnibiGirStateId last_source = ONIBI_GIR_STATE_NONE;
     for (size_t i = 0; i < view->edges->count; i++) {
 	const OnibiGirEdgeEntry *edge = &view->edges->entries[i];
-	if (edge->from < 0 || edge->to < 0 ||
+	if (edge->from == ONIBI_GIR_STATE_NONE ||
+	    edge->to == ONIBI_GIR_STATE_NONE ||
 	    (size_t)edge->from >= view->states->count ||
 	    (size_t)edge->to >= view->states->count)
 	    onibi_gir_verification_error("edge state is out of range");
-	if (edge->from < last_source)
+	if (last_source != ONIBI_GIR_STATE_NONE && edge->from < last_source)
 	    onibi_gir_verification_error("ordered edges are not preserved");
 	last_source = edge->from;
 	if (edge->action_offset != 0)
@@ -1506,7 +1646,8 @@ onibi_gir_verify_body(VALUE opaque)
     int root_started = 0;
     for (size_t i = 0; i < view->start_edges->count; i++) {
 	const OnibiGirEdgeEntry *edge = &view->start_edges->entries[i];
-	if (edge->from != -1 || edge->to < 0 ||
+	if (edge->from != ONIBI_GIR_STATE_NONE ||
+	    edge->to == ONIBI_GIR_STATE_NONE ||
 	    (size_t)edge->to >= view->states->count || edge->action_offset != 0)
 	    onibi_gir_verification_error("start edge is invalid");
 	if (edge->to == view->root_entry) root_started = 1;
@@ -1517,7 +1658,8 @@ onibi_gir_verify_body(VALUE opaque)
     if (!root_started)
 	onibi_gir_verification_error("root entry has no start edge");
 
-    if (view->accept < 0 || view->root_entry < 0 ||
+    if (view->accept == ONIBI_GIR_STATE_NONE ||
+	view->root_entry == ONIBI_GIR_STATE_NONE ||
 	(size_t)view->accept >= view->states->count ||
 	(size_t)view->root_entry >= view->states->count ||
 	view->states->entries[view->accept].opcode != ONIBI_G_ACCEPT)
@@ -1534,7 +1676,9 @@ onibi_gir_verify_body(VALUE opaque)
 		? ONIBI_SUBPROGRAM_EFFECT_POSITIVE |
 		      ONIBI_SUBPROGRAM_EFFECT_PUBLISH_CAPTURES
 		: 0;
-	if (subprogram->entry >= view->states->count ||
+	if (subprogram->entry == ONIBI_GIR_STATE_NONE ||
+	    subprogram->accept == ONIBI_GIR_STATE_NONE ||
+	    subprogram->entry >= view->states->count ||
 	    subprogram->accept >= view->states->count ||
 	    view->states->entries[subprogram->accept].opcode !=
 		ONIBI_G_ACCEPT ||
@@ -1548,9 +1692,8 @@ onibi_gir_verify_body(VALUE opaque)
 	     subprogram->flags != ONIBI_SUBPROGRAM_ABSENT))
 	    onibi_gir_verification_error("subprogram descriptor is invalid");
 	if (i == 0 &&
-	    (subprogram->entry != (OnibiStateId)view->root_entry ||
-	     subprogram->accept != (OnibiStateId)view->accept ||
-	     subprogram->flags != 0 ||
+	    (subprogram->entry != view->root_entry ||
+	     subprogram->accept != view->accept || subprogram->flags != 0 ||
 	     subprogram->kind != ONIBI_SUBPROGRAM_ROOT ||
 	     subprogram->entry_edge_count != 0 || subprogram->width_count != 0))
 	    onibi_gir_verification_error("root subprogram is invalid");
@@ -1559,7 +1702,7 @@ onibi_gir_verify_body(VALUE opaque)
 		(uint64_t)subprogram->entry_edge_base +
 			subprogram->entry_edge_count >
 		    view->subprogram_entries->count ||
-		subprogram->entry != (OnibiStateId)view->subprogram_entries
+		subprogram->entry != view->subprogram_entries
 					 ->entries[subprogram->entry_edge_base]
 					 .to)
 		onibi_gir_verification_error("subprogram entry is invalid");
@@ -1567,7 +1710,8 @@ onibi_gir_verify_body(VALUE opaque)
 		const OnibiGirEdgeEntry *entry =
 		    &view->subprogram_entries
 			 ->entries[subprogram->entry_edge_base + j];
-		if (entry->from != (long)i || entry->to < 0 ||
+		if (entry->from != (OnibiGirStateId)i ||
+		    entry->to == ONIBI_GIR_STATE_NONE ||
 		    (size_t)entry->to >= view->states->count)
 		    onibi_gir_verification_error("subprogram entry is invalid");
 		onibi_gir_verify_action_vector(view, owner, &entry->actions, 1,
@@ -1618,26 +1762,27 @@ onibi_gir_verify(const OnibiGIRView *view)
 static uint8_t
 onibi_rseq_physical_action_op(OnibiGActionOp code)
 {
-    return (uint8_t)(code == ONIBI_GA_CAPTURE_OPEN ||
-			     code == ONIBI_GA_CAPTURE_CLOSE ||
-			     code == ONIBI_GA_CAPTURE_OPEN_UNSCOPED
-			 ? ONIBI_RA_CAPTURE
-		     : code == ONIBI_GA_MATCH_RESET ? ONIBI_RA_MATCH_RESET
-		     : code == ONIBI_GA_ASSERT_POSITION
-			 ? ONIBI_RA_ASSERT_POSITION
-		     : code == ONIBI_GA_TEST_CAPTURE ? ONIBI_RA_TEST_CAPTURE
-		     : code == ONIBI_GA_COUNTER_INIT ? ONIBI_RA_COUNTER_SET
-		     : code == ONIBI_GA_COUNTER_INCREMENT ? ONIBI_RA_COUNTER_ADD
-		     : code == ONIBI_GA_TEST_COUNTER_LT ||
-			     code == ONIBI_GA_TEST_COUNTER_GE
-			 ? ONIBI_RA_COUNTER_TEST
-		     : code == ONIBI_GA_PROGRESS      ? ONIBI_RA_PROGRESS
-		     : code == ONIBI_GA_NULL_ENTER    ? ONIBI_RA_NULL_ENTER
-		     : code == ONIBI_GA_NULL_CAPTURE  ? ONIBI_RA_NULL_CAPTURE
-		     : code == ONIBI_GA_NULL_CONTINUE ? ONIBI_RA_NULL_CONTINUE
-		     : code == ONIBI_GA_NULL_STOP     ? ONIBI_RA_NULL_STOP
-		     : code == ONIBI_GA_ORDER	      ? ONIBI_RA_ORDER
-						      : ONIBI_RA_END);
+    return (
+	uint8_t)(code == ONIBI_GA_CAPTURE_OPEN ||
+			 code == ONIBI_GA_CAPTURE_CLOSE ||
+			 code == ONIBI_GA_CAPTURE_OPEN_UNSCOPED
+		     ? ONIBI_RA_CAPTURE
+		 : code == ONIBI_GA_MATCH_RESET	      ? ONIBI_RA_MATCH_RESET
+		 : code == ONIBI_GA_ASSERT_POSITION   ? ONIBI_RA_ASSERT_POSITION
+		 : code == ONIBI_GA_TEST_CAPTURE      ? ONIBI_RA_TEST_CAPTURE
+		 : code == ONIBI_GA_COUNTER_INIT      ? ONIBI_RA_COUNTER_SET
+		 : code == ONIBI_GA_COUNTER_INCREMENT ? ONIBI_RA_COUNTER_ADD
+		 : code == ONIBI_GA_TEST_COUNTER_LT ||
+			 code == ONIBI_GA_TEST_COUNTER_GE
+		     ? ONIBI_RA_COUNTER_TEST
+		 : code == ONIBI_GA_PROGRESS	     ? ONIBI_RA_PROGRESS
+		 : code == ONIBI_GA_NULL_ENTER	     ? ONIBI_RA_NULL_ENTER
+		 : code == ONIBI_GA_NULL_CAPTURE     ? ONIBI_RA_NULL_CAPTURE
+		 : code == ONIBI_GA_NULL_CONTINUE    ? ONIBI_RA_NULL_CONTINUE
+		 : code == ONIBI_GA_NULL_STOP	     ? ONIBI_RA_NULL_STOP
+		 : code == ONIBI_GA_ORDER	     ? ONIBI_RA_ORDER
+		 : code == ONIBI_GA_CAPTURE_RELATION ? ONIBI_RA_CAPTURE_RELATION
+						     : ONIBI_RA_END);
 }
 static void
 onibi_rseq_literal_payload_vector_init(OnibiRSeqLiteralPayloadVector *vector)
@@ -1739,10 +1884,10 @@ static onibi_fragment_t
 onibi_fragment_empty(onibi_gir_builder_t *builder)
 {
     onibi_fragment_t fragment;
-    onibi_id_vector_init(&fragment.starts);
-    onibi_id_vector_bind(&fragment.starts, builder->allocation_owner);
-    onibi_id_vector_init(&fragment.exits);
-    onibi_id_vector_bind(&fragment.exits, builder->allocation_owner);
+    onibi_nfa_state_id_vector_init(&fragment.starts);
+    onibi_nfa_state_id_vector_bind(&fragment.starts, builder->allocation_owner);
+    onibi_nfa_state_id_vector_init(&fragment.exits);
+    onibi_nfa_state_id_vector_bind(&fragment.exits, builder->allocation_owner);
     onibi_g_action_vector_init(&fragment.start_actions);
     onibi_g_action_vector_bind(&fragment.start_actions,
 			       builder->allocation_owner);
@@ -1756,7 +1901,7 @@ onibi_fragment_empty(onibi_gir_builder_t *builder)
 
 static void
 onibi_add_exit_guard_fragment(onibi_gir_builder_t *builder,
-			      const OnibiIdVector *exits,
+			      const OnibiNfaStateIdVector *exits,
 			      const OnibiGActionVector *actions)
 {
     for (size_t i = 0; i < exits->count; i++) {

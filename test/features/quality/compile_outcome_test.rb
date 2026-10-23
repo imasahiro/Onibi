@@ -14,21 +14,23 @@ class CompileOutcomeTest < Minitest::Test
   end
 
   def test_initialization_error_releases_tokens_before_reraising
+    diagnostic = {}
     error = assert_raises(Onibi::RegexpError) do
-      # MRI accepts this comment, but the Onibi parser rejects it. This
-      # reaches the protected compiler path after tokenization succeeds.
-      Onibi::Regexp.new("(?#x)a")
+      Onibi::Regexp.send(
+        :__onibi_initialization_failure_diagnostics__, "a", diagnostic
+      )
     end
 
-    assert_equal "unexpected token in expression", error.message
+    assert_equal "injected internal initialization failure", error.message
+    assert diagnostic.fetch(:failure_injected)
+    assert_operator diagnostic.fetch(:token_count_before_cleanup), :>, 0
+    assert_equal 0, diagnostic.fetch(:token_count_after_cleanup)
+    assert diagnostic.fetch(:token_storage_released)
+    assert_equal :internal, diagnostic.fetch(:compile_error_kind)
+    refute diagnostic.fetch(:fallback_selected)
 
-    root = File.expand_path("../../..", __dir__)
-    source = File.read(File.join(root, "ext/onibi/rseq.c"))
-    decision = source[/if \(!onibi_compile_outcome_select_fallback.*?rb_jump_tag\(program_state\);/m]
-
-    refute_nil decision
-    assert_match(/onibi_token_vector_free\(&tokens\);\s*rb_jump_tag\(program_state\);/m,
-                 decision)
+    regexp = Onibi::Regexp.new("a")
+    assert_equal ["a"], regexp.match("a").to_a
   end
 
   def test_internal_failure_re_raises_through_the_initialization_decision

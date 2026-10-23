@@ -174,8 +174,19 @@ enum {
     ONIBI_RSEQ_FEATURE_FIRST_BITMAP = 1u << 6,
     ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD = 1u << 7,
     ONIBI_RSEQ_FEATURE_LITERAL_CASEFOLD = 1u << 8,
-    ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY = 1u << 9
+    ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY = 1u << 9,
+    ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND = 1u << 10,
+    ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND = 1u << 11,
+    ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP = 1u << 12,
+    ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM = 1u << 13,
+    ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE = 1u << 14,
+    ONIBI_RSEQ_FEATURE_CAPTURE_ROLLBACK = 1u << 15,
+    ONIBI_RSEQ_FEATURE_ABSENCE_CAPTURE_RELATION = 1u << 16
 };
+
+#define ONIBI_RSEQ_DIRECT_FOLD_WIDTH_LIMIT 7U
+
+#define ONIBI_RSEQ_CLASS_TAIL_MAP_FLAG_ANCHORED UINT8_C(1)
 
 typedef enum {
     ONIBI_G_ACCEPT = 0,
@@ -208,7 +219,8 @@ typedef enum {
     ONIBI_GA_NULL_CAPTURE,
     ONIBI_GA_NULL_CONTINUE,
     ONIBI_GA_NULL_STOP,
-    ONIBI_GA_ORDER
+    ONIBI_GA_ORDER,
+    ONIBI_GA_CAPTURE_RELATION
 } OnibiGActionOp;
 
 typedef enum {
@@ -244,8 +256,16 @@ typedef enum {
     ONIBI_RA_NULL_CAPTURE,
     ONIBI_RA_NULL_CONTINUE,
     ONIBI_RA_NULL_STOP,
-    ONIBI_RA_ORDER
+    ONIBI_RA_ORDER,
+    ONIBI_RA_CAPTURE_RELATION
 } OnibiRActionOp;
+
+enum {
+    ONIBI_CAPTURE_RELATION_ROLE_CLOSE = 1,
+    ONIBI_CAPTURE_RELATION_ROLE_LOOP = 2,
+    ONIBI_CAPTURE_RELATION_ROLE_EXIT = 3,
+    ONIBI_CAPTURE_RELATION_ROLE_SUFFIX = 4
+};
 
 typedef struct {
     uint8_t op;
@@ -257,6 +277,8 @@ typedef struct {
 /* Flags preserve semantic action variants in the compact physical form. */
 #define ONIBI_RA_CAPTURE_CLOSE UINT8_C(1)
 #define ONIBI_RA_CAPTURE_OPEN_UNSCOPED UINT8_C(2)
+#define ONIBI_RA_CAPTURE_OPEN_START_PUSH UINT8_C(4)
+#define ONIBI_GA_CAPTURE_OPEN_START_PUSH UINT8_C(1)
 #define ONIBI_RA_TEST_CAPTURE_SET UINT8_C(1)
 #define ONIBI_RA_TEST_CAPTURE_UNSET UINT8_C(2)
 #define ONIBI_RA_COUNTER_GE UINT8_C(1)
@@ -342,7 +364,20 @@ typedef struct {
 
 #define ONIBI_ACCEPT_STATE UINT32_MAX
 #define ONIBI_RSEQ_MAGIC UINT32_C(0x4f4e5251) /* "ONRQ" */
-#define ONIBI_RSEQ_VERSION UINT16_C(1)
+#define ONIBI_RSEQ_VERSION UINT16_C(8)
+
+typedef enum {
+    ONIBI_RELATION_TARGET_START_DIRECT = 0,
+    ONIBI_RELATION_TARGET_START_PUSHED = 1
+} OnibiAbsenceCaptureTargetStartKind;
+
+typedef struct {
+    uint32_t subprogram_id;
+    uint16_t target_close_slot;
+    uint16_t pushed_witness_close_slot;
+    uint8_t target_start_kind;
+    uint8_t reserved[3];
+} OnibiAbsenceCaptureRelation;
 
 typedef struct {
     uint32_t magic;
@@ -376,6 +411,22 @@ typedef struct {
     uint8_t first_bitmap[32];
     uint8_t prefix_length;
     uint8_t prefix[31];
+    uint32_t end_search_bound_bytes;
+    uint32_t search_origin_bound_delta_bytes;
+    uint8_t class_tail_map_byte;
+    uint8_t class_tail_map_flags;
+    uint16_t class_tail_map_reserved;
+    uint32_t class_tail_map_dmin_bytes;
+    uint32_t class_tail_map_dmax_bytes;
+    uint32_t end_search_minimum_bytes;
+    uint32_t end_search_minimum_repeat_bytes;
+    uint32_t end_search_minimum_capture_source_bytes;
+    uint32_t end_search_fold_normalized_bytes;
+    uint32_t end_search_fold_normalized_codepoints;
+    uint32_t end_search_fold_dmin_bytes;
+    uint32_t end_search_fold_dmax_bytes;
+    uint32_t absence_capture_relation_count;
+    uint32_t absence_capture_relations_offset;
 } OnibiRSeqHeader;
 
 /* Read-only view over a published RSeq blob.  The VM uses this view for
@@ -393,6 +444,7 @@ typedef struct {
     const uint32_t *backref_capture_ids;
     const OnibiSubprogramDesc *subprograms;
     const uint32_t *lookbehind_widths;
+    const OnibiAbsenceCaptureRelation *absence_capture_relations;
     uint32_t class_stack_capacity;
     uint8_t regular_capable;
 } OnibiRSeqView;
@@ -400,6 +452,8 @@ typedef struct {
 typedef char onibi_rstate_size_must_be_12[(sizeof(OnibiRState) == 12) ? 1 : -1];
 typedef char onibi_redge_size_must_be_8[(sizeof(OnibiREdge) == 8) ? 1 : -1];
 typedef char onibi_raction_size_must_be_8[(sizeof(OnibiRAction) == 8) ? 1 : -1];
+typedef char onibi_absence_capture_relation_size_must_be_12
+    [(sizeof(OnibiAbsenceCaptureRelation) == 12) ? 1 : -1];
 typedef char
     onibi_class_desc_size_must_be_8[(sizeof(OnibiClassDesc) == 8) ? 1 : -1];
 typedef char

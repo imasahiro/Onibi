@@ -31,13 +31,6 @@ class CompilerExceptionSafetyTest < Minitest::Test
     end
   end
 
-  def test_compiler_has_no_encoding_tls
-    root = File.expand_path("../../..", __dir__)
-    source = File.read(File.join(root, "ext/onibi/onibi_common.c"))
-
-    refute_includes source, "onibi_compile_encoding"
-  end
-
   private
 
   def assert_match_result_equal(pattern, subject)

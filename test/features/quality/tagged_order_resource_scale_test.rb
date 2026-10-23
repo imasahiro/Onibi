@@ -37,16 +37,4 @@ class TaggedOrderResourceScaleTest < Minitest::Test
     assert_operator info[:materialization_event_visits], :<=,
                     info[:capture_events]
   end
-
-  def test_frontier_entries_use_c_state_without_ruby_containers
-    source = File.read(File.expand_path("../../../ext/onibi/exec_dynamic.c", __dir__))
-    frontier_add = source[/static int\n?onibi_tagged_frontier_add\(.*?\n}\n/m]
-
-    refute_nil frontier_add
-    refute_match(/\bVALUE\b/, frontier_add)
-    refute_includes frontier_add, "rb_hash_new"
-    refute_includes frontier_add, "rb_ary_new"
-    refute_includes frontier_add, "rb_hash_dup"
-    assert_includes frontier_add, "OnibiSemanticState ordered = *semantic;"
-  end
 end

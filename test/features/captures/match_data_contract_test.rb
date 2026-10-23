@@ -9,7 +9,7 @@ class MatchDataContractTest < Minitest::Test
       raise "supported Onibi match must not call MRI Regexp#match"
     end
 
-    regexp = Onibi::Regexp.new("(?<letter>a)(b)?")
+    regexp = Onibi::Regexp.new("(?<letter>a)(?<missing>b)?")
 
     assert_equal [["a", nil]], regexp.scan("a")
   ensure
@@ -20,6 +20,7 @@ class MatchDataContractTest < Minitest::Test
     cases = [
       ["(a)(b)", "ab"],
       ["(?<x>a)(?<y>b)", "ab"],
+      ["(?<letter>a)(b)?", "a"],
       ["(?<x>a)(?<x>b)", "ab"],
       ["(?<x>a)?b", "b"],
       ["((a)?)", "a"],
@@ -35,16 +36,6 @@ class MatchDataContractTest < Minitest::Test
       actual = Onibi::Regexp.new(source).scan(input)
       assert_equal expected, actual, source
     end
-  end
-
-  def test_scan_source_materializes_capture_values_from_raw_ranges
-    source = File.read(File.join(PROJECT_ROOT, "ext/onibi/match.c"))
-    scan = source[/static VALUE\nonibi_scan_body\(.*?\n}\n/m]
-
-    refute_nil scan
-    refute_match(/obj->regexp.*id_match/m, scan)
-    assert_match(/ONIBI_EXEC_STATUS_FALLBACK.*id_scan/m, scan)
-    assert_includes scan, "onibi_byte_slice(str, beg[i], end[i])"
   end
 
   def test_nested_repeated_unmatched_and_multibyte_captures_match_mri

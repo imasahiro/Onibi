@@ -1,3 +1,9 @@
+#include "onibi_encoding_internal.h"
+#include "onibi_exec_internal.h"
+#include "onibi_rseq_internal.h"
+
+#include <stdlib.h>
+
 typedef struct {
     uint32_t state;
     OnibiBytePos pos;
@@ -29,6 +35,7 @@ onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view)
     view->backref_capture_ids = NULL;
     view->subprograms = NULL;
     view->lookbehind_widths = NULL;
+    view->absence_capture_relations = NULL;
     view->class_stack_capacity = 0;
     view->regular_capable = 0;
     return 1;
@@ -56,6 +63,9 @@ onibi_rseq_view_bind(OnibiRSeqView *view)
 	(const OnibiSubprogramDesc *)(view->blob + header->subprograms_offset);
     view->lookbehind_widths =
 	(const uint32_t *)(view->blob + header->lookbehind_widths_offset);
+    view->absence_capture_relations =
+	(const OnibiAbsenceCaptureRelation
+	     *)(view->blob + header->absence_capture_relations_offset);
 }
 
 static void
@@ -156,6 +166,284 @@ onibi_rseq_bytes_zero(const unsigned char *bytes, size_t length)
     for (size_t i = 0; i < length; i++)
 	if (bytes[i] != 0) return 0;
     return 1;
+}
+
+static const OnibiRAction *onibi_rseq_action_program(const OnibiRSeqView *view,
+						     uint32_t action_offset,
+						     uint32_t *count);
+
+static int
+onibi_rseq_end_search_minimum_capture_action(const OnibiRAction *action,
+					     uint32_t capture_id)
+{
+    return action->op == ONIBI_RA_CAPTURE &&
+	   (uint32_t)(action->arg16 / 2U) == capture_id;
+}
+
+static int
+onibi_rseq_end_search_minimum_structure_valid(const OnibiRSeqView *view,
+					      int end_buffer_assertion_seen)
+{
+    const OnibiRSeqHeader *header = view->header;
+    if (!end_buffer_assertion_seen ||
+	(header->flags & ONIBI_RSEQ_HEADER_FLAG_IGNORECASE) == 0 ||
+	header->exec_kind != ONIBI_EXEC_DYNAMIC || header->capture_count != 1 ||
+	header->semantic_capture_count != 1 || header->backref_count != 1 ||
+	header->subprogram_count != 1 || header->counter_count != 0 ||
+	(header->features & (ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND |
+			     ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND |
+			     ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP)) != 0)
+	return 0;
+
+    uint64_t minimum_sum = (uint64_t)header->end_search_minimum_repeat_bytes +
+			   header->end_search_minimum_capture_source_bytes;
+    if (minimum_sum != header->end_search_minimum_bytes) return 0;
+
+    uint32_t backref_state_count = 0;
+    uint32_t capture_id = UINT32_MAX;
+    for (uint32_t i = 0; i < header->state_count; i++) {
+	const OnibiRState *state = &view->states[i];
+	if (state->op != ONIBI_RS_BACKREF) continue;
+	backref_state_count++;
+	if (state->payload >= header->backref_count) return 0;
+	const OnibiBackrefDesc *backref = &view->backrefs[state->payload];
+	if (backref->capture_count != 1 ||
+	    (backref->flags & ONIBI_BACKREF_FLAG_IGNORE_CASE) == 0 ||
+	    backref->capture_list_off < header->backref_lists_offset ||
+	    (backref->capture_list_off & 3U) != 0)
+	    return 0;
+	uint32_t list_index =
+	    (backref->capture_list_off - header->backref_lists_offset) /
+	    (uint32_t)sizeof(uint32_t);
+	uint64_t list_count = (uint64_t)(header->subprograms_offset -
+					 header->backref_lists_offset) /
+			      sizeof(uint32_t);
+	if (list_index >= list_count) return 0;
+	capture_id = view->backref_capture_ids[list_index];
+    }
+    if (backref_state_count != 1 || capture_id >= header->capture_count)
+	return 0;
+
+    int capture_open_seen = 0;
+    int capture_close_seen = 0;
+    uint32_t position_assertion_count = 0;
+    for (uint32_t i = 0; i < header->action_count; i++) {
+	const OnibiRAction *action = &view->actions[i];
+	if (onibi_rseq_end_search_minimum_capture_action(action, capture_id)) {
+	    if ((action->flags & ONIBI_RA_CAPTURE_CLOSE) != 0)
+		capture_close_seen = 1;
+	    else
+		capture_open_seen = 1;
+	}
+	if (action->op == ONIBI_RA_ASSERT_POSITION) {
+	    position_assertion_count++;
+	    if (action->arg16 != ONIBI_RAP_END_BUFFER) return 0;
+	}
+    }
+    if (!capture_open_seen || !capture_close_seen ||
+	position_assertion_count != 1)
+	return 0;
+
+    int repeated_capture_edge_seen = 0;
+    for (uint32_t state_id = 0; state_id < header->state_count; state_id++) {
+	const OnibiRState *state = &view->states[state_id];
+	for (uint32_t i = 0; i < state->edge_count; i++) {
+	    const OnibiREdge *edge = &view->edges[state->edge_base + i];
+	    if (edge->destination == ONIBI_ACCEPT_STATE ||
+		edge->destination > state_id || edge->action_offset == 0)
+		continue;
+	    uint32_t action_count = 0;
+	    const OnibiRAction *actions = onibi_rseq_action_program(
+		view, edge->action_offset, &action_count);
+	    for (uint32_t j = 0; j < action_count; j++)
+		if (onibi_rseq_end_search_minimum_capture_action(&actions[j],
+								 capture_id))
+		    repeated_capture_edge_seen = 1;
+	}
+    }
+    return repeated_capture_edge_seen;
+}
+
+static int
+onibi_rseq_direct_fold_action_valid(const OnibiRSeqView *view,
+				    uint32_t action_offset, uint8_t op,
+				    uint8_t flags, uint16_t arg16,
+				    uint32_t arg32)
+{
+    uint32_t count = 0;
+    const OnibiRAction *actions =
+	onibi_rseq_action_program(view, action_offset, &count);
+    if (count != 1 || actions == NULL || actions[0].op != op ||
+	actions[0].arg16 != arg16 || actions[0].arg32 != arg32)
+	return 0;
+    if (actions[0].flags == flags) return 1;
+    return op == ONIBI_RA_CAPTURE && (flags & ONIBI_RA_CAPTURE_CLOSE) == 0 &&
+	   (actions[0].flags & ONIBI_RA_CAPTURE_OPEN_START_PUSH) != 0 &&
+	   (actions[0].flags & (uint8_t)~ONIBI_RA_CAPTURE_OPEN_START_PUSH) ==
+	       flags;
+}
+
+static int
+onibi_rseq_end_search_fold_direct_capture_structure_valid(
+    const OnibiRSeqView *view, uint32_t literal_count,
+    int end_buffer_assertion_seen)
+{
+    const OnibiRSeqHeader *header = view->header;
+    uint32_t conflicts = ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND |
+			 ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND |
+			 ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP |
+			 ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM;
+    if (!end_buffer_assertion_seen || header->exec_kind != ONIBI_EXEC_DYNAMIC ||
+	header->capture_count != 1 || header->semantic_capture_count != 1 ||
+	header->backref_count != 1 || header->subprogram_count != 1 ||
+	header->counter_count != 0 || header->class_count != 0 ||
+	header->lookbehind_width_count != 0 || literal_count != 1 ||
+	header->state_count != 3 || header->edge_count != 3 ||
+	header->action_count != 6 || header->start_edge_base != 2 ||
+	header->start_edge_count != 1 ||
+	(header->flags & ONIBI_RSEQ_HEADER_FLAG_IGNORECASE) != 0 ||
+	(header->features & conflicts) != 0 ||
+	(header->features & ONIBI_RSEQ_FEATURE_FIRST_BITMAP) != 0 ||
+	header->prefix_length != 0 ||
+	!onibi_rseq_bytes_zero(header->first_bitmap,
+			       sizeof(header->first_bitmap)) ||
+	!onibi_rseq_bytes_zero(header->prefix, sizeof(header->prefix)))
+	return 0;
+
+    const OnibiSubprogramDesc *root = &view->subprograms[0];
+    if (root->entry != 0 || root->accept != 2 ||
+	(root->option_env.options & ~ONIBI_OPT_FIXEDENCODING) != 0)
+	return 0;
+
+    const OnibiRState *literal_state = &view->states[0];
+    const OnibiRState *backref_state = &view->states[1];
+    const OnibiRState *accept_state = &view->states[2];
+    const OnibiLiteralDesc *literal = &view->literals[0];
+    if (literal_state->op != ONIBI_RS_CHAR ||
+	literal_state->flags != ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE ||
+	literal_state->payload != 0 || literal_state->edge_base != 0 ||
+	literal_state->edge_count != 1 ||
+	backref_state->op != ONIBI_RS_BACKREF || backref_state->flags != 0 ||
+	backref_state->payload != 0 || backref_state->edge_base != 1 ||
+	backref_state->edge_count != 1 || accept_state->op != 0 ||
+	accept_state->flags != 0 || accept_state->payload != 0 ||
+	accept_state->edge_base != 2 || accept_state->edge_count != 0 ||
+	literal->flags != ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE ||
+	literal->data_length == 0 || literal->data_length > 4)
+	return 0;
+
+    const OnibiREdge *start_edge = &view->edges[header->start_edge_base];
+    const OnibiREdge *literal_edge = &view->edges[literal_state->edge_base];
+    const OnibiREdge *backref_edge = &view->edges[backref_state->edge_base];
+    if (start_edge->destination != 0 || literal_edge->destination != 1 ||
+	backref_edge->destination != ONIBI_ACCEPT_STATE ||
+	!onibi_rseq_direct_fold_action_valid(view, start_edge->action_offset,
+					     ONIBI_RA_CAPTURE, 0, 0, 0) ||
+	!onibi_rseq_direct_fold_action_valid(view, literal_edge->action_offset,
+					     ONIBI_RA_CAPTURE,
+					     ONIBI_RA_CAPTURE_CLOSE, 1, 0) ||
+	!onibi_rseq_direct_fold_action_valid(view, backref_edge->action_offset,
+					     ONIBI_RA_ASSERT_POSITION, 0,
+					     ONIBI_RAP_END_BUFFER, 0))
+	return 0;
+
+    const OnibiBackrefDesc *backref = &view->backrefs[0];
+    if (backref->capture_count != 1 ||
+	(backref->flags & ~ONIBI_BACKREF_FLAG_NAMED) != 0 ||
+	backref->recursion_level != 0 ||
+	backref->capture_list_off < header->backref_lists_offset ||
+	(backref->capture_list_off & 3U) != 0)
+	return 0;
+    uint32_t list_index =
+	(backref->capture_list_off - header->backref_lists_offset) /
+	(uint32_t)sizeof(uint32_t);
+    uint64_t list_count =
+	(uint64_t)(header->subprograms_offset - header->backref_lists_offset) /
+	sizeof(uint32_t);
+    if (list_index >= list_count || view->backref_capture_ids[list_index] != 0)
+	return 0;
+
+    rb_encoding *encoding = rb_enc_from_index(root->option_env.encoding_index);
+    if (encoding != rb_utf8_encoding()) return 0;
+    const OnigUChar *literal_bytes = view->blob + literal->data_offset;
+    int source_width = ONIGENC_PRECISE_MBC_ENC_LEN(
+	encoding, literal_bytes, literal_bytes + literal->data_length);
+    return source_width > 0 && (size_t)source_width == literal->data_length;
+}
+
+static int
+onibi_rseq_class_tail_map_structure_valid(const OnibiRSeqView *view,
+					  uint32_t literal_count)
+{
+    const OnibiRSeqHeader *header = view->header;
+
+    /* A claimed hint must describe the exact two consuming states that the
+     * compiler emits for one class followed by one literal.  State 2 is the
+     * physical accept sentinel; normal edges occupy 0 and 1, then the start
+     * edge occupies 2. */
+    if (header->state_count != 3 || header->edge_count != 3 ||
+	header->start_edge_base != 2 || header->start_edge_count != 1 ||
+	literal_count != 1 || header->class_count != 1 ||
+	header->capture_count != 0 || header->semantic_capture_count != 0 ||
+	header->backref_count != 0 || header->counter_count != 0 ||
+	header->subprogram_count != 1 || header->lookbehind_width_count != 0 ||
+	header->exec_kind == ONIBI_EXEC_DYNAMIC ||
+	(header->flags & ONIBI_RSEQ_HEADER_FLAG_IGNORECASE) != 0 ||
+	(header->features & (ONIBI_RSEQ_FEATURE_FIRST_BITMAP |
+			     ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND |
+			     ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND)) != 0 ||
+	header->prefix_length != 0 ||
+	!onibi_rseq_bytes_zero(header->first_bitmap,
+			       sizeof(header->first_bitmap)))
+	return 0;
+
+    const OnibiREdge *start_edge = &view->edges[header->start_edge_base];
+    if (start_edge->destination != 0) return 0;
+    int anchored = 0;
+    if (start_edge->action_offset != 0) {
+	uint32_t action_count = 0;
+	const OnibiRAction *actions = onibi_rseq_action_program(
+	    view, start_edge->action_offset, &action_count);
+	if (action_count != 1 || actions == NULL ||
+	    actions[0].op != ONIBI_RA_ASSERT_POSITION ||
+	    actions[0].flags != 0 ||
+	    actions[0].arg16 != ONIBI_RAP_BEGIN_BUFFER || actions[0].arg32 != 0)
+	    return 0;
+	anchored = 1;
+    }
+    if (((header->class_tail_map_flags &
+	  ONIBI_RSEQ_CLASS_TAIL_MAP_FLAG_ANCHORED) != 0) != anchored ||
+	header->action_count != (anchored ? 2U : 0U))
+	return 0;
+
+    const OnibiRState *class_state = &view->states[start_edge->destination];
+    if (class_state->op != ONIBI_RS_CLASS || class_state->flags != 0 ||
+	class_state->payload != 0 || class_state->edge_base != 0 ||
+	class_state->edge_count != 1)
+	return 0;
+    const OnibiClassDesc *klass = &view->classes[class_state->payload];
+    if (klass->kind != ONIBI_CLASS_CODEPOINT_RANGES ||
+	(klass->flags & (ONIBI_RSEQ_CLASS_FLAG_NEGATED |
+			 ONIBI_RSEQ_CLASS_FLAG_INCOMPLETE_CASEFOLD)) != 0)
+	return 0;
+    const OnibiREdge *class_edge = &view->edges[class_state->edge_base];
+    if (class_edge->action_offset != 0 || class_edge->destination != 1)
+	return 0;
+    const OnibiRState *tail_state = &view->states[class_edge->destination];
+    if (tail_state->op != ONIBI_RS_CHAR || tail_state->flags != 0 ||
+	tail_state->payload != 0 || tail_state->edge_base != 1 ||
+	tail_state->edge_count != 1)
+	return 0;
+    const OnibiLiteralDesc *tail = &view->literals[tail_state->payload];
+    if (tail->data_length != 1 || tail->flags != 0 ||
+	view->blob[tail->data_offset] != header->class_tail_map_byte)
+	return 0;
+    const OnibiREdge *tail_edge = &view->edges[tail_state->edge_base];
+    const OnibiRState *accept_state = &view->states[2];
+    return tail_edge->destination == ONIBI_ACCEPT_STATE &&
+	   tail_edge->action_offset == 0 && accept_state->op == 0 &&
+	   accept_state->flags == 0 && accept_state->payload == 0 &&
+	   accept_state->edge_count == 0;
 }
 
 typedef struct {
@@ -716,6 +1004,404 @@ onibi_rseq_nullable_verify_paths(const OnibiRSeqView *view,
     }
 }
 
+typedef struct {
+    uint32_t subprogram_id;
+    uint16_t slot;
+    uint8_t pushed;
+    uint8_t seen;
+} OnibiRSeqAbsenceCaptureOpenRequirement;
+
+static int
+onibi_rseq_absence_capture_open_requirement_compare(const void *left,
+						    const void *right)
+{
+    const OnibiRSeqAbsenceCaptureOpenRequirement *a = left;
+    const OnibiRSeqAbsenceCaptureOpenRequirement *b = right;
+    if (a->subprogram_id != b->subprogram_id)
+	return a->subprogram_id < b->subprogram_id ? -1 : 1;
+    if (a->slot != b->slot) return a->slot < b->slot ? -1 : 1;
+    if (a->pushed != b->pushed) return a->pushed < b->pushed ? -1 : 1;
+    return 0;
+}
+
+static size_t
+onibi_rseq_absence_capture_open_lower_bound(
+    const OnibiRSeqAbsenceCaptureOpenRequirement *requirements, size_t count,
+    uint32_t subprogram_id, uint16_t slot, uint8_t pushed)
+{
+    size_t low = 0, high = count;
+    while (low < high) {
+	size_t middle = low + (high - low) / 2U;
+	const OnibiRSeqAbsenceCaptureOpenRequirement *requirement =
+	    &requirements[middle];
+	if (requirement->subprogram_id < subprogram_id ||
+	    (requirement->subprogram_id == subprogram_id &&
+	     (requirement->slot < slot ||
+	      (requirement->slot == slot && requirement->pushed < pushed))))
+	    low = middle + 1U;
+	else
+	    high = middle;
+    }
+    return low;
+}
+
+static void
+onibi_rseq_absence_relation_mark_open(
+    OnibiRSeqAbsenceCaptureOpenRequirement *requirements, size_t count,
+    uint32_t subprogram_id, uint16_t slot, int pushed)
+{
+    if (subprogram_id == UINT32_MAX) return;
+    size_t index = onibi_rseq_absence_capture_open_lower_bound(
+	requirements, count, subprogram_id, slot, (uint8_t)pushed);
+    if (index < count && requirements[index].subprogram_id == subprogram_id &&
+	requirements[index].slot == slot &&
+	requirements[index].pushed == (uint8_t)pushed) {
+	while (index > 0 &&
+	       requirements[index - 1U].subprogram_id == subprogram_id &&
+	       requirements[index - 1U].slot == slot &&
+	       requirements[index - 1U].pushed == (uint8_t)pushed)
+	    index--;
+	for (; index < count &&
+	       requirements[index].subprogram_id == subprogram_id &&
+	       requirements[index].slot == slot &&
+	       requirements[index].pushed == (uint8_t)pushed;
+	     index++)
+	    requirements[index].seen = 1;
+	return;
+    }
+    uint8_t other_push = pushed ? 0 : 1;
+    index = onibi_rseq_absence_capture_open_lower_bound(
+	requirements, count, subprogram_id, slot, other_push);
+    if (index < count && requirements[index].subprogram_id == subprogram_id &&
+	requirements[index].slot == slot)
+	rb_raise(rb_eArgError, "invalid Onibi RSeq absence capture start kind");
+}
+
+static int
+onibi_rseq_absence_relation_consuming_destination(const OnibiRSeqView *view,
+						  uint32_t destination)
+{
+    if (destination >= view->header->state_count) return 0;
+    switch (view->states[destination].op) {
+    case ONIBI_RS_CHAR:
+    case ONIBI_RS_CLASS:
+    case ONIBI_RS_ANY:
+    case ONIBI_RS_GRAPHEME:
+    case ONIBI_RS_STRING:
+    case ONIBI_RS_RUN_CLASS:
+    case ONIBI_RS_RUN_ANY: return 1;
+    default: return 0;
+    }
+}
+
+static VALUE
+onibi_rseq_absence_relation_validate(const OnibiRSeqView *view,
+				     onibi_allocation_owner_t *allocations,
+				     const unsigned char *action_boundaries)
+{
+    const OnibiRSeqHeader *header = view->header;
+    size_t relation_count = header->absence_capture_relation_count;
+    if (relation_count == 0) return Qnil;
+    if (relation_count > SIZE_MAX / 4U || relation_count > SIZE_MAX / 2U ||
+	relation_count * 2U >
+	    SIZE_MAX / sizeof(OnibiRSeqAbsenceCaptureOpenRequirement))
+	rb_raise(rb_eArgError, "invalid Onibi RSeq absence capture relation");
+
+    OnibiRSeqAbsenceCaptureOpenRequirement *open_requirements =
+	onibi_owned_realloc(allocations, NULL,
+			    relation_count * 2U * sizeof(*open_requirements));
+    size_t open_requirement_count = relation_count * 2U;
+    for (size_t i = 0; i < relation_count; i++) {
+	const OnibiAbsenceCaptureRelation *relation =
+	    &view->absence_capture_relations[i];
+	if (relation->subprogram_id == 0 ||
+	    relation->subprogram_id >= header->subprogram_count ||
+	    view->subprograms[relation->subprogram_id].kind !=
+		ONIBI_SUBPROGRAM_ABSENCE ||
+	    relation->target_close_slot >= header->capture_count * 2U ||
+	    relation->pushed_witness_close_slot >= header->capture_count * 2U ||
+	    (relation->target_close_slot & 1U) == 0 ||
+	    (relation->pushed_witness_close_slot & 1U) == 0 ||
+	    relation->target_close_slot ==
+		relation->pushed_witness_close_slot ||
+	    relation->target_start_kind > ONIBI_RELATION_TARGET_START_PUSHED ||
+	    !onibi_rseq_bytes_zero(relation->reserved,
+				   sizeof(relation->reserved)))
+	    rb_raise(rb_eArgError,
+		     "invalid Onibi RSeq absence capture relation");
+	open_requirements[i * 2U] = (OnibiRSeqAbsenceCaptureOpenRequirement){
+	    relation->subprogram_id,
+	    (uint16_t)(relation->target_close_slot - 1U),
+	    relation->target_start_kind, 0};
+	open_requirements[i * 2U + 1U] =
+	    (OnibiRSeqAbsenceCaptureOpenRequirement){
+		relation->subprogram_id,
+		(uint16_t)(relation->pushed_witness_close_slot - 1U),
+		ONIBI_RELATION_TARGET_START_PUSHED, 0};
+    }
+
+    qsort(open_requirements, open_requirement_count, sizeof(*open_requirements),
+	  onibi_rseq_absence_capture_open_requirement_compare);
+    for (size_t i = 1; i < open_requirement_count; i++)
+	if (open_requirements[i - 1U].subprogram_id ==
+		open_requirements[i].subprogram_id &&
+	    open_requirements[i - 1U].slot == open_requirements[i].slot &&
+	    open_requirements[i - 1U].pushed != open_requirements[i].pushed)
+	    rb_raise(rb_eArgError,
+		     "invalid Onibi RSeq absence capture relation");
+
+    uint32_t *state_owners = onibi_owned_realloc(
+	allocations, NULL, (size_t)header->state_count * sizeof(*state_owners));
+    uint32_t *state_worklist = onibi_owned_realloc(allocations, NULL,
+						   (size_t)header->state_count *
+						       sizeof(*state_worklist));
+    uint32_t *edge_owners = onibi_owned_realloc(
+	allocations, NULL, (size_t)header->edge_count * sizeof(*edge_owners));
+    for (uint32_t i = 0; i < header->state_count; i++)
+	state_owners[i] = UINT32_MAX;
+    for (uint32_t i = 0; i < header->edge_count; i++)
+	edge_owners[i] = UINT32_MAX;
+
+    for (uint32_t owner_id = 0; owner_id < header->subprogram_count;
+	 owner_id++) {
+	const OnibiSubprogramDesc *subprogram = &view->subprograms[owner_id];
+	uint32_t entry_base = owner_id == 0 ? header->start_edge_base
+					    : subprogram->entry_edge_base;
+	uint32_t entry_count = owner_id == 0 ? header->start_edge_count
+					     : subprogram->entry_edge_count;
+	uint32_t work_head = 0, work_count = 0;
+	for (uint32_t i = 0; i < entry_count; i++) {
+	    uint32_t destination = view->edges[entry_base + i].destination;
+	    if (destination == ONIBI_ACCEPT_STATE) continue;
+	    if (destination >= header->state_count)
+		rb_raise(rb_eArgError,
+			 "invalid Onibi RSeq absence capture relation");
+	    if (state_owners[destination] != UINT32_MAX &&
+		state_owners[destination] != owner_id)
+		rb_raise(rb_eArgError,
+			 "invalid Onibi RSeq absence capture relation");
+	    if (state_owners[destination] == UINT32_MAX) {
+		state_owners[destination] = owner_id;
+		state_worklist[work_count++] = destination;
+	    }
+	}
+	while (work_head < work_count) {
+	    uint32_t state_id = state_worklist[work_head++];
+	    const OnibiRState *state = &view->states[state_id];
+	    for (uint32_t i = 0; i < state->edge_count; i++) {
+		uint32_t destination =
+		    view->edges[state->edge_base + i].destination;
+		if (destination == ONIBI_ACCEPT_STATE) continue;
+		if (destination >= header->state_count)
+		    rb_raise(rb_eArgError,
+			     "invalid Onibi RSeq absence capture relation");
+		if (state_owners[destination] != UINT32_MAX &&
+		    state_owners[destination] != owner_id)
+		    rb_raise(rb_eArgError,
+			     "invalid Onibi RSeq absence capture relation");
+		if (state_owners[destination] == UINT32_MAX) {
+		    state_owners[destination] = owner_id;
+		    state_worklist[work_count++] = destination;
+		}
+	    }
+	}
+    }
+
+    for (uint32_t state_id = 0; state_id < header->state_count; state_id++) {
+	const OnibiRState *state = &view->states[state_id];
+	for (uint32_t i = 0; i < state->edge_count; i++)
+	    edge_owners[state->edge_base + i] = state_owners[state_id];
+    }
+    for (uint32_t i = 0; i < header->start_edge_count; i++)
+	edge_owners[header->start_edge_base + i] = 0;
+    for (uint32_t owner_id = 1; owner_id < header->subprogram_count;
+	 owner_id++) {
+	const OnibiSubprogramDesc *subprogram = &view->subprograms[owner_id];
+	for (uint32_t i = 0; i < subprogram->entry_edge_count; i++)
+	    edge_owners[subprogram->entry_edge_base + i] = owner_id;
+    }
+
+    uint8_t *role_counts =
+	onibi_owned_realloc(allocations, NULL, relation_count * 4U);
+    uint8_t *marker_action_used =
+	header->action_count == 0
+	    ? NULL
+	    : onibi_owned_realloc(allocations, NULL, header->action_count);
+    memset(role_counts, 0, relation_count * 4U);
+    if (marker_action_used) memset(marker_action_used, 0, header->action_count);
+
+    uint32_t program_begin = 0;
+    for (uint32_t i = 0; i < header->action_count; i++) {
+	if (action_boundaries[i]) program_begin = i;
+	const OnibiRAction *action = &view->actions[i];
+	if (action->op != ONIBI_RA_CAPTURE_RELATION) continue;
+	if (action->flags < ONIBI_CAPTURE_RELATION_ROLE_CLOSE ||
+	    action->flags > ONIBI_CAPTURE_RELATION_ROLE_SUFFIX ||
+	    action->arg32 == 0 || action->arg32 > relation_count ||
+	    (action->arg16 & 1U) == 0 ||
+	    action->arg16 >= header->capture_count * 2U)
+	    rb_raise(rb_eArgError,
+		     "invalid Onibi RSeq absence capture relation marker");
+	const OnibiAbsenceCaptureRelation *relation =
+	    &view->absence_capture_relations[action->arg32 - 1U];
+	if (relation->target_close_slot != action->arg16)
+	    rb_raise(rb_eArgError,
+		     "invalid Onibi RSeq absence capture relation marker");
+	if (action->flags == ONIBI_CAPTURE_RELATION_ROLE_CLOSE) {
+	    uint32_t previous = i;
+	    while (previous > program_begin) {
+		const OnibiRAction *prior = &view->actions[previous - 1U];
+		if (prior->op != ONIBI_RA_CAPTURE_RELATION ||
+		    prior->flags != ONIBI_CAPTURE_RELATION_ROLE_CLOSE ||
+		    prior->arg16 != action->arg16)
+		    break;
+		previous--;
+	    }
+	    if (previous == program_begin ||
+		view->actions[previous - 1U].op != ONIBI_RA_CAPTURE ||
+		view->actions[previous - 1U].flags != ONIBI_RA_CAPTURE_CLOSE ||
+		view->actions[previous - 1U].arg16 != action->arg16)
+		rb_raise(rb_eArgError,
+			 "invalid Onibi RSeq absence capture relation close");
+	}
+	size_t count_index =
+	    (size_t)(action->arg32 - 1U) * 4U + (size_t)(action->flags - 1U);
+	if (role_counts[count_index] < 2U) role_counts[count_index]++;
+    }
+
+    uint8_t *edge_roles =
+	onibi_owned_realloc(allocations, NULL, relation_count);
+    uint8_t *source_roles =
+	onibi_owned_realloc(allocations, NULL, relation_count);
+    uint32_t *edge_touched = onibi_owned_realloc(
+	allocations, NULL, relation_count * sizeof(*edge_touched));
+    uint32_t *source_touched = onibi_owned_realloc(
+	allocations, NULL, relation_count * sizeof(*source_touched));
+    memset(edge_roles, 0, relation_count);
+    memset(source_roles, 0, relation_count);
+
+    for (uint32_t state_id = 0; state_id < header->state_count; state_id++) {
+	const OnibiRState *state = &view->states[state_id];
+	size_t source_touched_count = 0;
+	for (uint32_t edge_offset = 0; edge_offset < state->edge_count;
+	     edge_offset++) {
+	    uint32_t edge_index = state->edge_base + edge_offset;
+	    const OnibiREdge *edge = &view->edges[edge_index];
+	    size_t edge_touched_count = 0;
+	    uint32_t action_index =
+		edge->action_offset == 0
+		    ? header->action_count
+		    : edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
+	    for (; action_index < header->action_count; action_index++) {
+		const OnibiRAction *action = &view->actions[action_index];
+		if (action->op == ONIBI_RA_END) break;
+		if (action->op == ONIBI_RA_CAPTURE &&
+		    (action->flags & ONIBI_RA_CAPTURE_CLOSE) == 0) {
+		    onibi_rseq_absence_relation_mark_open(
+			open_requirements, open_requirement_count,
+			edge_owners[edge_index], action->arg16,
+			(action->flags & ONIBI_RA_CAPTURE_OPEN_START_PUSH) !=
+			    0);
+		}
+		if (action->op != ONIBI_RA_CAPTURE_RELATION) continue;
+		uint32_t relation_index = action->arg32 - 1U;
+		const OnibiAbsenceCaptureRelation *relation =
+		    &view->absence_capture_relations[relation_index];
+		if (edge_owners[edge_index] != relation->subprogram_id)
+		    rb_raise(rb_eArgError,
+			     "cross-owner Onibi RSeq absence capture relation");
+		marker_action_used[action_index] = 1;
+		if (edge_roles[relation_index] == 0)
+		    edge_touched[edge_touched_count++] = relation_index;
+		uint8_t role_bit = (uint8_t)(1U << (action->flags - 1U));
+		edge_roles[relation_index] |= role_bit;
+		if (action->flags == ONIBI_CAPTURE_RELATION_ROLE_LOOP ||
+		    action->flags == ONIBI_CAPTURE_RELATION_ROLE_EXIT) {
+		    if (source_roles[relation_index] == 0)
+			source_touched[source_touched_count++] = relation_index;
+		    source_roles[relation_index] |= role_bit;
+		}
+	    }
+	    for (size_t i = 0; i < edge_touched_count; i++) {
+		uint32_t relation_index = edge_touched[i];
+		uint8_t roles = edge_roles[relation_index];
+		const OnibiAbsenceCaptureRelation *relation =
+		    &view->absence_capture_relations[relation_index];
+		int has_exit =
+		    (roles & (1U << (ONIBI_CAPTURE_RELATION_ROLE_EXIT - 1U))) !=
+		    0;
+		int has_suffix =
+		    (roles &
+		     (1U << (ONIBI_CAPTURE_RELATION_ROLE_SUFFIX - 1U))) != 0;
+		if (has_exit != has_suffix)
+		    rb_raise(
+			rb_eArgError,
+			"invalid Onibi RSeq absence capture relation edge");
+		if (has_suffix &&
+		    !onibi_rseq_absence_relation_consuming_destination(
+			view, edge->destination))
+		    rb_raise(rb_eArgError,
+			     "invalid Onibi RSeq absence capture suffix");
+		if ((roles & (1U << (ONIBI_CAPTURE_RELATION_ROLE_LOOP - 1U))) !=
+			0 &&
+		    (edge->destination >= header->state_count ||
+		     state_owners[edge->destination] !=
+			 relation->subprogram_id))
+		    rb_raise(rb_eArgError,
+			     "invalid Onibi RSeq absence capture loop edge");
+		edge_roles[relation_index] = 0;
+	    }
+	}
+	for (size_t i = 0; i < source_touched_count; i++) {
+	    uint32_t relation_index = source_touched[i];
+	    uint8_t roles = source_roles[relation_index];
+	    uint8_t required =
+		(uint8_t)((1U << (ONIBI_CAPTURE_RELATION_ROLE_LOOP - 1U)) |
+			  (1U << (ONIBI_CAPTURE_RELATION_ROLE_EXIT - 1U)));
+	    if ((roles & required) != required)
+		rb_raise(rb_eArgError,
+			 "invalid Onibi RSeq absence capture repeat choice");
+	    source_roles[relation_index] = 0;
+	}
+    }
+
+    for (uint32_t edge_index = header->start_edge_base;
+	 edge_index < header->edge_count; edge_index++) {
+	const OnibiREdge *edge = &view->edges[edge_index];
+	uint32_t action_index =
+	    edge->action_offset == 0
+		? header->action_count
+		: edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
+	for (; action_index < header->action_count; action_index++) {
+	    const OnibiRAction *action = &view->actions[action_index];
+	    if (action->op == ONIBI_RA_END) break;
+	    if (action->op == ONIBI_RA_CAPTURE &&
+		(action->flags & ONIBI_RA_CAPTURE_CLOSE) == 0)
+		onibi_rseq_absence_relation_mark_open(
+		    open_requirements, open_requirement_count,
+		    edge_owners[edge_index], action->arg16,
+		    (action->flags & ONIBI_RA_CAPTURE_OPEN_START_PUSH) != 0);
+	    if (action->op == ONIBI_RA_CAPTURE_RELATION)
+		rb_raise(rb_eArgError,
+			 "invalid Onibi RSeq absence capture entry marker");
+	}
+    }
+
+    for (size_t i = 0; i < relation_count * 4U; i++)
+	if (role_counts[i] != 1U)
+	    rb_raise(rb_eArgError,
+		     "invalid Onibi RSeq absence capture relation roles");
+    for (uint32_t i = 0; i < header->action_count; i++)
+	if (view->actions[i].op == ONIBI_RA_CAPTURE_RELATION &&
+	    !marker_action_used[i])
+	    rb_raise(rb_eArgError,
+		     "unused Onibi RSeq absence capture relation marker");
+    for (size_t i = 0; i < open_requirement_count; i++)
+	if (!open_requirements[i].seen)
+	    rb_raise(rb_eArgError, "missing Onibi RSeq absence capture open");
+    return Qnil;
+}
+
 static VALUE
 onibi_rseq_blob_validate_body(VALUE opaque)
 {
@@ -735,7 +1421,28 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	ONIBI_RSEQ_FEATURE_FIRST_BITMAP |
 	ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD |
 	ONIBI_RSEQ_FEATURE_LITERAL_CASEFOLD |
-	ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY;
+	ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY |
+	ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND |
+	ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND |
+	ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP |
+	ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM |
+	ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE |
+	ONIBI_RSEQ_FEATURE_CAPTURE_ROLLBACK |
+	ONIBI_RSEQ_FEATURE_ABSENCE_CAPTURE_RELATION;
+    int has_class_tail_map =
+	(header->features & ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP) != 0;
+    int has_direct_fold_capture =
+	(header->features &
+	 ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE) != 0;
+    uint64_t direct_fold_expected_dmin =
+	(uint64_t)header->end_search_fold_normalized_bytes * 2U;
+    uint64_t direct_fold_expected_dmax =
+	(uint64_t)header->end_search_fold_normalized_codepoints * 4U +
+	header->end_search_fold_normalized_bytes;
+    uint32_t direct_fold_conflicts = ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND |
+				     ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND |
+				     ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP |
+				     ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM;
     uint64_t states_end = (uint64_t)header->states_offset +
 			  (uint64_t)header->state_count * sizeof(OnibiRState);
     uint64_t edges_end = (uint64_t)header->edges_offset +
@@ -755,6 +1462,10 @@ onibi_rseq_blob_validate_body(VALUE opaque)
     uint64_t widths_end =
 	(uint64_t)header->lookbehind_widths_offset +
 	(uint64_t)header->lookbehind_width_count * sizeof(uint32_t);
+    uint64_t absence_capture_relations_end =
+	(uint64_t)header->absence_capture_relations_offset +
+	(uint64_t)header->absence_capture_relation_count *
+	    sizeof(OnibiAbsenceCaptureRelation);
     if (header->state_count == 0 || header->subprogram_count == 0 ||
 	header->capture_count > ONIBI_GIR_MAX_CAPTURE_COUNT ||
 	header->counter_count > ONIBI_GIR_MAX_COUNTER_COUNT ||
@@ -763,12 +1474,64 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	(header->flags & ~(ONIBI_RSEQ_HEADER_FLAG_IGNORECASE |
 			   ONIBI_RSEQ_HEADER_FLAG_MULTILINE)) != 0 ||
 	(header->features & ~feature_mask) != 0 ||
+	((header->absence_capture_relation_count == 0) !=
+	 ((header->features & ONIBI_RSEQ_FEATURE_ABSENCE_CAPTURE_RELATION) ==
+	  0)) ||
 	header->prefix_length > sizeof(header->prefix) ||
+	(((header->features & ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND) == 0) &&
+	 header->end_search_bound_bytes != 0) ||
+	(((header->features & ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND) != 0) &&
+	 header->end_search_bound_bytes == 0) ||
+	(((header->features & ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM) == 0) &&
+	 (header->end_search_minimum_bytes != 0 ||
+	  header->end_search_minimum_repeat_bytes != 0 ||
+	  header->end_search_minimum_capture_source_bytes != 0)) ||
+	(((header->features & ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM) != 0) &&
+	 (header->end_search_minimum_bytes == 0 ||
+	  header->end_search_minimum_repeat_bytes == 0 ||
+	  header->end_search_minimum_capture_source_bytes == 0)) ||
+	(!has_direct_fold_capture &&
+	 (header->end_search_fold_normalized_bytes != 0 ||
+	  header->end_search_fold_normalized_codepoints != 0 ||
+	  header->end_search_fold_dmin_bytes != 0 ||
+	  header->end_search_fold_dmax_bytes != 0)) ||
+	(has_direct_fold_capture &&
+	 (header->end_search_fold_normalized_bytes == 0 ||
+	  header->end_search_fold_normalized_bytes >
+	      ONIBI_RSEQ_DIRECT_FOLD_WIDTH_LIMIT ||
+	  header->end_search_fold_normalized_codepoints == 0 ||
+	  header->end_search_fold_normalized_codepoints >
+	      ONIBI_RSEQ_DIRECT_FOLD_WIDTH_LIMIT ||
+	  header->end_search_fold_normalized_codepoints >
+	      header->end_search_fold_normalized_bytes ||
+	  (uint64_t)header->end_search_fold_normalized_bytes >
+	      (uint64_t)header->end_search_fold_normalized_codepoints * 4U ||
+	  direct_fold_expected_dmin != header->end_search_fold_dmin_bytes ||
+	  direct_fold_expected_dmax != header->end_search_fold_dmax_bytes ||
+	  (header->features & direct_fold_conflicts) != 0)) ||
+	(((header->features & ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND) == 0) &&
+	 header->search_origin_bound_delta_bytes != 0) ||
+	(((header->features & ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND) != 0) &&
+	 header->search_origin_bound_delta_bytes > 1) ||
+	(header->class_tail_map_reserved != 0) ||
+	(has_class_tail_map &&
+	 ((header->class_tail_map_flags &
+	   ~ONIBI_RSEQ_CLASS_TAIL_MAP_FLAG_ANCHORED) != 0 ||
+	  header->class_tail_map_byte >= 0x80 ||
+	  header->class_tail_map_dmin_bytes != 1 ||
+	  header->class_tail_map_dmax_bytes != 1 || header->state_count != 3 ||
+	  header->edge_count != 3 || header->start_edge_base != 2 ||
+	  header->start_edge_count != 1 || header->class_count != 1)) ||
+	(!has_class_tail_map && (header->class_tail_map_byte != 0 ||
+				 header->class_tail_map_flags != 0 ||
+				 header->class_tail_map_dmin_bytes != 0 ||
+				 header->class_tail_map_dmax_bytes != 0)) ||
 	(header->states_offset | header->edges_offset | header->actions_offset |
 	 header->classes_offset | header->literals_offset |
 	 header->descriptors_offset | header->backrefs_offset |
 	 header->backref_lists_offset | header->subprograms_offset |
-	 header->lookbehind_widths_offset | header->blob_size) &
+	 header->lookbehind_widths_offset |
+	 header->absence_capture_relations_offset | header->blob_size) &
 	    3U ||
 	header->states_offset != sizeof(*header) ||
 	states_end != header->edges_offset ||
@@ -782,7 +1545,9 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	((header->subprograms_offset - header->backref_lists_offset) & 3U) !=
 	    0 ||
 	subprogram_end != header->lookbehind_widths_offset ||
-	widths_end != header->blob_size || header->start_edge_count == 0 ||
+	widths_end != header->absence_capture_relations_offset ||
+	absence_capture_relations_end != header->blob_size ||
+	header->start_edge_count == 0 ||
 	header->start_edge_base > header->edge_count ||
 	header->start_edge_count > header->edge_count - header->start_edge_base)
 	rb_raise(rb_eArgError, "invalid Onibi RSeq section layout");
@@ -929,6 +1694,8 @@ onibi_rseq_blob_validate_body(VALUE opaque)
     int counter_action_seen = 0;
     uint32_t highest_counter_slot = 0;
     uint32_t action_index = 0;
+    int end_buffer_assertion_seen = 0;
+    int positive_lookahead_assertion_seen = 0;
     while (action_index < header->action_count) {
 	uint32_t program_begin = action_index;
 	action_boundaries[program_begin] = 1;
@@ -944,12 +1711,19 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 		    rb_raise(rb_eArgError, "invalid Onibi RSeq action end");
 		goto action_program_done;
 	    case ONIBI_RA_CAPTURE:
-		if (action->flags > ONIBI_RA_CAPTURE_OPEN_UNSCOPED ||
-		    action->arg32 != 0 ||
+		if (action->arg32 != 0 ||
 		    action->arg16 >= header->capture_count * 2U ||
+		    (action->flags != 0 &&
+		     action->flags != ONIBI_RA_CAPTURE_CLOSE &&
+		     action->flags != ONIBI_RA_CAPTURE_OPEN_UNSCOPED &&
+		     action->flags != ONIBI_RA_CAPTURE_OPEN_START_PUSH &&
+		     action->flags != (ONIBI_RA_CAPTURE_OPEN_UNSCOPED |
+				       ONIBI_RA_CAPTURE_OPEN_START_PUSH)) ||
 		    ((action->arg16 & 1U) !=
 		     (action->flags == ONIBI_RA_CAPTURE_CLOSE)))
 		    rb_raise(rb_eArgError, "invalid Onibi RSeq capture action");
+		if ((action->flags & ONIBI_RA_CAPTURE_OPEN_START_PUSH) != 0)
+		    action_features |= ONIBI_RSEQ_FEATURE_CAPTURE_ROLLBACK;
 		break;
 	    case ONIBI_RA_MATCH_RESET:
 		if (action->flags != 0 || action->arg16 != 0 ||
@@ -965,6 +1739,8 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 		    rb_raise(rb_eArgError,
 			     "invalid Onibi RSeq position assertion");
 		action_features |= ONIBI_RSEQ_FEATURE_ASSERTION;
+		if (action->arg16 == ONIBI_RAP_END_BUFFER)
+		    end_buffer_assertion_seen = 1;
 		break;
 	    case ONIBI_RA_ASSERT_SUBPROGRAM: {
 		int positive = action->flags == 1 || action->flags == 5;
@@ -983,6 +1759,8 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 		    rb_raise(rb_eArgError,
 			     "invalid Onibi RSeq assertion subprogram");
 		subprogram_references[action->arg32] = 1;
+		if (action->arg16 == ONIBI_RAP_LOOKAHEAD && positive)
+		    positive_lookahead_assertion_seen = 1;
 		action_features |= ONIBI_RSEQ_FEATURE_ASSERTION |
 				   ONIBI_RSEQ_FEATURE_LOOKAROUND;
 		break;
@@ -1061,12 +1839,40 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 		if (action->flags || action->arg16)
 		    rb_raise(rb_eArgError, "invalid Onibi RSeq order action");
 		break;
+	    case ONIBI_RA_CAPTURE_RELATION:
+		if (action->flags < ONIBI_CAPTURE_RELATION_ROLE_CLOSE ||
+		    action->flags > ONIBI_CAPTURE_RELATION_ROLE_SUFFIX ||
+		    action->arg32 == 0 ||
+		    action->arg32 > header->absence_capture_relation_count ||
+		    (action->arg16 & 1U) == 0 ||
+		    action->arg16 >= header->capture_count * 2U ||
+		    view.absence_capture_relations[action->arg32 - 1U]
+			    .target_close_slot != action->arg16)
+		    rb_raise(
+			rb_eArgError,
+			"invalid Onibi RSeq absence capture relation marker");
+		action_features |= ONIBI_RSEQ_FEATURE_ABSENCE_CAPTURE_RELATION;
+		break;
 	    default: rb_raise(rb_eArgError, "invalid Onibi RSeq action opcode");
 	    }
 	}
     action_program_done:
 	if (action_index == program_begin)
 	    rb_raise(rb_eArgError, "invalid Onibi RSeq action program");
+    }
+
+    if ((header->features & ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND) != 0 &&
+	!end_buffer_assertion_seen)
+	rb_raise(rb_eArgError, "inconsistent Onibi RSeq execution contract");
+    if ((header->features & ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND) != 0) {
+	uint32_t delta = header->search_origin_bound_delta_bytes;
+	if ((header->flags & ONIBI_RSEQ_HEADER_FLAG_MULTILINE) == 0 ||
+	    !positive_lookahead_assertion_seen)
+	    rb_raise(rb_eArgError,
+		     "inconsistent Onibi RSeq execution contract");
+	if ((delta == 0 && end_buffer_assertion_seen) ||
+	    (delta == 1 && !end_buffer_assertion_seen))
+	    rb_raise(rb_eArgError, "invalid Onibi RSeq section layout");
     }
 
     for (uint32_t i = 0; i < header->edge_count; i++) {
@@ -1191,6 +1997,9 @@ onibi_rseq_blob_validate_body(VALUE opaque)
     if (width_cursor != header->lookbehind_width_count)
 	rb_raise(rb_eArgError, "invalid Onibi RSeq lookbehind width layout");
 
+    (void)onibi_rseq_absence_relation_validate(&view, &call->allocations,
+					       action_boundaries);
+
     unsigned char *root_reachable = onibi_owned_realloc(
 	&call->allocations, NULL, (size_t)header->state_count);
     uint32_t *root_worklist = onibi_owned_realloc(&call->allocations, NULL,
@@ -1280,6 +2089,22 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	     ONIBI_RSEQ_CLASS_FLAG_INCOMPLETE_CASEFOLD) != 0)
 	    incomplete_casefold = 1;
 
+    if (has_class_tail_map &&
+	!onibi_rseq_class_tail_map_structure_valid(&view, literal_count))
+	rb_raise(rb_eArgError, "inconsistent Onibi RSeq execution contract");
+
+    int has_end_search_minimum =
+	(header->features & ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM) != 0;
+    if (has_end_search_minimum &&
+	!onibi_rseq_end_search_minimum_structure_valid(
+	    &view, end_buffer_assertion_seen))
+	rb_raise(rb_eArgError, "inconsistent Onibi RSeq execution contract");
+
+    if (has_direct_fold_capture &&
+	!onibi_rseq_end_search_fold_direct_capture_structure_valid(
+	    &view, literal_count, end_buffer_assertion_seen))
+	rb_raise(rb_eArgError, "inconsistent Onibi RSeq execution contract");
+
     for (uint32_t i = 0; i < header->lookbehind_width_count; i++)
 	(void)view.lookbehind_widths[i];
 
@@ -1315,17 +2140,37 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	if (view.actions[i].op == ONIBI_RA_TEST_CAPTURE)
 	    execution_requirements |= ONIBI_EXEC_REQUIRE_DYNAMIC;
 	else if (view.actions[i].op == ONIBI_RA_CAPTURE &&
-		 view.actions[i].flags >= ONIBI_RA_CAPTURE_OPEN_UNSCOPED)
+		 (view.actions[i].flags & ONIBI_RA_CAPTURE_OPEN_UNSCOPED) != 0)
 	    execution_requirements |= ONIBI_EXEC_REQUIRE_TAGGED;
     if (!root_consuming)
 	expected_features |= ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY;
+    if (header->end_search_bound_bytes != 0 && end_buffer_assertion_seen)
+	expected_features |= ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND;
+    if (has_end_search_minimum)
+	expected_features |= ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM;
+    if (has_direct_fold_capture)
+	expected_features |= ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE;
+
+    /* This is optional compiler metadata.  Structural checks above validate
+     * its shape, but the verifier cannot reconstruct the source AST delta. */
+    if ((header->features & ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND) != 0)
+	expected_features |= ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND;
+    if (has_class_tail_map)
+	expected_features |= ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP;
     uint32_t semantic_feature_mask =
 	ONIBI_RSEQ_FEATURE_BACKREF | ONIBI_RSEQ_FEATURE_CAPTURE |
 	ONIBI_RSEQ_FEATURE_COUNTER | ONIBI_RSEQ_FEATURE_MATCH_RESET |
 	ONIBI_RSEQ_FEATURE_ASSERTION | ONIBI_RSEQ_FEATURE_LOOKAROUND |
 	ONIBI_RSEQ_FEATURE_LITERAL_CASEFOLD |
 	ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD |
-	ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY;
+	ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY |
+	ONIBI_RSEQ_FEATURE_END_SEARCH_BOUND |
+	ONIBI_RSEQ_FEATURE_SEARCH_ORIGIN_BOUND |
+	ONIBI_RSEQ_FEATURE_CLASS_TAIL_MAP |
+	ONIBI_RSEQ_FEATURE_END_SEARCH_MINIMUM |
+	ONIBI_RSEQ_FEATURE_END_SEARCH_FOLD_DIRECT_CAPTURE |
+	ONIBI_RSEQ_FEATURE_CAPTURE_ROLLBACK |
+	ONIBI_RSEQ_FEATURE_ABSENCE_CAPTURE_RELATION;
     unsigned char expected_bitmap[sizeof(header->first_bitmap)];
     int bitmap_valid = 1, bitmap_have = 0;
     memset(expected_bitmap, 0, sizeof(expected_bitmap));

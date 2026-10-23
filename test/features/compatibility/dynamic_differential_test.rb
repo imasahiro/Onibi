@@ -289,6 +289,29 @@ class DynamicDifferentialTest < Minitest::Test
 
         assert actual_regexp.send(:__onibi_diagnostics__, subject)[:rseq]
         assert_equal expected&.to_a, actual&.to_a, [pattern, subject]
+        assert_equal expected&.captures, actual&.captures, [pattern, subject]
+        assert_equal expected&.size, actual&.size, [pattern, subject]
+        assert_equal expected_regexp.names, actual_regexp.names,
+                     [pattern, subject]
+        assert_equal expected_regexp.named_captures,
+                     actual_regexp.named_captures, [pattern, subject]
+        if expected
+          expected.size.times do |index|
+            assert_equal expected.byteoffset(index),
+                         actual&.byteoffset(index), [pattern, subject, index]
+          end
+          expected_regexp.names.each do |name|
+            expected_value = expected[name]
+            if expected_value.nil?
+              assert_nil actual&.[](name), [pattern, subject, name]
+            else
+              assert_equal expected_value, actual&.[](name),
+                           [pattern, subject, name]
+            end
+            assert_equal expected.byteoffset(name),
+                         actual&.byteoffset(name), [pattern, subject, name]
+          end
+        end
         assert_equal expected&.bytebegin(0), actual&.bytebegin(0),
                      [pattern, subject]
         assert_equal expected&.byteend(0), actual&.byteend(0),

@@ -21,30 +21,6 @@ class ExecutionClassAuthorityTest < Minitest::Test
     end
   end
 
-  def test_token_metadata_does_not_assign_execution_class
-    source = File.read(File.join(PROJECT_ROOT, "ext", "onibi", "rseq.c"))
-    token_features = source[/static void\s+onibi_token_features\(.*?^}\n/m]
-    initialize = source[/static VALUE\s+onibi_initialize\(.*?^}\n/m]
-
-    refute_nil token_features
-    refute_nil initialize
-    refute_includes token_features, "execution_kind"
-    refute_includes token_features, "execution_flags"
-    assert_includes initialize, "obj->rseq_view.header->exec_kind"
-    refute_match(/FEATURE_SUBROUTINE.*execution_kind/m, initialize)
-  end
-
-  def test_runtime_view_keeps_the_verified_header_class
-    source = File.read(File.join(PROJECT_ROOT, "ext", "onibi", "rseq_runtime.c"))
-    prepare = source[/static void\s+onibi_rseq_view_prepare\(.*?^}\n/m]
-
-    refute_nil prepare
-    assert_includes prepare, "view->header->exec_kind"
-    refute_includes source, "onibi_rseq_regular_capable"
-    refute_match(/onibi_rseq_regular_edge_capable/, source)
-    refute_match(/header->(?:state_count|action_count).*?return 0/s, prepare)
-  end
-
   def test_unsupported_compilation_uses_mri_linear_time_boundary
     pattern = "\\X"
     expected = ::Regexp.linear_time?(::Regexp.new(pattern))

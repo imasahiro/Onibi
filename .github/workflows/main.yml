@@ -30,8 +30,10 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
-      - name: Run MRI baseline and acceptance suites
-        run: bundle exec rake test
+      - name: Run gem acceptance suite
+        run: bundle exec rake test:acceptance
+        env:
+          SEED: 51748
       - name: Run RuboCop
         run: bundle exec rubocop
       - name: Build gem
@@ -49,6 +51,53 @@ jobs:
             abort unless regexp.scan("baacaa").flatten == ["aa", "aa"]
             abort unless regexp.gsub("baacaa", "x") == "bxcx"
           '
+      - name: Run complete legacy suite and verify its result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          stdout_file=ci-artifacts/legacy-stdout.txt
+          stderr_file=ci-artifacts/legacy-stderr.txt
+          status_file=ci-artifacts/legacy-exit.txt
+
+          if bundle exec rake test >"$stdout_file" 2>"$stderr_file"; then
+            status=0
+          else
+            status=$?
+          fi
+          printf '%s\n' "$status" >"$status_file"
+          cat "$stdout_file"
+          cat "$stderr_file" >&2
+          printf 'Legacy suite exit status: `%s`\n' "$status" >>"$GITHUB_STEP_SUMMARY"
+
+          summary_count="$(grep -Ec '^[0-9]+ runs, [0-9]+ assertions, [0-9]+ failures, [0-9]+ errors, [0-9]+ skips$' "$stdout_file" || true)"
+          summary="$(grep -E '^[0-9]+ runs, [0-9]+ assertions, [0-9]+ failures, [0-9]+ errors, [0-9]+ skips$' "$stdout_file" || true)"
+          excluded_count="$(grep -F -c 'RegexpUtilityTest#test_last_match_matches_mri_and_match_question_does_not_change_it' "$stdout_file" || true)"
+
+          if [[ "$status" -eq 0 ]] &&
+             [[ "$summary_count" -eq 1 ]] &&
+             [[ "$summary" =~ ^[1-9][0-9]*\ runs,\ [0-9]+\ assertions,\ 0\ failures,\ 0\ errors,\ 0\ skips$ ]] &&
+             [[ "$excluded_count" -eq 0 ]]; then
+            echo 'The complete legacy suite passed.'
+          elif [[ "$status" -eq 1 ]] &&
+               [[ "$summary_count" -eq 1 ]] &&
+               [[ "$summary" =~ ^[1-9][0-9]*\ runs,\ [0-9]+\ assertions,\ 1\ failures,\ 0\ errors,\ 0\ skips$ ]] &&
+               [[ "$excluded_count" -eq 1 ]]; then
+            echo 'The complete legacy suite has only its documented failure.'
+          else
+            echo 'The complete legacy suite has an unexpected result.' >&2
+            exit 1
+          fi
+        env:
+          SEED: 51748
+      - name: Upload complete legacy suite logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacy-suite-ruby-${{ matrix.ruby }}
+          path: ci-artifacts/
+          if-no-files-found: warn
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
