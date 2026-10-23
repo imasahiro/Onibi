@@ -230,6 +230,9 @@ Init_onibi(void)
     rb_define_private_method(cRegexp,
 			     "__onibi_compile_outcome_internal_diagnostics__",
 			     onibi_compile_outcome_internal_diagnostics, 0);
+    rb_define_private_method(rb_singleton_class(cRegexp),
+			     "__onibi_initialization_failure_diagnostics__",
+			     onibi_initialization_failure_diagnostics, 2);
     rb_define_private_method(cRegexp, "__onibi_semantic_state_diagnostics__",
 			     onibi_semantic_state_diagnostics, 1);
     rb_define_private_method(cRegexp, "__onibi_compile_failure_diagnostics__",

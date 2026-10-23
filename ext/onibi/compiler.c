@@ -6,6 +6,8 @@
 static onibi_fragment_t onibi_compile_node(OnibiAstId node_id,
 					   onibi_gir_builder_t *builder);
 
+enum { ONIBI_SEMANTIC_CAPTURE_START_PUSH = 1U << 8 };
+
 #define ONIBI_FRAGMENT_EXIT_LAZY 1
 #define ONIBI_FRAGMENT_NULLABLE_LAZY 2
 #define ONIBI_FRAGMENT_LAZY_BOTH                                               \
@@ -29,6 +31,7 @@ typedef struct {
     OnibiGirStateVector states;
     OnibiGirEdgeVector edges;
     OnibiGirEdgeVector start_edges;
+    OnibiAbsenceCaptureRelationVector absence_capture_relations;
     OnibiGirStateId accept;
     long capture_count;
     long counter_count;
@@ -189,9 +192,15 @@ onibi_class_property_ctype(const onibi_gir_builder_t *builder,
 	*negated = !*negated;
     }
     rb_encoding *encoding = rb_enc_from_index(builder->encoding_index);
+    VALUE utf8_name =
+	rb_enc_str_new((const char *)name, (long)length, rb_utf8_encoding());
+    VALUE encoded_name = rb_str_export_to_enc(utf8_name, encoding);
+    const OnigUChar *begin = (const OnigUChar *)RSTRING_PTR(encoded_name);
     int ctype = ONIGENC_PROPERTY_NAME_TO_CTYPE(
-	encoding, (const OnigUChar *)name, (const OnigUChar *)name + length);
+	encoding, begin, begin + RSTRING_LEN(encoded_name));
     if (ctype < 0) rb_raise(eRegexpError, "invalid character property name");
+    RB_GC_GUARD(utf8_name);
+    RB_GC_GUARD(encoded_name);
     return (uint32_t)ctype;
 }
 
@@ -199,10 +208,15 @@ static uint32_t
 onibi_class_named_ctype(const onibi_gir_builder_t *builder, const char *name)
 {
     rb_encoding *encoding = rb_enc_from_index(builder->encoding_index);
-    const OnigUChar *begin = (const OnigUChar *)name;
-    int ctype =
-	ONIGENC_PROPERTY_NAME_TO_CTYPE(encoding, begin, begin + strlen(name));
+    VALUE utf8_name =
+	rb_enc_str_new(name, (long)strlen(name), rb_utf8_encoding());
+    VALUE encoded_name = rb_str_export_to_enc(utf8_name, encoding);
+    const OnigUChar *begin = (const OnigUChar *)RSTRING_PTR(encoded_name);
+    int ctype = ONIGENC_PROPERTY_NAME_TO_CTYPE(
+	encoding, begin, begin + RSTRING_LEN(encoded_name));
     if (ctype < 0) rb_raise(eRegexpError, "invalid character property name");
+    RB_GC_GUARD(utf8_name);
+    RB_GC_GUARD(encoded_name);
     return (uint32_t)ctype;
 }
 
@@ -638,6 +652,12 @@ onibi_compiler_owner_cleanup(OnibiCompilerOwner *owner)
     onibi_guard_vector_free(&owner->builder.exit_guards);
     onibi_id_vector_free(&owner->builder.progress_slots);
     onibi_subprogram_variant_vector_free(&owner->builder.subprogram_variants);
+    onibi_logical_absence_capture_relation_vector_free(
+	&owner->builder.absence_capture_relations);
+    onibi_absence_capture_relation_owner_vector_free(
+	&owner->builder.absence_capture_relation_owners);
+    onibi_absence_capture_relation_vector_free(
+	&owner->builder.physical_absence_capture_relations);
     if (!owner->gir_transferred) {
 	onibi_gir_edge_vector_free(&owner->start_edges);
 	onibi_rseq_subprogram_vector_free(&owner->builder.subprograms);
@@ -680,6 +700,8 @@ onibi_compiled_free(void *ptr)
     /* This vector helper releases every nested action vector first. */
     onibi_gir_edge_vector_free(&compiled->edges);
     onibi_gir_edge_vector_free(&compiled->start_edges);
+    onibi_absence_capture_relation_vector_free(
+	&compiled->absence_capture_relations);
     onibi_rseq_subprogram_vector_free(&compiled->subprograms);
     onibi_backref_desc_vector_free(&compiled->backrefs);
     onibi_id_vector_free(&compiled->backref_capture_ids);
@@ -708,6 +730,8 @@ onibi_compiled_memsize(const void *ptr)
 	onibi_compiled_edge_vector_memsize(&compiled->subprogram_entries) +
 	compiled->lookbehind_widths.capacity *
 	    sizeof(*compiled->lookbehind_widths.entries) +
+	compiled->absence_capture_relations.capacity *
+	    sizeof(*compiled->absence_capture_relations.entries) +
 	compiled->classes.capacity * sizeof(*compiled->classes.entries);
     for (size_t i = 0; i < compiled->classes.count; i++)
 	size += compiled->classes.entries[i].data_length;
@@ -1297,6 +1321,48 @@ onibi_ast_slice_number(const OnibiAstArena *arena, OnibiTokenSlice slice,
     return 1;
 }
 
+static int
+onibi_encoded_ascii_char(unsigned char ascii, rb_encoding *encoding,
+			 unsigned char *buffer, size_t capacity)
+{
+    int width = rb_enc_code_to_mbclen((int)ascii, encoding);
+    if (width <= 0 || (size_t)width > capacity) return 0;
+    int written = rb_enc_mbcput((unsigned int)ascii, (char *)buffer, encoding);
+    return written == width ? written : 0;
+}
+
+static OnibiTokenSlice
+onibi_conditional_capture_slice(const OnibiAstArena *arena,
+				OnibiTokenSlice slice, rb_encoding *encoding)
+{
+    if (!slice.present || slice.length < 2 ||
+	slice.offset > arena->bytes_count ||
+	slice.length > arena->bytes_count - slice.offset)
+	return slice;
+    const unsigned char *bytes = arena->bytes + slice.offset;
+    if (bytes[0] == '<' && bytes[slice.length - 1] == '>') {
+	slice.offset++;
+	slice.length -= 2;
+	return slice;
+    }
+
+    unsigned char open[16];
+    unsigned char close[16];
+    int open_width =
+	onibi_encoded_ascii_char('<', encoding, open, sizeof(open));
+    int close_width =
+	onibi_encoded_ascii_char('>', encoding, close, sizeof(close));
+    if (open_width <= 0 || close_width <= 0 ||
+	slice.length < (size_t)(open_width + close_width) ||
+	memcmp(bytes, open, (size_t)open_width) != 0 ||
+	memcmp(bytes + slice.length - (size_t)close_width, close,
+	       (size_t)close_width) != 0)
+	return slice;
+    slice.offset += (size_t)open_width;
+    slice.length -= (size_t)(open_width + close_width);
+    return slice;
+}
+
 static OnibiAstId
 onibi_resolved_named_capture(const OnibiAstArena *arena,
 			     const OnibiResolvedArena *semantics,
@@ -1504,13 +1570,8 @@ onibi_resolve_semantic_node(OnibiParsed *parsed, OnibiAstId id,
 	semantic->subprogram_id = (*next_subprogram)++;
     }
     else if (node->kind == ONIBI_AST_CONDITIONAL) {
-	OnibiTokenSlice condition = node->name;
-	if (condition.present && condition.length >= 2 &&
-	    arena->bytes[condition.offset] == '<' &&
-	    arena->bytes[condition.offset + condition.length - 1] == '>') {
-	    condition.offset++;
-	    condition.length -= 2;
-	}
+	OnibiTokenSlice condition = onibi_conditional_capture_slice(
+	    arena, node->name, rb_enc_from_index(parsed->encoding_index));
 	long number = 0;
 	OnibiAstId target =
 	    onibi_ast_slice_number(arena, condition, &number)
@@ -1581,6 +1642,440 @@ onibi_assign_lookaround_subprograms(OnibiParsed *parsed,
     }
 }
 
+enum {
+    ONIBI_CAPTURE_PUSH_IN_ALT = 1U << 0,
+    ONIBI_CAPTURE_PUSH_IN_VAR_REPEAT = 1U << 1,
+    ONIBI_CAPTURE_PUSH_IN_NEGATIVE = 1U << 2
+};
+
+static void
+onibi_capture_start_push_mark_capture(OnibiParsed *parsed, OnibiAstId id)
+{
+    if (id == ONIBI_AST_NONE || (size_t)id >= parsed->arena.count) return;
+    const OnibiAstNode *node = onibi_ast_node_const(&parsed->arena, id);
+    if (node->kind == ONIBI_AST_CAPTURE &&
+	parsed->semantics.nodes[id].capture_id >= 0)
+	parsed->semantics.nodes[id].flags |= ONIBI_SEMANTIC_CAPTURE_START_PUSH;
+}
+
+static void
+onibi_capture_start_push_mark_tree(OnibiParsed *parsed, OnibiAstId id)
+{
+    if (id == ONIBI_AST_NONE || (size_t)id >= parsed->arena.count) return;
+    const OnibiAstNode *node = onibi_ast_node_const(&parsed->arena, id);
+    onibi_capture_start_push_mark_capture(parsed, id);
+    if (node->body != ONIBI_AST_NONE)
+	onibi_capture_start_push_mark_tree(parsed, node->body);
+    if (node->atom != ONIBI_AST_NONE)
+	onibi_capture_start_push_mark_tree(parsed, node->atom);
+    if (node->yes != ONIBI_AST_NONE)
+	onibi_capture_start_push_mark_tree(parsed, node->yes);
+    if (node->no != ONIBI_AST_NONE)
+	onibi_capture_start_push_mark_tree(parsed, node->no);
+    for (size_t i = 0; i < node->child_count; i++)
+	onibi_capture_start_push_mark_tree(parsed, node->children[i]);
+}
+
+static void
+onibi_capture_start_push_analyze_node(OnibiParsed *parsed, OnibiAstId id,
+				      uint8_t context)
+{
+    if (id == ONIBI_AST_NONE || (size_t)id >= parsed->arena.count) return;
+    const OnibiAstNode *node = onibi_ast_node_const(&parsed->arena, id);
+    OnibiResolvedNode *semantic = &parsed->semantics.nodes[id];
+    if (node->kind == ONIBI_AST_CAPTURE && semantic->capture_id >= 0 &&
+	context != 0)
+	semantic->flags |= ONIBI_SEMANTIC_CAPTURE_START_PUSH;
+    if (node->kind == ONIBI_AST_BACKREF &&
+	semantic->reference_target != ONIBI_AST_NONE) {
+	if (node->name.present) {
+	    OnibiNameIndexEntry *entry = onibi_name_index_find(
+		&parsed->semantics, &parsed->arena, node->name,
+		rb_enc_from_index(parsed->encoding_index));
+	    if (entry != NULL && entry->used)
+		for (size_t i = 0; i < entry->definition_count; i++)
+		    onibi_capture_start_push_mark_capture(
+			parsed, entry->definitions[i]);
+	}
+	else
+	    onibi_capture_start_push_mark_capture(parsed,
+						  semantic->reference_target);
+    }
+    if (node->kind == ONIBI_AST_SUBROUTINE &&
+	semantic->reference_target != ONIBI_AST_NONE)
+	onibi_capture_start_push_mark_tree(parsed, semantic->reference_target);
+
+    if (node->kind == ONIBI_AST_ALTERNATIVE) {
+	for (size_t i = 0; i < node->child_count; i++)
+	    onibi_capture_start_push_analyze_node(
+		parsed, node->children[i], context | ONIBI_CAPTURE_PUSH_IN_ALT);
+	return;
+    }
+    if (node->kind == ONIBI_AST_QUANTIFIER) {
+	uint8_t repeat_context = context;
+	if (!(node->flags & ONIBI_AST_NODE_HAS_MAX) || node->min != node->max)
+	    repeat_context |= ONIBI_CAPTURE_PUSH_IN_VAR_REPEAT;
+	onibi_capture_start_push_analyze_node(parsed, node->atom,
+					      repeat_context);
+	return;
+    }
+    uint8_t child_context = context;
+    if ((node->kind == ONIBI_AST_LOOKAHEAD ||
+	 node->kind == ONIBI_AST_LOOKBEHIND) &&
+	!(node->flags & ONIBI_AST_NODE_POSITIVE))
+	child_context |= ONIBI_CAPTURE_PUSH_IN_NEGATIVE;
+    if (node->body != ONIBI_AST_NONE)
+	onibi_capture_start_push_analyze_node(parsed, node->body,
+					      child_context);
+    if (node->atom != ONIBI_AST_NONE)
+	onibi_capture_start_push_analyze_node(parsed, node->atom,
+					      child_context);
+    if (node->yes != ONIBI_AST_NONE)
+	onibi_capture_start_push_analyze_node(parsed, node->yes, child_context);
+    if (node->no != ONIBI_AST_NONE)
+	onibi_capture_start_push_analyze_node(parsed, node->no, child_context);
+    for (size_t i = 0; i < node->child_count; i++)
+	onibi_capture_start_push_analyze_node(parsed, node->children[i],
+					      child_context);
+}
+
+static void
+onibi_capture_start_push_analyze(OnibiParsed *parsed)
+{
+    onibi_capture_start_push_analyze_node(parsed, parsed->arena.root, 0);
+}
+
+static int
+onibi_absence_relation_control_boundary(OnibiAstKind kind)
+{
+    switch (kind) {
+    case ONIBI_AST_ALTERNATIVE:
+    case ONIBI_AST_ATOMIC:
+    case ONIBI_AST_ABSENCE:
+    case ONIBI_AST_CONDITIONAL:
+    case ONIBI_AST_LOOKAHEAD:
+    case ONIBI_AST_LOOKBEHIND:
+    case ONIBI_AST_SUBROUTINE: return 1;
+    default: return 0;
+    }
+}
+
+static int
+onibi_absence_relation_suffix_starts_consuming(
+    const onibi_gir_builder_t *builder, OnibiAstId suffix_id, size_t depth)
+{
+    if ((size_t)suffix_id >= builder->ast->count ||
+	(size_t)suffix_id >= builder->semantics->count || depth > 256)
+	return 0;
+    const OnibiAstNode *node = onibi_ast_node_const(builder->ast, suffix_id);
+    const OnibiResolvedNode *semantic = &builder->semantics->nodes[suffix_id];
+    if (semantic->min_width <= 0) return 0;
+    switch (node->kind) {
+    case ONIBI_AST_LITERAL:
+    case ONIBI_AST_ESCAPE:
+    case ONIBI_AST_ANY:
+    case ONIBI_AST_CHARACTER_CLASS:
+    case ONIBI_AST_CLASS_INTERSECTION: return 1;
+    case ONIBI_AST_CAPTURE:
+    case ONIBI_AST_GROUP:
+    case ONIBI_AST_OPTION_SCOPE:
+	return node->body != ONIBI_AST_NONE &&
+	       onibi_absence_relation_suffix_starts_consuming(
+		   builder, node->body, depth + 1U);
+    case ONIBI_AST_QUANTIFIER:
+	return node->atom != ONIBI_AST_NONE &&
+	       onibi_absence_relation_suffix_starts_consuming(
+		   builder, node->atom, depth + 1U);
+    case ONIBI_AST_SEQUENCE:
+	for (size_t i = 0; i < node->child_count; i++) {
+	    OnibiAstId child = node->children[i];
+	    if ((size_t)child >= builder->semantics->count) return 0;
+	    if (builder->semantics->nodes[child].min_width == 0) continue;
+	    return onibi_absence_relation_suffix_starts_consuming(
+		builder, child, depth + 1U);
+	}
+	return 0;
+    case ONIBI_AST_ALTERNATIVE:
+	if (node->child_count == 0) return 0;
+	for (size_t i = 0; i < node->child_count; i++)
+	    if (!onibi_absence_relation_suffix_starts_consuming(
+		    builder, node->children[i], depth + 1U))
+		return 0;
+	return 1;
+    default: return 0;
+    }
+}
+
+static int
+onibi_absence_relation_suffix_positive(const onibi_gir_builder_t *builder,
+				       const OnibiAstNode *sequence,
+				       size_t suffix_index)
+{
+    if (suffix_index >= sequence->child_count) return 0;
+    OnibiAstId suffix = sequence->children[suffix_index];
+    return onibi_absence_relation_suffix_starts_consuming(builder, suffix, 0);
+}
+
+static int
+onibi_absence_relation_same_tuple(
+    const OnibiLogicalAbsenceCaptureRelation *left,
+    const OnibiLogicalAbsenceCaptureRelation *right)
+{
+    return left->absence_ast_id == right->absence_ast_id &&
+	   left->target_capture_ast_id == right->target_capture_ast_id &&
+	   left->pushed_witness_ast_id == right->pushed_witness_ast_id &&
+	   left->repeat_ast_id == right->repeat_ast_id &&
+	   left->sequence_ast_id == right->sequence_ast_id &&
+	   left->suffix_ast_id == right->suffix_ast_id &&
+	   left->semantic_owner_id == right->semantic_owner_id &&
+	   left->suffix_child_index == right->suffix_child_index;
+}
+
+static void
+onibi_absence_relation_add(onibi_gir_builder_t *builder,
+			   OnibiAstId absence_ast_id,
+			   OnibiSubprogramId semantic_owner_id,
+			   OnibiAstId target_capture_ast_id,
+			   OnibiAstId pushed_witness_ast_id,
+			   OnibiAstId repeat_ast_id, OnibiAstId sequence_ast_id,
+			   OnibiAstId suffix_ast_id, size_t suffix_child_index)
+{
+    const OnibiResolvedNode *target =
+	&builder->semantics->nodes[target_capture_ast_id];
+    const OnibiResolvedNode *witness =
+	&builder->semantics->nodes[pushed_witness_ast_id];
+    if (target->capture_id < 0 || witness->capture_id < 0 ||
+	!(witness->flags & ONIBI_SEMANTIC_CAPTURE_START_PUSH))
+	return;
+
+    OnibiLogicalAbsenceCaptureRelation relation;
+    memset(&relation, 0, sizeof(relation));
+    relation.absence_ast_id = absence_ast_id;
+    relation.target_capture_ast_id = target_capture_ast_id;
+    relation.pushed_witness_ast_id = pushed_witness_ast_id;
+    relation.repeat_ast_id = repeat_ast_id;
+    relation.sequence_ast_id = sequence_ast_id;
+    relation.suffix_ast_id = suffix_ast_id;
+    relation.semantic_owner_id = semantic_owner_id;
+    relation.suffix_child_index = suffix_child_index;
+    relation.target_close_slot =
+	onibi_capture_boundary_slot(target->capture_id, 1);
+    relation.pushed_witness_close_slot =
+	onibi_capture_boundary_slot(witness->capture_id, 1);
+    relation.target_start_kind =
+	(target->flags & ONIBI_SEMANTIC_CAPTURE_START_PUSH)
+	    ? ONIBI_RELATION_TARGET_START_PUSHED
+	    : ONIBI_RELATION_TARGET_START_DIRECT;
+    if (relation.target_close_slot == relation.pushed_witness_close_slot)
+	return;
+
+    OnibiLogicalAbsenceCaptureRelationVector *relations =
+	&builder->absence_capture_relations;
+    for (size_t i = 0; i < relations->count; i++)
+	if (onibi_absence_relation_same_tuple(&relations->entries[i],
+					      &relation))
+	    return;
+    onibi_logical_absence_capture_relation_vector_push(relations, relation);
+}
+
+static void
+onibi_absence_relation_collect_witnesses(
+    onibi_gir_builder_t *builder, OnibiAstId absence_ast_id,
+    OnibiSubprogramId semantic_owner_id, OnibiAstId target_capture_ast_id,
+    OnibiAstId repeat_ast_id, OnibiAstId sequence_ast_id,
+    OnibiAstId suffix_ast_id, size_t suffix_child_index,
+    OnibiAstId witness_root_id)
+{
+    if ((size_t)witness_root_id >= builder->ast->count) return;
+    const OnibiAstNode *node =
+	onibi_ast_node_const(builder->ast, witness_root_id);
+    if (onibi_absence_relation_control_boundary(node->kind)) return;
+    if (node->kind == ONIBI_AST_CAPTURE) {
+	const OnibiResolvedNode *semantic =
+	    &builder->semantics->nodes[witness_root_id];
+	if (semantic->capture_id >= 0 &&
+	    (semantic->flags & ONIBI_SEMANTIC_CAPTURE_START_PUSH))
+	    onibi_absence_relation_add(
+		builder, absence_ast_id, semantic_owner_id,
+		target_capture_ast_id, witness_root_id, repeat_ast_id,
+		sequence_ast_id, suffix_ast_id, suffix_child_index);
+	if (node->body != ONIBI_AST_NONE)
+	    onibi_absence_relation_collect_witnesses(
+		builder, absence_ast_id, semantic_owner_id,
+		target_capture_ast_id, repeat_ast_id, sequence_ast_id,
+		suffix_ast_id, suffix_child_index, node->body);
+	return;
+    }
+    if (node->kind == ONIBI_AST_GROUP || node->kind == ONIBI_AST_OPTION_SCOPE) {
+	if (node->body != ONIBI_AST_NONE)
+	    onibi_absence_relation_collect_witnesses(
+		builder, absence_ast_id, semantic_owner_id,
+		target_capture_ast_id, repeat_ast_id, sequence_ast_id,
+		suffix_ast_id, suffix_child_index, node->body);
+	return;
+    }
+    if (node->kind == ONIBI_AST_SEQUENCE && node->child_count == 1) {
+	onibi_absence_relation_collect_witnesses(
+	    builder, absence_ast_id, semantic_owner_id, target_capture_ast_id,
+	    repeat_ast_id, sequence_ast_id, suffix_ast_id, suffix_child_index,
+	    node->children[0]);
+	return;
+    }
+    if (node->kind == ONIBI_AST_QUANTIFIER)
+	onibi_absence_relation_collect_witnesses(
+	    builder, absence_ast_id, semantic_owner_id, target_capture_ast_id,
+	    repeat_ast_id, sequence_ast_id, suffix_ast_id, suffix_child_index,
+	    node->atom);
+}
+
+static void
+onibi_absence_relation_collect_repeat_tree(
+    onibi_gir_builder_t *builder, OnibiAstId absence_ast_id,
+    OnibiSubprogramId semantic_owner_id, OnibiAstId target_capture_ast_id,
+    OnibiAstId sequence_ast_id, OnibiAstId suffix_ast_id,
+    size_t suffix_child_index, OnibiAstId repeat_root_id)
+{
+    if ((size_t)repeat_root_id >= builder->ast->count) return;
+    const OnibiAstNode *node =
+	onibi_ast_node_const(builder->ast, repeat_root_id);
+    if (onibi_absence_relation_control_boundary(node->kind)) return;
+    if (node->kind == ONIBI_AST_QUANTIFIER) {
+	const OnibiResolvedNode *semantic =
+	    &builder->semantics->nodes[repeat_root_id];
+	if (semantic->repeat_min != semantic->repeat_max)
+	    onibi_absence_relation_collect_witnesses(
+		builder, absence_ast_id, semantic_owner_id,
+		target_capture_ast_id, repeat_root_id, sequence_ast_id,
+		suffix_ast_id, suffix_child_index, node->atom);
+	onibi_absence_relation_collect_repeat_tree(
+	    builder, absence_ast_id, semantic_owner_id, target_capture_ast_id,
+	    sequence_ast_id, suffix_ast_id, suffix_child_index, node->atom);
+	return;
+    }
+    if (node->kind == ONIBI_AST_CAPTURE || node->kind == ONIBI_AST_GROUP ||
+	node->kind == ONIBI_AST_OPTION_SCOPE) {
+	if (node->body != ONIBI_AST_NONE)
+	    onibi_absence_relation_collect_repeat_tree(
+		builder, absence_ast_id, semantic_owner_id,
+		target_capture_ast_id, sequence_ast_id, suffix_ast_id,
+		suffix_child_index, node->body);
+	return;
+    }
+    if (node->kind == ONIBI_AST_SEQUENCE && node->child_count == 1)
+	onibi_absence_relation_collect_repeat_tree(
+	    builder, absence_ast_id, semantic_owner_id, target_capture_ast_id,
+	    sequence_ast_id, suffix_ast_id, suffix_child_index,
+	    node->children[0]);
+}
+
+static void
+onibi_absence_relation_collect_target_capture(
+    onibi_gir_builder_t *builder, OnibiAstId absence_ast_id,
+    OnibiSubprogramId semantic_owner_id, OnibiAstId target_capture_ast_id,
+    OnibiAstId sequence_ast_id, OnibiAstId suffix_ast_id,
+    size_t suffix_child_index)
+{
+    if ((size_t)target_capture_ast_id >= builder->ast->count ||
+	(size_t)target_capture_ast_id >= builder->semantics->count)
+	return;
+    const OnibiAstNode *target =
+	onibi_ast_node_const(builder->ast, target_capture_ast_id);
+    if (target->kind != ONIBI_AST_CAPTURE) return;
+    const OnibiResolvedNode *semantic =
+	&builder->semantics->nodes[target_capture_ast_id];
+    if (semantic->capture_id >= 0 && target->body != ONIBI_AST_NONE)
+	onibi_absence_relation_collect_repeat_tree(
+	    builder, absence_ast_id, semantic_owner_id, target_capture_ast_id,
+	    sequence_ast_id, suffix_ast_id, suffix_child_index, target->body);
+}
+
+static void
+onibi_absence_relation_collect_target_wrappers(
+    onibi_gir_builder_t *builder, OnibiAstId absence_ast_id,
+    OnibiSubprogramId semantic_owner_id, OnibiAstId target_root_id,
+    OnibiAstId sequence_ast_id, OnibiAstId suffix_ast_id,
+    size_t suffix_child_index)
+{
+    if ((size_t)target_root_id >= builder->ast->count) return;
+    const OnibiAstNode *node =
+	onibi_ast_node_const(builder->ast, target_root_id);
+    if (onibi_absence_relation_control_boundary(node->kind)) return;
+    if (node->kind == ONIBI_AST_CAPTURE) {
+	onibi_absence_relation_collect_target_capture(
+	    builder, absence_ast_id, semantic_owner_id, target_root_id,
+	    sequence_ast_id, suffix_ast_id, suffix_child_index);
+	if (node->body != ONIBI_AST_NONE)
+	    onibi_absence_relation_collect_target_wrappers(
+		builder, absence_ast_id, semantic_owner_id, node->body,
+		sequence_ast_id, suffix_ast_id, suffix_child_index);
+	return;
+    }
+    if (node->kind == ONIBI_AST_GROUP || node->kind == ONIBI_AST_OPTION_SCOPE) {
+	if (node->body != ONIBI_AST_NONE)
+	    onibi_absence_relation_collect_target_wrappers(
+		builder, absence_ast_id, semantic_owner_id, node->body,
+		sequence_ast_id, suffix_ast_id, suffix_child_index);
+	return;
+    }
+    if (node->kind == ONIBI_AST_SEQUENCE && node->child_count == 1)
+	onibi_absence_relation_collect_target_wrappers(
+	    builder, absence_ast_id, semantic_owner_id, node->children[0],
+	    sequence_ast_id, suffix_ast_id, suffix_child_index);
+}
+
+static void
+onibi_absence_relation_scan_sequences(onibi_gir_builder_t *builder,
+				      OnibiAstId absence_ast_id,
+				      OnibiSubprogramId semantic_owner_id,
+				      OnibiAstId node_id)
+{
+    if ((size_t)node_id >= builder->ast->count) return;
+    const OnibiAstNode *node = onibi_ast_node_const(builder->ast, node_id);
+    if (onibi_absence_relation_control_boundary(node->kind)) return;
+    if (node->kind == ONIBI_AST_SEQUENCE) {
+	for (size_t i = 0; i + 1U < node->child_count; i++) {
+	    if (!onibi_absence_relation_suffix_positive(builder, node, i + 1U))
+		continue;
+	    OnibiAstId suffix_ast_id = node->children[i + 1U];
+	    onibi_absence_relation_collect_target_wrappers(
+		builder, absence_ast_id, semantic_owner_id, node->children[i],
+		node_id, suffix_ast_id, i + 1U);
+	}
+	for (size_t i = 0; i < node->child_count; i++)
+	    onibi_absence_relation_scan_sequences(
+		builder, absence_ast_id, semantic_owner_id, node->children[i]);
+	return;
+    }
+    if (node->kind == ONIBI_AST_CAPTURE || node->kind == ONIBI_AST_GROUP ||
+	node->kind == ONIBI_AST_OPTION_SCOPE) {
+	if (node->body != ONIBI_AST_NONE)
+	    onibi_absence_relation_scan_sequences(
+		builder, absence_ast_id, semantic_owner_id, node->body);
+	return;
+    }
+    if (node->kind == ONIBI_AST_QUANTIFIER)
+	onibi_absence_relation_scan_sequences(builder, absence_ast_id,
+					      semantic_owner_id, node->atom);
+}
+
+static void
+onibi_absence_relation_collect(OnibiParsed *parsed,
+			       onibi_gir_builder_t *builder)
+{
+    for (size_t i = 0; i < parsed->arena.count; i++) {
+	const OnibiAstNode *absence =
+	    onibi_ast_node_const(&parsed->arena, (OnibiAstId)i);
+	if (absence->kind != ONIBI_AST_ABSENCE) continue;
+	const OnibiResolvedNode *semantic = &parsed->semantics.nodes[i];
+	if (semantic->subprogram_id == UINT32_MAX ||
+	    semantic->subprogram_id >= builder->resolved_subprogram_count)
+	    rb_raise(eRegexpError, "absence relation owner is unresolved");
+	if (absence->body != ONIBI_AST_NONE)
+	    onibi_absence_relation_scan_sequences(
+		builder, (OnibiAstId)i, semantic->subprogram_id, absence->body);
+    }
+}
+
 static OnibiResolveOutput
 onibi_compiler_pass_resolve(OnibiParseOutput parse, OnibiCompilerOwner *owner)
 {
@@ -1633,6 +2128,7 @@ onibi_compiler_pass_resolve(OnibiParseOutput parse, OnibiCompilerOwner *owner)
     uint32_t subprograms = 1;
     (void)onibi_resolve_semantic_node(parsed, parsed->arena.root,
 				      (uint32_t)parse.options, &subprograms);
+    onibi_capture_start_push_analyze(parsed);
     for (size_t i = 0; i < parsed->semantics.name_index_capacity; i++) {
 	OnibiNameIndexEntry *entry = &parsed->semantics.name_entries[i];
 	if (entry->used && entry->definition_count != 0)
@@ -2015,6 +2511,144 @@ onibi_subprogram_variant_finish(onibi_gir_builder_t *builder,
     rb_raise(eRegexpError, "subprogram variant is not active");
 }
 
+static void
+onibi_absence_relation_bind_owner(onibi_gir_builder_t *builder,
+				  OnibiSubprogramId semantic_owner_id,
+				  OnibiSubprogramId physical_owner_id)
+{
+    if (builder->active_semantic_subprogram_id != semantic_owner_id ||
+	builder->active_physical_subprogram_id != physical_owner_id)
+	rb_raise(eRegexpError, "absence relation owner scope is invalid");
+    for (size_t i = 0; i < builder->absence_capture_relations.count; i++) {
+	const OnibiLogicalAbsenceCaptureRelation *relation =
+	    &builder->absence_capture_relations.entries[i];
+	if (relation->semantic_owner_id != semantic_owner_id) continue;
+	int exists = 0;
+	for (size_t j = 0; j < builder->absence_capture_relation_owners.count;
+	     j++) {
+	    const OnibiAbsenceCaptureRelationOwner *owner =
+		&builder->absence_capture_relation_owners.entries[j];
+	    if (owner->logical_relation_index == i &&
+		owner->semantic_owner_id == semantic_owner_id &&
+		owner->physical_owner_id == physical_owner_id) {
+		exists = 1;
+		break;
+	    }
+	}
+	if (exists) continue;
+	if (i > UINT32_MAX ||
+	    builder->absence_capture_relation_owners.count >= UINT32_MAX)
+	    rb_raise(eRegexpError,
+		     "absence relation index exceeds the GIR limit");
+	OnibiAbsenceCaptureRelation physical;
+	memset(&physical, 0, sizeof(physical));
+	physical.subprogram_id = physical_owner_id;
+	physical.target_close_slot = relation->target_close_slot;
+	physical.pushed_witness_close_slot =
+	    relation->pushed_witness_close_slot;
+	physical.target_start_kind = relation->target_start_kind;
+	onibi_absence_capture_relation_vector_push(
+	    &builder->physical_absence_capture_relations, physical);
+	onibi_absence_capture_relation_owner_vector_push(
+	    &builder->absence_capture_relation_owners,
+	    (OnibiAbsenceCaptureRelationOwner){(uint32_t)i, semantic_owner_id,
+					       physical_owner_id});
+    }
+}
+
+typedef enum {
+    ONIBI_ABSENCE_RELATION_TARGET_NODE,
+    ONIBI_ABSENCE_RELATION_REPEAT_NODE
+} OnibiAbsenceRelationNodeField;
+
+static OnibiGAction
+onibi_absence_relation_marker_action(
+    const OnibiLogicalAbsenceCaptureRelation *relation, uint32_t relation_id,
+    uint8_t role)
+{
+    OnibiGAction marker = {0};
+    marker.code = ONIBI_GA_CAPTURE_RELATION;
+    marker.set = role;
+    marker.has_slot = 1;
+    marker.slot = relation->target_close_slot;
+    marker.has_arg32 = 1;
+    marker.arg32 = relation_id;
+    return marker;
+}
+
+static void
+onibi_absence_relation_append_node_markers(onibi_gir_builder_t *builder,
+					   OnibiAstId node_id,
+					   OnibiAbsenceRelationNodeField field,
+					   uint8_t role,
+					   OnibiGActionVector *actions)
+{
+    if (builder->active_semantic_subprogram_id == UINT32_MAX ||
+	builder->active_physical_subprogram_id == UINT32_MAX)
+	return;
+    for (size_t i = 0; i < builder->absence_capture_relation_owners.count;
+	 i++) {
+	const OnibiAbsenceCaptureRelationOwner *owner =
+	    &builder->absence_capture_relation_owners.entries[i];
+	if (owner->semantic_owner_id !=
+		builder->active_semantic_subprogram_id ||
+	    owner->physical_owner_id != builder->active_physical_subprogram_id)
+	    continue;
+	if (owner->logical_relation_index >=
+	    builder->absence_capture_relations.count)
+	    rb_raise(eRegexpError, "absence relation tuple index is invalid");
+	const OnibiLogicalAbsenceCaptureRelation *relation =
+	    &builder->absence_capture_relations
+		 .entries[owner->logical_relation_index];
+	OnibiAstId relation_node = field == ONIBI_ABSENCE_RELATION_REPEAT_NODE
+				       ? relation->repeat_ast_id
+				       : relation->target_capture_ast_id;
+	if (relation_node != node_id) continue;
+	if (i >= UINT32_MAX)
+	    rb_raise(eRegexpError,
+		     "absence relation ID exceeds the RSeq limit");
+	onibi_g_action_vector_push(actions,
+				   onibi_absence_relation_marker_action(
+				       relation, (uint32_t)i + 1U, role));
+    }
+}
+
+static void
+onibi_absence_relation_append_suffix_markers(onibi_gir_builder_t *builder,
+					     OnibiAstId sequence_ast_id,
+					     size_t suffix_child_index,
+					     OnibiGActionVector *actions)
+{
+    if (builder->active_semantic_subprogram_id == UINT32_MAX ||
+	builder->active_physical_subprogram_id == UINT32_MAX)
+	return;
+    for (size_t i = 0; i < builder->absence_capture_relation_owners.count;
+	 i++) {
+	const OnibiAbsenceCaptureRelationOwner *owner =
+	    &builder->absence_capture_relation_owners.entries[i];
+	if (owner->semantic_owner_id !=
+		builder->active_semantic_subprogram_id ||
+	    owner->physical_owner_id != builder->active_physical_subprogram_id)
+	    continue;
+	if (owner->logical_relation_index >=
+	    builder->absence_capture_relations.count)
+	    rb_raise(eRegexpError, "absence relation tuple index is invalid");
+	const OnibiLogicalAbsenceCaptureRelation *relation =
+	    &builder->absence_capture_relations
+		 .entries[owner->logical_relation_index];
+	if (relation->sequence_ast_id != sequence_ast_id ||
+	    relation->suffix_child_index != suffix_child_index)
+	    continue;
+	if (i >= UINT32_MAX)
+	    rb_raise(eRegexpError,
+		     "absence relation ID exceeds the RSeq limit");
+	onibi_g_action_vector_push(actions,
+				   onibi_absence_relation_marker_action(
+				       relation, (uint32_t)i + 1U,
+				       ONIBI_CAPTURE_RELATION_ROLE_SUFFIX));
+    }
+}
+
 static long
 onibi_compile_resolved_body_subprogram(
     OnibiAstId body, OnibiSubprogramId subprogram_id,
@@ -2030,7 +2664,17 @@ onibi_compile_resolved_body_subprogram(
     OnibiSubprogramId physical_id =
 	onibi_subprogram_variant_start(builder, subprogram_id, &compile);
     if (!compile) return (long)physical_id;
+    OnibiSubprogramId previous_semantic_owner =
+	builder->active_semantic_subprogram_id;
+    OnibiSubprogramId previous_physical_owner =
+	builder->active_physical_subprogram_id;
+    builder->active_semantic_subprogram_id = subprogram_id;
+    builder->active_physical_subprogram_id = physical_id;
+    if (kind == ONIBI_SUBPROGRAM_ABSENCE)
+	onibi_absence_relation_bind_owner(builder, subprogram_id, physical_id);
     onibi_fragment_t fragment = onibi_compile_node(body, builder);
+    builder->active_semantic_subprogram_id = previous_semantic_owner;
+    builder->active_physical_subprogram_id = previous_physical_owner;
     long result = onibi_store_subprogram_fragment(
 	&fragment, physical_id, builder, flags, kind, effects, option_env,
 	width_base, width_count);
@@ -2051,22 +2695,33 @@ onibi_compile_resolved_subprogram(OnibiAstId capture_id,
     OnibiSubprogramId physical_id =
 	onibi_subprogram_variant_start(builder, subprogram_id, &compile);
     if (!compile) return (long)physical_id;
+    OnibiSubprogramId previous_semantic_owner =
+	builder->active_semantic_subprogram_id;
+    OnibiSubprogramId previous_physical_owner =
+	builder->active_physical_subprogram_id;
+    builder->active_semantic_subprogram_id = subprogram_id;
+    builder->active_physical_subprogram_id = physical_id;
     const OnibiAstNode *capture =
 	onibi_ast_node_const(builder->ast, capture_id);
     const OnibiResolvedNode *capture_semantic =
 	&builder->semantics->nodes[capture_id];
     onibi_fragment_t fragment = onibi_compile_node(capture->body, builder);
+    builder->active_semantic_subprogram_id = previous_semantic_owner;
+    builder->active_physical_subprogram_id = previous_physical_owner;
     long capture_slot = capture_semantic->capture_id;
     if (capture_slot >= 0) {
-	OnibiGAction open = {ONIBI_GA_CAPTURE_OPEN,
-			     0,
-			     0,
-			     1,
-			     onibi_capture_boundary_slot(capture_slot, 0),
-			     0,
-			     0,
-			     0,
-			     0};
+	OnibiGAction open = {
+	    ONIBI_GA_CAPTURE_OPEN,
+	    (capture_semantic->flags & ONIBI_SEMANTIC_CAPTURE_START_PUSH)
+		? ONIBI_GA_CAPTURE_OPEN_START_PUSH
+		: 0,
+	    0,
+	    1,
+	    onibi_capture_boundary_slot(capture_slot, 0),
+	    0,
+	    0,
+	    0,
+	    0};
 	OnibiGAction close = {ONIBI_GA_CAPTURE_CLOSE,
 			      0,
 			      0,
@@ -2132,12 +2787,12 @@ onibi_fragment_explicit(onibi_fragment_t part, onibi_gir_builder_t *builder)
 }
 
 static void
-onibi_fragment_join(onibi_fragment_t *left, onibi_fragment_t right,
-		    onibi_gir_builder_t *builder)
+onibi_fragment_join_actions(onibi_fragment_t *left, onibi_fragment_t right,
+			    onibi_gir_builder_t *builder,
+			    const OnibiGActionVector *actions)
 {
     onibi_nfa_add_connection(builder, left->exits.entries[0],
-			     right.starts.entries[0], &(OnibiGActionVector){0},
-			     0);
+			     right.starts.entries[0], actions, 0);
     onibi_nfa_state_id_vector_free(&left->exits);
     left->exits = right.exits;
     onibi_nfa_state_id_vector_free(&right.starts);
@@ -2145,8 +2800,15 @@ onibi_fragment_join(onibi_fragment_t *left, onibi_fragment_t right,
     onibi_g_action_vector_free(&right.pending_actions);
 }
 
+static void
+onibi_fragment_join(onibi_fragment_t *left, onibi_fragment_t right,
+		    onibi_gir_builder_t *builder)
+{
+    onibi_fragment_join_actions(left, right, builder, &(OnibiGActionVector){0});
+}
+
 static onibi_fragment_t
-onibi_compile_sequence(const OnibiAstNode *sequence,
+onibi_compile_sequence(OnibiAstId sequence_id, const OnibiAstNode *sequence,
 		       onibi_gir_builder_t *builder)
 {
     onibi_fragment_t result =
@@ -2155,7 +2817,14 @@ onibi_compile_sequence(const OnibiAstNode *sequence,
 	onibi_fragment_t part =
 	    onibi_compile_node(sequence->children[i], builder);
 	part = onibi_fragment_explicit(part, builder);
-	onibi_fragment_join(&result, part, builder);
+	OnibiGActionVector boundary_actions;
+	onibi_g_action_vector_init(&boundary_actions);
+	onibi_g_action_vector_bind(&boundary_actions,
+				   builder->allocation_owner);
+	onibi_absence_relation_append_suffix_markers(builder, sequence_id, i,
+						     &boundary_actions);
+	onibi_fragment_join_actions(&result, part, builder, &boundary_actions);
+	onibi_g_action_vector_free(&boundary_actions);
     }
     return result;
 }
@@ -2473,21 +3142,61 @@ onibi_repeat_link(onibi_gir_builder_t *builder, OnibiNfaStateId from,
 }
 
 static void
+onibi_repeat_link_relation(onibi_gir_builder_t *builder, OnibiNfaStateId from,
+			   OnibiNfaStateId to,
+			   const OnibiGActionVector *base_actions,
+			   OnibiAstId repeat_ast_id, uint8_t role)
+{
+    OnibiGActionVector actions;
+    onibi_g_action_vector_init(&actions);
+    onibi_g_action_vector_bind(&actions, builder->allocation_owner);
+    if (base_actions != NULL)
+	onibi_g_action_vector_append(&actions, base_actions);
+    onibi_absence_relation_append_node_markers(
+	builder, repeat_ast_id, ONIBI_ABSENCE_RELATION_REPEAT_NODE, role,
+	&actions);
+    onibi_nfa_add_connection(builder, from, to, &actions, 0);
+    onibi_g_action_vector_free(&actions);
+}
+
+static void
 onibi_repeat_choice(onibi_gir_builder_t *builder, OnibiNfaStateId choice,
 		    OnibiNfaStateId body, OnibiNfaStateId exit, long counter,
-		    long min, long max, int greedy)
+		    long min, long max, int greedy, OnibiAstId repeat_ast_id)
 {
-    if (!greedy)
-	onibi_repeat_link(
-	    builder, choice, exit,
+    if (!greedy) {
+	OnibiGActionVector base;
+	onibi_g_action_vector_init(&base);
+	onibi_g_action_vector_bind(&base, builder->allocation_owner);
+	onibi_g_action_vector_push(
+	    &base,
 	    onibi_counter_action(ONIBI_GA_TEST_COUNTER_GE, counter, 1, min));
-    onibi_repeat_link(
-	builder, choice, body,
-	onibi_counter_action(ONIBI_GA_TEST_COUNTER_LT, counter, 1, max));
-    if (greedy)
-	onibi_repeat_link(
-	    builder, choice, exit,
+	onibi_repeat_link_relation(builder, choice, exit, &base, repeat_ast_id,
+				   ONIBI_CAPTURE_RELATION_ROLE_EXIT);
+	onibi_g_action_vector_free(&base);
+    }
+    {
+	OnibiGActionVector base;
+	onibi_g_action_vector_init(&base);
+	onibi_g_action_vector_bind(&base, builder->allocation_owner);
+	onibi_g_action_vector_push(
+	    &base,
+	    onibi_counter_action(ONIBI_GA_TEST_COUNTER_LT, counter, 1, max));
+	onibi_repeat_link_relation(builder, choice, body, &base, repeat_ast_id,
+				   ONIBI_CAPTURE_RELATION_ROLE_LOOP);
+	onibi_g_action_vector_free(&base);
+    }
+    if (greedy) {
+	OnibiGActionVector base;
+	onibi_g_action_vector_init(&base);
+	onibi_g_action_vector_bind(&base, builder->allocation_owner);
+	onibi_g_action_vector_push(
+	    &base,
 	    onibi_counter_action(ONIBI_GA_TEST_COUNTER_GE, counter, 1, min));
+	onibi_repeat_link_relation(builder, choice, exit, &base, repeat_ast_id,
+				   ONIBI_CAPTURE_RELATION_ROLE_EXIT);
+	onibi_g_action_vector_free(&base);
+    }
 }
 
 /* An empty iteration either stops or converts a previous capture into an
@@ -2495,8 +3204,9 @@ onibi_repeat_choice(onibi_gir_builder_t *builder, OnibiNfaStateId choice,
  * can occur before another character is consumed. Clone only the epsilon
  * projection. All copies share the original consuming states. */
 static onibi_fragment_t
-onibi_compile_compact_repeat(OnibiAstId atom, long min, long max, int greedy,
-			     int nullable, onibi_gir_builder_t *builder)
+onibi_compile_compact_repeat(OnibiAstId repeat_ast_id, OnibiAstId atom,
+			     long min, long max, int greedy, int nullable,
+			     onibi_gir_builder_t *builder)
 {
     long counter = onibi_gir_allocate_counter_slot(builder, 0);
     long guard = nullable ? onibi_gir_allocate_counter_slot(builder, 0) : -1;
@@ -2609,7 +3319,7 @@ onibi_compile_compact_repeat(OnibiAstId atom, long min, long max, int greedy,
 		onibi_counter_action(ONIBI_GA_NULL_STOP, guard, 0, 0));
 	}
 	onibi_repeat_choice(builder, choices.entries[phase], projected_entry,
-			    exit, counter, min, max, greedy);
+			    exit, counter, min, max, greedy, repeat_ast_id);
     }
     onibi_nfa_state_id_vector_free(&choices);
     onibi_nfa_state_id_vector_free(&body.starts);
@@ -2676,7 +3386,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	return onibi_compile_character_class(node_id, ignorecase, builder);
     }
     if (type_code == ONIBI_AST_SEQUENCE) {
-	return onibi_compile_sequence(c_node, builder);
+	return onibi_compile_sequence(node_id, c_node, builder);
     }
     if (type_code == ONIBI_AST_ALTERNATIVE) {
 	OnibiNfaStateId entry = onibi_nfa_epsilon_state(builder),
@@ -2963,11 +3673,17 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	}
 	open.has_slot = 1;
 	open.slot = onibi_capture_boundary_slot(capture_id, 0);
+	open.set = (resolved_node->flags & ONIBI_SEMANTIC_CAPTURE_START_PUSH)
+		       ? ONIBI_GA_CAPTURE_OPEN_START_PUSH
+		       : 0;
 	close.code = ONIBI_GA_CAPTURE_CLOSE;
 	close.has_slot = 1;
 	close.slot = onibi_capture_boundary_slot(capture_id, 1);
 	onibi_g_action_vector_push(&result.start_actions, open);
 	onibi_g_action_vector_push(&result.pending_actions, close);
+	onibi_absence_relation_append_node_markers(
+	    builder, node_id, ONIBI_ABSENCE_RELATION_TARGET_NODE,
+	    ONIBI_CAPTURE_RELATION_ROLE_CLOSE, &result.pending_actions);
 	return result;
     }
     if (type_code == ONIBI_AST_GROUP)
@@ -3005,7 +3721,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 			     max) <= ONIBI_MRI_REPEAT_EXPAND_LIMIT);
 	if (max > ONIBI_RSEQ_REPEAT_UNROLL_LIMIT ||
 	    (nullable && !expanded && max != 1))
-	    return onibi_compile_compact_repeat(atom, min,
+	    return onibi_compile_compact_repeat(node_id, atom, min,
 						max < 0 ? UINT32_MAX : max,
 						greedy, nullable, builder);
 	onibi_fragment_t result =
@@ -3023,13 +3739,14 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    OnibiNfaStateId choice = result.exits.entries[0];
 	    OnibiNfaStateId exit = onibi_nfa_epsilon_state(builder);
 	    if (!greedy)
-		onibi_nfa_add_connection(builder, choice, exit,
-					 &(OnibiGActionVector){0}, 0);
-	    onibi_nfa_add_connection(builder, choice, part.starts.entries[0],
-				     &(OnibiGActionVector){0}, 0);
+		onibi_repeat_link_relation(builder, choice, exit, NULL, node_id,
+					   ONIBI_CAPTURE_RELATION_ROLE_EXIT);
+	    onibi_repeat_link_relation(builder, choice, part.starts.entries[0],
+				       NULL, node_id,
+				       ONIBI_CAPTURE_RELATION_ROLE_LOOP);
 	    if (greedy)
-		onibi_nfa_add_connection(builder, choice, exit,
-					 &(OnibiGActionVector){0}, 0);
+		onibi_repeat_link_relation(builder, choice, exit, NULL, node_id,
+					   ONIBI_CAPTURE_RELATION_ROLE_EXIT);
 	    onibi_nfa_add_connection(builder, part.exits.entries[0], choice,
 				     &(OnibiGActionVector){0}, 0);
 	    result.exits.entries[0] = exit;
@@ -3046,12 +3763,23 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 		    builder);
 		OnibiNfaStateId choice = result.exits.entries[0];
 		if (!greedy)
-		    onibi_nfa_add_connection(builder, choice, exit,
-					     &(OnibiGActionVector){0}, 0);
-		onibi_fragment_join(&result, part, builder);
+		    onibi_repeat_link_relation(
+			builder, choice, exit, NULL, node_id,
+			ONIBI_CAPTURE_RELATION_ROLE_EXIT);
+		OnibiGActionVector loop_actions;
+		onibi_g_action_vector_init(&loop_actions);
+		onibi_g_action_vector_bind(&loop_actions,
+					   builder->allocation_owner);
+		onibi_absence_relation_append_node_markers(
+		    builder, node_id, ONIBI_ABSENCE_RELATION_REPEAT_NODE,
+		    ONIBI_CAPTURE_RELATION_ROLE_LOOP, &loop_actions);
+		onibi_fragment_join_actions(&result, part, builder,
+					    &loop_actions);
+		onibi_g_action_vector_free(&loop_actions);
 		if (greedy)
-		    onibi_nfa_add_connection(builder, choice, exit,
-					     &(OnibiGActionVector){0}, 0);
+		    onibi_repeat_link_relation(
+			builder, choice, exit, NULL, node_id,
+			ONIBI_CAPTURE_RELATION_ROLE_EXIT);
 	    }
 	    onibi_nfa_add_connection(builder, result.exits.entries[0], exit,
 				     &(OnibiGActionVector){0}, 0);
@@ -3117,6 +3845,21 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
     onibi_subprogram_variant_vector_init(&builder->subprogram_variants);
     onibi_subprogram_variant_vector_bind(&builder->subprogram_variants,
 					 builder->allocation_owner);
+    onibi_logical_absence_capture_relation_vector_init(
+	&builder->absence_capture_relations);
+    onibi_logical_absence_capture_relation_vector_bind(
+	&builder->absence_capture_relations, builder->allocation_owner);
+    onibi_absence_capture_relation_owner_vector_init(
+	&builder->absence_capture_relation_owners);
+    onibi_absence_capture_relation_owner_vector_bind(
+	&builder->absence_capture_relation_owners, builder->allocation_owner);
+    onibi_absence_capture_relation_vector_init(
+	&builder->physical_absence_capture_relations);
+    onibi_absence_capture_relation_vector_bind(
+	&builder->physical_absence_capture_relations,
+	builder->allocation_owner);
+    builder->active_semantic_subprogram_id = UINT32_MAX;
+    builder->active_physical_subprogram_id = UINT32_MAX;
 }
 
 /* Lower a tagged NFA, then eliminate its epsilon edges before publishing GIR.
@@ -3130,6 +3873,7 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
 {
     onibi_gir_builder_t *builder = &owner->builder;
     OnibiTaggedNfa *nfa = &owner->nfa;
+    onibi_absence_relation_collect(parsed, builder);
     onibi_nfa_init(nfa, builder->allocation_owner);
     owner->nfa_active = 1;
     builder->nfa = nfa;
@@ -3220,6 +3964,7 @@ onibi_compiler_pass_verify_gir(const onibi_gir_builder_t *builder,
 			 &builder->lookbehind_widths,
 			 &builder->classes,
 			 &builder->progress_slots,
+			 &builder->physical_absence_capture_relations,
 			 builder->next_id,
 			 builder->capture_count,
 			 builder->counter_count,
@@ -3320,6 +4065,10 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 		break;                                                         \
 	    default: break;                                                    \
 	    }                                                                  \
+	    if ((_action->code == ONIBI_GA_CAPTURE_OPEN ||                     \
+		 _action->code == ONIBI_GA_CAPTURE_OPEN_UNSCOPED) &&           \
+		_action->set == ONIBI_GA_CAPTURE_OPEN_START_PUSH)              \
+		result.rseq_features |= ONIBI_RSEQ_FEATURE_CAPTURE_ROLLBACK;   \
 	    if (_action->code == ONIBI_GA_PROGRESS ||                          \
 		_action->code == ONIBI_GA_COUNTER_INIT ||                      \
 		_action->code == ONIBI_GA_COUNTER_INCREMENT ||                 \
@@ -4793,6 +5542,8 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     onibi_gir_state_vector_init(&compiled_result->states);
     onibi_gir_edge_vector_init(&compiled_result->edges);
     onibi_gir_edge_vector_init(&compiled_result->start_edges);
+    onibi_absence_capture_relation_vector_init(
+	&compiled_result->absence_capture_relations);
 
     for (size_t i = 0; i < builder->edges.count; i++)
 	if (!onibi_owned_pointer_p(builder->allocation_owner,
@@ -4829,7 +5580,11 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
 				builder->subprogram_entries.entries)) ||
 	(builder->lookbehind_widths.count != 0 &&
 	 !onibi_owned_pointer_p(builder->allocation_owner,
-				builder->lookbehind_widths.entries)))
+				builder->lookbehind_widths.entries)) ||
+	(builder->physical_absence_capture_relations.count != 0 &&
+	 !onibi_owned_pointer_p(
+	     builder->allocation_owner,
+	     builder->physical_absence_capture_relations.entries)))
 	rb_raise(eRegexpError, "GIR publication owner is invalid");
 
     for (size_t i = 0; i < builder->edges.count; i++) {
@@ -4864,6 +5619,10 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     if (builder->lookbehind_widths.entries)
 	onibi_owned_transfer(builder->allocation_owner,
 			     builder->lookbehind_widths.entries);
+    if (builder->physical_absence_capture_relations.entries)
+	onibi_owned_transfer(
+	    builder->allocation_owner,
+	    builder->physical_absence_capture_relations.entries);
     for (size_t i = 0; i < builder->classes.count; i++)
 	onibi_owned_transfer(builder->allocation_owner,
 			     builder->classes.entries[i].data);
@@ -4876,6 +5635,7 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     builder->backref_capture_ids.allocation_owner = NULL;
     builder->subprogram_entries.allocation_owner = NULL;
     builder->lookbehind_widths.allocation_owner = NULL;
+    builder->physical_absence_capture_relations.allocation_owner = NULL;
     builder->classes.allocation_owner = NULL;
     compiled_result->states = builder->states;
     compiled_result->edges = builder->edges;
@@ -4885,6 +5645,8 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     compiled_result->backref_capture_ids = builder->backref_capture_ids;
     compiled_result->subprogram_entries = builder->subprogram_entries;
     compiled_result->lookbehind_widths = builder->lookbehind_widths;
+    compiled_result->absence_capture_relations =
+	builder->physical_absence_capture_relations;
     compiled_result->classes = builder->classes;
     onibi_gir_state_vector_init(&builder->states);
     onibi_gir_edge_vector_init(&builder->edges);
@@ -4894,6 +5656,8 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     onibi_id_vector_init(&builder->backref_capture_ids);
     onibi_gir_edge_vector_init(&builder->subprogram_entries);
     onibi_id_vector_init(&builder->lookbehind_widths);
+    onibi_absence_capture_relation_vector_init(
+	&builder->physical_absence_capture_relations);
     onibi_semantic_class_vector_init(&builder->classes);
     compiled_result->accept = accept;
     compiled_result->capture_count = builder->capture_count;

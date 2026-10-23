@@ -59,13 +59,15 @@ onibi_c_repeat_shape_p(const OnibiTokenVector *tokens, long open, long close)
     if (close <= open + 1) return 0;
 
     const OnibiTokenRecord *previous = onibi_token_at(tokens, open);
-    if (previous->end != previous->start + 1) return 0;
+    if (previous->end <= previous->start) return 0;
+    long source_width = previous->end - previous->start;
     long comma = -1;
     size_t lower_digits = 0;
     size_t upper_digits = 0;
     for (long i = open + 1; i < close; i++) {
 	const OnibiTokenRecord *token = onibi_token_at(tokens, i);
-	if (previous->end != token->start || token->end != token->start + 1 ||
+	if (previous->end != token->start || token->end <= token->start ||
+	    token->end - token->start != source_width ||
 	    token->kind != ONIBI_TOKEN_LITERAL)
 	    return 0;
 	if (token->byte == ',') {
@@ -85,7 +87,8 @@ onibi_c_repeat_shape_p(const OnibiTokenVector *tokens, long open, long close)
     }
     const OnibiTokenRecord *close_token = onibi_token_at(tokens, close);
     if (previous->end != close_token->start ||
-	close_token->end != close_token->start + 1)
+	close_token->end <= close_token->start ||
+	close_token->end - close_token->start != source_width)
 	return 0;
 
     if (comma < 0) return lower_digits > 0;
@@ -99,9 +102,39 @@ onibi_c_repeat_interval_p(const OnibiTokenVector *tokens, long open, long end)
     return close >= 0 && onibi_c_repeat_shape_p(tokens, open, close);
 }
 
+static int
+onibi_c_quantifier_start_p(const OnibiTokenVector *tokens, long index, long end)
+{
+    if (index >= end) return 0;
+    const OnibiTokenRecord *token = onibi_token_at(tokens, index);
+    if (token->kind != ONIBI_TOKEN_QUANTIFIER) return 0;
+    if (token->byte == '*' || token->byte == '+' || token->byte == '?')
+	return 1;
+    return token->byte == '{' && onibi_c_repeat_interval_p(tokens, index, end);
+}
+
+static uint32_t
+onibi_c_class_literal_codepoint(const OnibiTokenVector *tokens,
+				const OnibiTokenRecord *token,
+				rb_encoding *encoding)
+{
+    if (!token->bytes.present) return token->byte;
+    if (token->bytes.offset > tokens->bytes_count ||
+	token->bytes.length > tokens->bytes_count - token->bytes.offset)
+	rb_raise(eRegexpError, "class literal is outside token storage");
+    const char *begin = (const char *)tokens->bytes + token->bytes.offset;
+    const char *end = begin + token->bytes.length;
+    int width = rb_enc_precise_mbclen(begin, end, encoding);
+    if (!ONIGENC_MBCLEN_CHARFOUND_P(width) ||
+	(size_t)ONIGENC_MBCLEN_CHARFOUND_LEN(width) != token->bytes.length)
+	rb_raise(eRegexpError, "class character has an invalid encoding");
+    return (uint32_t)rb_enc_mbc_to_codepoint(begin, end, encoding);
+}
+
 static OnibiAstId
 onibi_c_parse_class_part(const OnibiTokenVector *tokens, OnibiAstArena *arena,
-			 const OnibiTokenRecord *anchor, long begin, long end)
+			 const OnibiTokenRecord *anchor, rb_encoding *encoding,
+			 long begin, long end)
 {
     long depth = 0;
     long intersection = -1;
@@ -129,10 +162,12 @@ onibi_c_parse_class_part(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	    onibi_ast_arena_add(arena, ONIBI_AST_CLASS_INTERSECTION, anchor);
 	onibi_ast_add_child(arena, id,
 			    onibi_c_parse_class_part(tokens, arena, anchor,
-						     begin, intersection));
+						     encoding, begin,
+						     intersection));
 	onibi_ast_add_child(arena, id,
 			    onibi_c_parse_class_part(tokens, arena, anchor,
-						     intersection + 2, end));
+						     encoding, intersection + 2,
+						     end));
 	return id;
     }
 
@@ -140,6 +175,42 @@ onibi_c_parse_class_part(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	onibi_ast_arena_add(arena, ONIBI_AST_CHARACTER_CLASS, anchor);
     for (long i = begin; i < end; i++) {
 	const OnibiTokenRecord *token = onibi_token_at(tokens, i);
+	if (token->kind == ONIBI_TOKEN_LITERAL && i + 2 < end &&
+	    onibi_token_at(tokens, i + 1)->kind == ONIBI_TOKEN_CLASS_RANGE &&
+	    onibi_token_at(tokens, i + 2)->kind == ONIBI_TOKEN_CLASS_START) {
+	    const OnibiTokenRecord *nested = onibi_token_at(tokens, i + 2);
+	    long close = nested->matching;
+	    if (close < 0 || close >= end)
+		rb_raise(eRegexpError, "unterminated nested character class");
+	    OnibiAstId child = onibi_c_parse_class_part(tokens, arena, nested,
+							encoding, i + 3, close);
+	    onibi_ast_node_at(arena, child)->end =
+		onibi_token_at(tokens, close)->end;
+	    long after_nested = close + 1;
+	    if (after_nested < end &&
+		onibi_token_at(tokens, after_nested)->kind ==
+		    ONIBI_TOKEN_LITERAL) {
+		const OnibiTokenRecord *last =
+		    onibi_token_at(tokens, after_nested);
+		uint32_t first_code =
+		    onibi_c_class_literal_codepoint(tokens, token, encoding);
+		uint32_t last_code =
+		    onibi_c_class_literal_codepoint(tokens, last, encoding);
+		if (first_code > last_code)
+		    rb_raise(eRegexpError, "empty range in character class");
+		OnibiAstRange range = {
+		    token->bytes, last->bytes,		token->byte,
+		    last->byte,	  token->bytes.present, last->bytes.present};
+		onibi_ast_add_range(arena, id, range);
+		onibi_ast_add_child(arena, id, child);
+		i = after_nested;
+	    }
+	    else {
+		onibi_ast_add_child(arena, id, child);
+		i = close;
+	    }
+	    continue;
+	}
 	if (token->kind == ONIBI_TOKEN_CLASS_NEGATE && i == begin) {
 	    onibi_ast_node_at(arena, id)->flags |= ONIBI_AST_NODE_NEGATED;
 	    continue;
@@ -148,8 +219,8 @@ onibi_c_parse_class_part(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	    long close = token->matching;
 	    if (close < 0 || close >= end)
 		rb_raise(eRegexpError, "unterminated nested character class");
-	    OnibiAstId nested =
-		onibi_c_parse_class_part(tokens, arena, token, i + 1, close);
+	    OnibiAstId nested = onibi_c_parse_class_part(
+		tokens, arena, token, encoding, i + 1, close);
 	    onibi_ast_node_at(arena, nested)->end =
 		onibi_token_at(tokens, close)->end;
 	    onibi_ast_add_child(arena, id, nested);
@@ -174,21 +245,11 @@ onibi_c_parse_class_part(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 		    last_slice =
 			onibi_ast_arena_copy_bytes(arena, &last->byte, 1);
 	    }
-	    if (first_slice.present && last_slice.present) {
-		size_t common = first_slice.length < last_slice.length
-				    ? first_slice.length
-				    : last_slice.length;
-		int order = memcmp(arena->bytes + first_slice.offset,
-				   arena->bytes + last_slice.offset, common);
-		if (order == 0)
-		    order =
-			first_slice.length < last_slice.length
-			    ? -1
-			    : (first_slice.length > last_slice.length ? 1 : 0);
-		if (order > 0)
-		    rb_raise(eRegexpError, "empty range in character class");
-	    }
-	    else if (first->byte > last->byte) {
+	    uint32_t first_code =
+		onibi_c_class_literal_codepoint(tokens, first, encoding);
+	    uint32_t last_code =
+		onibi_c_class_literal_codepoint(tokens, last, encoding);
+	    if (first_code > last_code) {
 		rb_raise(eRegexpError, "empty range in character class");
 	    }
 	    OnibiAstRange range = {first_slice,		last_slice,
@@ -311,8 +372,8 @@ onibi_c_parse_atom(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	long close = token->matching;
 	if (close < 0 || close >= end)
 	    rb_raise(eRegexpError, "unterminated character class");
-	OnibiAstId id =
-	    onibi_c_parse_class_part(tokens, arena, token, *index + 1, close);
+	OnibiAstId id = onibi_c_parse_class_part(tokens, arena, token, encoding,
+						 *index + 1, close);
 	onibi_ast_node_at(arena, id)->end = onibi_token_at(tokens, close)->end;
 	*index = close + 1;
 	return id;
@@ -481,10 +542,8 @@ onibi_c_parse_range(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 		node->start = modifier->start;
 		node->flags |= ONIBI_AST_NODE_GREEDY | ONIBI_AST_NODE_HAS_MAX;
 		atom = quantifier;
-		goto append_atom;
+		goto parse_more_quantifiers;
 	    }
-	    if (onibi_ast_node_const(arena, atom)->kind == ONIBI_AST_QUANTIFIER)
-		rb_raise(eRegexpError, "nested quantifier");
 	    OnibiAstId quantifier =
 		onibi_ast_arena_add(arena, ONIBI_AST_QUANTIFIER, modifier);
 	    OnibiAstNode *node = onibi_ast_node_at(arena, quantifier);
@@ -505,8 +564,11 @@ onibi_c_parse_range(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 		}
 	    }
 	    atom = quantifier;
+	    goto parse_more_quantifiers;
 	}
-    append_atom:
+    parse_more_quantifiers:
+	if (onibi_c_quantifier_start_p(tokens, i, end))
+	    goto parse_atom_modifiers;
 	onibi_ast_add_child(arena, sequence, atom);
     }
     return sequence;

@@ -74,6 +74,12 @@ class MatchDataPayloadTest < Minitest::Test
     assert_raises_with_message(RangeError, /out of bounds/) do
       payload(regexp, "a", [[0, 2], [0, 1]])
     end
+    assert_raises_with_message(RangeError, /full range is out of bounds/) do
+      payload(regexp, "a", [[1, 0], [0, 1]])
+    end
+    assert_raises_with_message(RangeError, /out of bounds/) do
+      payload(regexp, "a", [[0, 1], [2, 0]])
+    end
     assert_raises_with_message(RangeError, /no full capture/) do
       payload(regexp, "a", [[-2, -2]])
     end
@@ -102,12 +108,12 @@ class MatchDataPayloadTest < Minitest::Test
   end
 
   def test_native_diagnostic_constructor_copies_raw_search_result
-    regexp = Onibi::Regexp.new("(?<letter>a)(b)?")
+    regexp = Onibi::Regexp.new("(?<letter>a)(?<missing>b)?")
     info = regexp.send(:__onibi_match_data_diagnostics__, "a")
 
     assert_equal 3, info[:num_regs]
     assert_equal [[0, 1], [0, 1], [-1, -1]], info[:raw_registers]
-    assert_equal ["letter"], info[:names]
+    assert_equal %w[letter missing], info[:names]
     assert info[:lazy_character_cache]
   end
 

@@ -2,6 +2,8 @@
 
 require "test_helper"
 
+# These checks assert MRI match globals, including `$&`, by exact spelling.
+# rubocop:disable Style/SpecialGlobalVars, Style/PerlBackrefs
 class NativeMatchOperatorTest < Minitest::Test
   def test_native_positions_without_mri_calls_or_match_data
     cases = [["a", "ba"], ["a", "z"], ["(a)", "ba"], ["(a)", "z"],
@@ -84,3 +86,4 @@ class NativeMatchOperatorTest < Minitest::Test
     end
   end
 end
+# rubocop:enable Style/SpecialGlobalVars, Style/PerlBackrefs

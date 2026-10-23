@@ -19,7 +19,8 @@ RAC01 confirms the main-Ractor-only boundary. Child-Ractor support remains exclu
 The accepted BASE01 census has 52 failure rows: 43 supported defects, one explicit limit,
 one obsolete expectation, and seven open scope rows.
 Cases 2, 13, and 46 share an accepted capture-numbering repair. Cases 21–45 need an audit before repair.
-Case 17 has an explicit 256-level limit. Its exact error text remains a decision.
+Case 17 has an explicit 256-level limit. The 2026-10-20 audit accepted the current diagnostic.
+The old exact-message test expectation was corrected on 2026-10-20.
 Case 49 expects native MRI backreference state. GIR 58 excludes it; keep the failure visible.
 BASE01 also records 70 lint findings across seven test files. TASK-BASE02 maps them separately.
 
@@ -165,11 +166,11 @@ Do not weaken correct tests or silently change the accepted subset to make check
 | 36 | TASK-BASE02-CLASS-SUBTRACTION-SCOPE | Waiting | BASE02 | Decide whether nested class subtraction is in scope. |
 | 37 | TASK-BASE02-OCTAL-SCOPE | Waiting | BASE02 | Decide the scope of octal and backreference disambiguation. |
 | 38 | TASK-BASE02-NONASCII-ENCODING-SCOPE | Waiting | BASE02 | Decide the scope of non-ASCII-compatible pattern encodings. |
-| 39 | TASK-BASE02-DEPTH-ERROR-DECISION | Waiting | BASE02 | Decide whether nesting-limit error text is an API promise. |
-| 40 | TASK-BASE02-LINT-HYGIENE | Waiting | BASE02 | Map and resolve 70 test-source lint findings safely. |
-| 41 | TASK-CI01 | Waiting | BASE02, blocking cards, and absence follow-up repairs | Reproducible gem acceptance checks in CI. |
-| 42 | TASK-PKG01 | Waiting | CI01 | A clean installed gem passes smoke checks. |
-| 43 | TASK-POC01 | Waiting | RAC01, CI01, PKG01 | Evidence for all eight PoC conditions. |
+| 39 | TASK-BASE02-DEPTH-ERROR-DECISION | Accepted | BASE02 | The 256-level limit and current diagnostic have accepted E2E evidence. |
+| 40 | TASK-BASE02-LINT-HYGIENE | Accepted | BASE02 | All 70 findings have safe fixes or documented semantic exceptions. |
+| 41 | TASK-CI01 | Accepted locally | BASE02, blocking cards, and absence follow-up repairs | Gem gate and legacy reporting pass local checks; remote CI remains pending. |
+| 42 | TASK-PKG01 | Accepted locally | CI01 local gate | Repaired loader and isolated installed gem pass 18 smoke checks. |
+| 43 | TASK-POC01 | Ready for evidence review | RAC01, CI01 local gate, PKG01 | Evidence for all eight PoC conditions. |
 | 44 | TASK-REL01 | Waiting | POC01 | Reviewed PR, passing required checks, and integration record. |
 
 The queue has 47 tasks. BASE02 adds 18 bounded cards before CI01.
@@ -708,8 +709,13 @@ Done: the support decision names accepted forms and routes. Keep both original m
 
 ### TASK-BASE02-DEPTH-ERROR-DECISION — Nesting-limit error text
 
+Status: decision accepted on 2026-10-20. Keep the current limit and `Onibi::RegexpError`.
+No current document promises exact message text. The current diagnostic is `regexp nesting is too deep`.
+The test correction is accepted. All depth and error-class checks remain.
+The execution ledger links the six-case audit and source-order evidence.
+
 Case: `#17`. Reproduce `RegexpNestingLimitTest#test_pattern_nesting_limit_is_reported_before_recursive_parse`.
-The 256-level limit is explicit. The test expects `regexp compilation limit exceeded: pattern_nesting`.
+The 256-level limit is explicit. The test now expects `regexp nesting is too deep`.
 Current source reports `regexp nesting is too deep` as `Onibi::RegexpError`.
 Candidate file, only if the text is an API promise: `ext/onibi/parser.c`.
 Dependency: accepted BASE02 mapping. Review GIR 133.1 and review-result P-10.
@@ -758,7 +764,26 @@ Check load, constructor, native match, MatchData access, scan, gsub, explicit fa
 Done: the installed artifact passes the declared smoke cases on supported MRI.
 Keep the artifact and logs outside committed product documentation.
 
-### TASK-POC01 — Completion evidence
+### TASK-API-TILDE — Explicit fallback match-reset repair (accepted locally)
+
+The public MRI probe found and the 2026-10-22 repair corrected a mismatch for `x\K(?<letter>\X)` on UTF-8 `あxa`.
+MRI `~` returns character offset 1. Onibi now returns the same offset.
+The explicit grapheme fallback now uses `rb_reg_match`; native eligibility stays unchanged.
+Public MRI controls preceded the C edit and confirmed the baseline failure.
+Acceptance passes 1,198 tests and 38,982 assertions with compiler warnings enabled.
+Next: refresh affected installed-package evidence and the PoC table.
+
+### TASK-POC01-LIMITS — Condition 7 evidence (accepted locally)
+
+All seven unsupported reason values have direct evidence.
+A bounded class-descriptor probe selects `limit` fallback and matches MRI.
+Input guards use existing tests, saved encoding probes, and two parent probes.
+Verifier tests reject corrupted copies through the production validator. Published programs remain frozen.
+The accepted TASK-RAC01 boundary remains main-Ractor-only.
+Numeric representation ceilings have source evidence; no large allocation tests are claimed.
+The parent accepted the eight-condition table. Remote CI and publication remain separate.
+
+### TASK-POC01 — Completion evidence (accepted locally)
 
 Map each of GIR 133.1's eight conditions to a passing command or accepted evidence artifact.
 List every explicit unsupported feature and verify that it fails or falls back as documented.
@@ -797,8 +822,8 @@ A new worker receives exact artifact paths and an immutable packet when dispatch
 
 ## API01 follow-up findings (2026-09-28)
 
-Track binary `MatchData#names` string encoding as a bounded gem follow-up.
+The 2026-10-21 public probes match binary `MatchData#names` encoding for three tested cases.
 The accepted design has no exclusion for this difference. API04 corrected the symbol-key report: API01 serialization converted keys to strings. Native keyword behavior matches MRI for both checked ASCII fixtures.
 API02 and API03 use the corrected method-specific selector rules in `docs/task-42b1-matchdata-design.md`.
 
-C25B follow-up: audit fallback `~` with `\K`; its unchanged path reads group-zero start. Native repair does not establish fallback parity.
+C25B follow-up confirmed the fallback `~` mismatch with `\K`. See TASK-API-TILDE above.

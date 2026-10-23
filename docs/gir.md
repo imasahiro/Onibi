@@ -274,6 +274,12 @@ Absent
 OptionScope
 ```
 
+When MRI accepts consecutive postfix quantifiers, the parser nests each
+quantifier around the previous atom. Each quantifier keeps its own bounds,
+greedy or lazy mode, and possessive mode. The compiler and executors MUST
+preserve MRI's ordered choices and capture changes. They MUST NOT flatten
+nested repeats without evidence that all observable results stay equal to MRI.
+
 Inline options must be resolved before G-IR generation.
 
 ---
@@ -565,6 +571,9 @@ It is used for:
 Its flags specify newline behavior.
 
 The `m` regexp option must be resolved before execution.
+
+The runtime MUST use each wildcard state's resolved option. The RSeq header's
+`MULTILINE` bit MUST NOT override the state.
 
 ---
 
@@ -1179,7 +1188,7 @@ struct OnibiRAction {
 ```
 
 RSeq uses checked 16-bit capture and counter/progress slots.
-The eight-byte action record remains unchanged in version 2.
+The eight-byte action record stays unchanged.
 
 ```text
 capture count                    0..32768
@@ -1214,6 +1223,10 @@ enum OnibiRActionOp {
 ```
 
 `RA_CAPTURE.flags` is `0` for scoped open, `1` for close, or `2` for `RA_CAPTURE_OPEN_UNSCOPED`.
+Bit `0x04` marks a capture open that uses pushed start storage.
+Value `6` combines this bit with an unscoped open.
+The pushed bit is valid only on open actions.
+RSeq v7 requires its capture-rollback feature when any action uses this bit.
 `arg16` stores the capture boundary slot; `arg32` remains zero.
 Unscoped open MUST NOT weaken the transaction rule in Section 20.
 
@@ -1645,6 +1658,18 @@ RELATIVE
 WITH_LEVEL
 ```
 
+Numeric escape classification must follow MRI before reference resolution.
+Outside classes, multi-digit escapes depend on captures opened before the escape.
+A later capture does not change an earlier octal escape into a reference.
+Single-digit forward references retain MRI's separate reference rule.
+Inside classes, digit escapes denote octal bytes or literal digits, never capture references.
+Class digit escapes are accepted as native literals.
+The tokenizer tracks opened captures during the existing source scan.
+It resolves a complete multi-digit decimal run only against that count.
+Otherwise, digits `1` through `7` start up to three octal digits; `8` and `9` remain literal.
+Decimal accumulation stops when it exceeds the opened-capture count.
+The accepted MRI audit and E2Es cover this classification, including long digit runs.
+
 The parser must resolve names to capture-number lists.
 
 The compiler must preserve the current MRI resolution order for duplicate names.
@@ -1729,9 +1754,83 @@ input bound local to each absence call. It records each allowed endpoint with
 its own semantic state. Endpoint cursors stay on encoded-character boundaries.
 Nested calls restore their active bound and prior cursor when they return.
 
-An absence endpoint keeps body result tags and condition values. It keeps
-semantic capture registers from before the body for later backreferences.
-This prevents body captures from changing a later backreference.
+When the forbidden expression matches, DYNAMIC publishes its result tags and
+condition values to the saved endpoint. This also applies when the expression
+starts at that endpoint. The endpoint keeps semantic capture registers from
+before the body for later backreferences. This prevents body captures from
+changing a later backreference.
+
+The compiler scans the resolved tree before normalization removes its context.
+It marks capture opens inside alternatives, variable repeats, negative
+assertions, or called groups. It also marks every referenced capture, even when
+its reference branch is not selected. The scan uses each capture's exact tree
+position. A capture around an alternative does not inherit the alternative's
+flag.
+
+For a marked capture, absence restores both boundary slots and condition values
+from the endpoint state before the body. It preserves an unset pair, a prior
+range, or a pending open. Direct writes to unmarked captures remain visible.
+
+During each absence scan, DYNAMIC keeps one ordered capture journal across
+failed probes. It adds path deltas in MRI priority order when failed frames
+leave the stack. A positive body match drops that probe's journal range. A
+failed probe can apply its range to the scan state and saved endpoints.
+
+A failed assertion keeps parent writes made before child entry. The assertion
+child restores its own checkpoint. Before the parent action rolls back, DYNAMIC
+copies the ordered write identities into a failure continuation. The
+continuation is a DYNAMIC stack frame. It follows sibling priority and adds
+only the parent path delta to the journal.
+
+A nested absence can reject an empty forbidden match at its start. It transfers
+the accepted body history to the parent log before it returns.
+
+Nested endpoint transfer visits each endpoint once. A pending-prefix scan
+charges each capture slot, including an unset slot. The scan reads the prior
+pair from the condition capture file. It appends output tag events as the
+result. These state files have separate owners.
+
+If a later positive probe leaves both condition slots unset, DYNAMIC carries
+the prior output pair forward. Set condition slots from the positive probe take
+priority. The carry changes output tags and condition values. It does not
+change semantic backreference registers or pushed capture rollback.
+
+A direct start clears both output slots. It sets the condition start and clears
+the condition end. It does not publish a half pair. A later direct close
+publishes a complete pair only when a condition start is set. Pushed captures
+keep their saved pair. Backreference registers stay separate from output and
+condition capture values.
+
+DYNAMIC keeps output slots in a separate state. It applies output writes in
+executed branch order. A direct unscoped start with the same capture-order ID,
+slot, and byte offset is applied once in one output state. This prevents a
+lower-priority entry edge from replaying a shared prefix.
+
+Each frame stores the pushed-output undo mark. A rollback restores both slots
+from each pushed pair. Direct output writes stay in the ordered output history
+across repeat rollback. A positive assertion transfers its output writes only
+after success. A failed or negative assertion child keeps its output state
+isolated.
+
+Each absence probe keeps its own output transcript. The scan transfers a
+transcript only when the capture journal selects its writes for the scan or a
+saved endpoint. A positive probe filters cleared or pushed captures before it
+replays its transcript.
+
+On DYNAMIC call return, the output state restores each caller capture that was
+active at call entry. The restore uses the saved caller capture pair. It runs
+before the call continuation. This keeps child output from replacing an open
+caller capture. Closed captures from the called subprogram stay selected. The
+restore charges each output capture and each visited tag-history node. Before
+each tag read, it validates the node ID and checks the walk bound.
+
+The output-scope registry uses stable indices and a free list. Create and
+release operations do not scan the registry. Scope creation charges two fixed
+work units. Registry growth also charges each added slot. Release makes one
+constant-time free-list update without a poll. Identity insertion charges each
+probed slot. Rehash charges the replacement capacity, each old-table slot, and
+each replacement-table probe. The output state owns the replacement table
+until the rehash finishes. Error cleanup frees that table.
 
 A live nullable-repeat owner identifies a capture by its tag-event node. A
 forced replay can make new nodes for the same tag history. The capture filter
@@ -1850,8 +1949,27 @@ The compiler must normalize:
 - Unicode properties.
 
 MRI validates the original source and requested options before tokenization.
-The tokenizer reads source bytes with the source encoding.
+The tokenizer scans ASCII-compatible source bytes with the source encoding.
+For non-ASCII-compatible source, it scans a temporary UTF-8 view and maps
+token spans back to byte offsets in the original source.
 It encodes decoded Unicode scalars with the effective regexp encoding from MRI.
+Capture identity names retain the source encoding. Numeric references, option
+names, and property names retain their scanner representation.
+The compiler encodes property names for MRI's encoding callbacks.
+Repeat syntax uses the source width of its opening brace for adjacency checks.
+Hexadecimal and octal escapes collect bytes using the effective regexp encoding.
+
+The native line-start assertion accepts byte position zero, including empty input.
+At other positions, it requires a preceding decoded newline and a position before input end.
+It does not treat a newline byte inside another encoded character as a line boundary.
+The native end-line assertion accepts input end or the boundary before a decoded LF.
+The semi-end assertion accepts input end or the boundary before one final decoded LF.
+Both use the decoded character width, including UTF-16 and UTF-32 widths.
+
+Outside character classes, `(?#...)` is a pattern comment. The tokenizer skips
+through the first unescaped `)` at a source-encoding character boundary and
+emits no token. The comment creates no group or capture. MRI validates an
+unterminated comment before tokenization.
 
 In a class, `\uHHHH` and braced `\u{...}` escapes produce one literal token
 per scalar. Fixed-width escapes use four hex digits. Braced items use one to
@@ -1898,6 +2016,11 @@ Descriptor flags store whole-class negation.
 The compiler puts one-character case-fold closure in the descriptor data.
 
 The executor applies whole-class negation after descriptor evaluation.
+The executor decodes each subject character through MRI's encoding callbacks
+before it checks codepoint ranges or encoding character types.
+RSeq programs with class descriptors can execute with non-ASCII-compatible
+source and subject encodings when MRI reports compatible encodings.
+Class-less programs with these source encodings remain on MRI.
 
 Verified GIR analysis marks folds that still need multi-character paths.
 
@@ -2240,7 +2363,7 @@ full scalar with `ONIGENC_MBC_CASE_FOLD`. Its output buffer capacity is
 `B` and `N` values from one through seven. `B` is normalized bytes. `N` is
 normalized UTF-8 codepoints. Also require `N <= B <= 4*N`.
 
-RSeq v6 stores a separate feature bit and the fields `B`, `N`, `Dmin`, and
+RSeq v7 stores a separate feature bit and the fields `B`, `N`, `Dmin`, and
 `Dmax`. The compiler uses checked arithmetic: `Dmin = 2*B` and
 `Dmax = 4*N+B`. The compiler proves source scope, fold eligibility, and full
 normalization. The physical verifier checks field bounds, equations, feature
@@ -2315,13 +2438,15 @@ typedef struct {
     uint32_t end_search_fold_normalized_codepoints;
     uint32_t end_search_fold_dmin_bytes;
     uint32_t end_search_fold_dmax_bytes;
+    uint32_t absence_capture_relation_count;
+    uint32_t absence_capture_relations_offset;
 } OnibiRSeqHeader;
 ```
 
 The current RSeq version is:
 
 ```text
-6
+8
 ```
 
 Version 2 added `end_search_bound_bytes` to the physical header. Its feature
@@ -2343,6 +2468,61 @@ Version 5 adds the MRI-compatible minimum end-distance fields from section
 46. Its feature bit requires positive total, repeat, and source-width values.
 The total must equal the repeat value plus the source-width value. A clear
 feature bit requires zero values in all three fields.
+
+Version 6 adds the fold-derived end-range fields from section 46.
+
+Version 7 adds capture-start rollback metadata. Feature bit 15 is present
+exactly when a capture action has the pushed-open bit. The verifier reconstructs
+the feature from decoded actions. It rejects old versions, unknown capture
+flags, and the pushed-open bit on a close action.
+
+Version 8 adds the absence capture relation table after lookbehind widths.
+The header stores the table count and byte offset. Each record is 12 bytes:
+physical absence subprogram ID, target close slot, pushed witness close slot,
+target-start kind, and three zero reserved bytes. Both capture slots are odd.
+Target-start kind is `0` for direct and `1` for pushed. The witness open slot
+is its close slot minus one. The relation ID is the one-based record index.
+
+Action `RA_CAPTURE_RELATION` stores the role in `flags`, the target close slot
+in `arg16`, and the relation ID in `arg32`. Roles are `1` for `CLOSE`, `2`
+for `LOOP`, `3` for `EXIT`, and `4` for `SUFFIX`. `CLOSE` follows its exact
+capture close. `LOOP` and `EXIT` mark the repeat edges. `SUFFIX` marks the edge
+into the declared consuming suffix. One close can have more than one relation.
+
+The compiler emits a relation only for a capture in an absence body. Its
+target contains a variable repeat. That repeat contains a pushed witness
+capture. The next child in the same sequence must have positive minimum width.
+Its supported wrappers and every alternative must lead to a consuming state.
+The compiler stops collection at alternatives and control or subprogram
+boundaries. A zero-width next child does not use a later consuming sibling.
+The suffix marker can pass through epsilon lowering. The verifier requires its
+edge to enter a consuming state.
+
+Feature bit 16 is present exactly when relation records and their action
+markers exist. A clear bit requires zero relation records and no markers. An
+empty relation section has count zero and an offset equal to the blob end.
+The physical verifier checks table bounds, dense IDs, slots, owner kind,
+target-start kind, marker roles, and close pairing. It requires loop and exit
+markers from one state. The loop destination must stay in the same absence
+owner. Exit and suffix markers must share an edge. That edge must enter a
+consuming state. The verifier also requires a pushed witness open in that
+absence owner.
+
+The DYNAMIC interpreter uses relation records during capture publication. It
+reads the exact `CLOSE` and `SUFFIX` roles for the current physical owner and
+target slot. It requires every suffix marker for a relation to name one
+destination. That destination must be the failed state.
+
+At the active bound, DYNAMIC checks whether that consuming state can read the
+current subject. It defers a direct close only when the state cannot read
+input. It keeps the close when the state can read input. For a pushed target,
+DYNAMIC restores the target pair only when the journal has the target and
+witness pairs.
+
+RSeq verifies the `LOOP` and `EXIT` roles. The runtime does not infer missing
+relations from graph cycles. Journal growth, path walks, comparisons, marker
+lookups, transfers, failure-prefix copies, and replay charge the existing work
+budget. The absence ensure block frees the journal and pending state.
 
 All sections must have four-byte alignment.
 
@@ -2705,8 +2885,17 @@ $2
 For the gem PoC, the transfer is `OnibiRawMatch -> Onibi::MatchData`.
 Byte registers are copied before search cleanup. Character offsets remain lazy.
 Names retain ordered capture-index lists for duplicate-name lookup.
+The native name index retains each capture name's source encoding.
+Range methods accept binary selectors by exact bytes, but reject embedded NUL.
+Capture value methods use encoding-sensitive name lookup.
 Select the last participating capture; preserve unmatched and empty capture distinctions.
 The subject, raw registers, and metadata have explicit GC and allocation ownership.
+
+Raw capture pairs must be both unset or both in bounds. Register zero must have
+an ordered range. A later capture can have an in-bounds reversed pair.
+`offset`, `byteoffset`, and `match_length` report that raw pair. Its length can
+be negative. `to_a`, `captures`, and numeric `[]` raise MRI's `ArgumentError`
+when they extract a reversed pair.
 
 The following `RMatch` transfer applies to later MRI integration.
 
@@ -4913,6 +5102,11 @@ The gem PoC is complete when all of these conditions are true.
 6. Differential tests show no known mismatch in the supported API subset.
 7. Unsupported features are explicit and do not cause unexpected process failures.
 8. The PoC does not depend on ZJIT or MRI source-tree changes.
+
+The gem has an intentional limit of 256 nested groups.
+The tokenizer raises `Onibi::RegexpError` before recursive parsing when this limit is exceeded.
+The current diagnostic is `regexp nesting is too deep`; exact wording is not a stable public API promise.
+MRI can accept deeper patterns. This gem resource limit remains explicit.
 
 The complete legacy, MRI, and Ruby Spec suites are not PoC acceptance gates.
 

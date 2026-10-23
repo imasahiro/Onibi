@@ -89,11 +89,14 @@ The extension does not enable the Ractor-safe boundary.
 
 ### Open acceptance work
 
-Binary `MatchData#names` encoding remains open.
-The explicit fallback path for `~` with `\K` and match reset remains untested.
-Public caller, GC, timeout, interrupt, Ractor, CI, and package gates remain open.
+Binary capture-name probes match MRI for three tested source/name encoding cases.
+Explicit fallback `~` with `\K` now returns MRI's original search-attempt start.
+Public success, miss, capture, and match-state regression checks pass.
+Local CI and installed-package checks pass. Remote CI remains unverified.
+All seven unsupported reason values have direct evidence. Input guards and verifier rejection have reviewed evidence.
 See [`remaining-work.md`](remaining-work.md) for the current task order.
-The gem has not passed all eight PoC conditions in GIR section 133.1.
+Local evidence satisfies all eight gem PoC conditions in GIR section 133.1.
+Remote CI and publication remain pending. This is not full MRI replacement acceptance.
 
 Compilation is an initialization-time operation. The tokenizer reads the
 source once. The parser, GIR compiler, and RSeq lowerer consume that token
@@ -116,7 +119,7 @@ runtime validator does not compare the blob with the Ruby semantic mirror.
 One narrow UTF-8 form has a scoped ignorecase capture around one direct scalar,
 one case-sensitive reference to that capture, and a final `\z`. The compiler
 uses encoding fold data to prove MRI's expansion-overflow case. It stores the
-normalized widths and end-search distances in RSeq v6. This form uses native
+normalized widths and end-search distances in RSeq v7. This form uses native
 `DYNAMIC` execution.
 
 The matcher compares `Dmin` with the full subject length. It applies `Dmax` to
@@ -194,9 +197,36 @@ Record repeatable commands and results with each test review.
 Use MRI differential tests for public behavior.
 Compare success, errors, byte offsets, captures, encodings, and option handling.
 
-The complete existing suite is not an early PoC gate.
+The complete existing suite is not the PoC gate.
 It can include unsupported features until their milestones start.
 Do not weaken correct expectations to make the total result green.
+
+### Gem acceptance and legacy coverage
+
+Run the gem acceptance gate with `bundle exec rake test:acceptance`.
+It builds the extension and loads both default test file globs.
+It excludes only
+`RegexpUtilityTest#test_last_match_matches_mri_and_match_question_does_not_change_it`.
+The runner checks that this exact test exists once and that other tests exist.
+It rejects Minitest filter variables and command-line arguments.
+Set `SEED` to choose the test order. The default seed is `51748`.
+
+Run `bundle exec rake test` to run the complete legacy suite.
+This command keeps the excluded test visible with its normal result.
+GIR 58 excludes MRI caller-local backreference updates from the gem contract.
+The test remains unchanged because it checks behavior outside that contract.
+
+CI runs the acceptance gate as a hard check.
+CI also saves the complete legacy stdout, stderr, and exit status as an artifact.
+The legacy step accepts a passing suite or the one documented failure.
+Any other failure, error, or skip fails the workflow.
+The legacy step does not change the acceptance result.
+
+At seed `51748`, the current local full suite reports 1,196 runs and 38,958
+assertions, with one failure, zero errors, and zero skips.
+The only failure is the excluded backreference test.
+The local acceptance result and exact commands are in the CI gate review evidence.
+Local results do not confirm remote GitHub CI.
 
 Each milestone defines its required test set.
 The complete MRI and Ruby Spec suites become gates during MRI integration.

@@ -3,6 +3,9 @@
 require "test_helper"
 
 # These checks record the TASK-42C2 boundary. They do not define future support.
+# This audit checks caller-local match state and `===` behavior directly.
+# Keep these Ruby globals and the case-equality operator literal.
+# rubocop:disable Style/SpecialGlobalVars, Style/CaseEquality
 class BackreferenceBoundaryAuditTest < Minitest::Test
   def test_native_success_and_miss_have_different_backreference_effects
     regexp = Onibi::Regexp.new("(a)")
@@ -79,3 +82,4 @@ class BackreferenceBoundaryAuditTest < Minitest::Test
     assert_equal "xbx", "aba".gsub(/(a)/, "x")
   end
 end
+# rubocop:enable Style/SpecialGlobalVars, Style/CaseEquality

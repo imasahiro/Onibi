@@ -34,6 +34,44 @@ class WorkBudgetPollTest < Minitest::Test
     assert_equal 0, info[:fallback]
   end
 
+  def test_nested_dynamic_output_scopes_charge_registry_work
+    depth = 8
+    pattern = format("(?~z)%<opens>sa%<closes>s",
+                     opens: "(?>" * depth, closes: ")" * depth)
+    baseline = Onibi::Regexp.new("(?~z)a").send(
+      :__onibi_diagnostics__, "a"
+    )
+    info = Onibi::Regexp.new(pattern).send(:__onibi_diagnostics__, "a")
+
+    assert_equal 2, info[:exec_kind]
+    assert_equal 1, info[:status]
+    assert_equal 0, info[:fallback]
+    assert_operator info[:work_charged] - baseline[:work_charged], :>=,
+                    depth * 11
+    assert_operator info[:max_charged_work], :<=, 128
+  end
+
+  def test_dynamic_output_start_rehash_stays_native_and_bounded
+    capture_count = 16
+    pattern = format("(?~z)%<captures>s\\1", captures: "(a)" * capture_count)
+    subject = "a" * (capture_count + 1)
+    expected = ::Regexp.new(pattern).match(subject)
+    regexp = Onibi::Regexp.new(pattern)
+    actual = regexp.match(subject)
+    info = regexp.send(:__onibi_diagnostics__, subject)
+
+    assert_equal expected.to_a, actual.to_a
+    (0...expected.length).each do |index|
+      assert_equal expected.byteoffset(index), actual.byteoffset(index), index
+    end
+    assert_equal 2, info[:exec_kind]
+    assert_equal 1, info[:status]
+    assert_operator info[:poll_count], :>, 0
+    assert_operator info[:work_charged], :>=, 128
+    assert_operator info[:max_charged_work], :<=, 128
+    assert_equal 0, info[:fallback]
+  end
+
   def test_casefold_backreference_polls_with_reloaded_subject_offsets
     subject = "#{"A" * 128}z"
     pattern = "(?i:(?<x>a{64})\\k<x>)z"

@@ -2,6 +2,8 @@
 
 require "test_helper"
 
+# These tests assert the `===` API and exact MRI backreference state.
+# rubocop:disable Style/CaseEquality, Style/SpecialGlobalVars
 class NativeCaseEqualityTest < Minitest::Test
   def test_native_boolean_results_match_mri_without_mri_match
     cases = [["a", "ba"], ["a", "z"], ["(a)", "ba"], ["(a)", "z"],
@@ -60,3 +62,4 @@ class NativeCaseEqualityTest < Minitest::Test
     assert_nil Onibi::Regexp.last_match
   end
 end
+# rubocop:enable Style/CaseEquality, Style/SpecialGlobalVars

@@ -19,6 +19,8 @@ class ScanBlockTest < Minitest::Test
     end
   end
 
+  # Keep these spellings to check MRI's caller-local backreferences.
+  # rubocop:disable Style/SpecialGlobalVars, Style/PerlBackrefs
   def test_native_blocks_keep_mri_backreference_identity
     ["a", "(a)", "", "z"].each do |pattern|
       /(prior)/.match("prior")
@@ -31,7 +33,10 @@ class ScanBlockTest < Minitest::Test
       assert_same before, $~
     end
   end
+  # rubocop:enable Style/SpecialGlobalVars, Style/PerlBackrefs
 
+  # This test checks the fallback block's exact MRI backreference values.
+  # rubocop:disable Style/SpecialGlobalVars
   def test_fallback_blocks_receive_mri_backreferences
     Onibi::Regexp.new('(\X)').scan("éあ") do |value|
       assert_instance_of ::MatchData, $~
@@ -39,16 +44,20 @@ class ScanBlockTest < Minitest::Test
       assert_same $~, Onibi::Regexp.last_match
     end
   end
+  # rubocop:enable Style/SpecialGlobalVars
 
   def test_subject_mutations_raise_before_another_yield
-    mutations = [->(str) { str << "more" }, ->(str) { str.clear }]
+    mutations = [->(str) { str << "more" }, lambda(&:clear)]
     ["a", "(a)", "", '\X'].each do |pattern|
       mutations.each do |mutation|
         [false, true].each do |native|
           input = +"aa"
           count = 0
           error = assert_raises(RuntimeError) do
-            block = proc { count += 1; mutation.call(input) }
+            block = proc do
+              count += 1
+              mutation.call(input)
+            end
             if native
               Onibi::Regexp.new(pattern).scan(input, &block)
             else

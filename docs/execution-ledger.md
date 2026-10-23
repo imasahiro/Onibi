@@ -505,3 +505,1080 @@ this integration at the user request.
 Exact logs, source and frozen-input hashes, baseline comparison, and final
 patches are in
 /Users/masa/.codex/relay/01a0e063-df14-7243-a0a6-56dc68a1d838/task-absence-endpoint-implementation-01/worker/final-04.
+
+
+TASK-BASE02-ABSENCE RETAINED AUDIT ACCEPT (2026-10-10): source `8451ebe7`.
+The Bundler run with seed 41060 reproduces 70 tests, 421 assertions, and
+13 known failures. All failure details match the accepted endpoint run.
+Two fresh public probes have identical output. Case 44,
+`(?~(a+))(?(1)a|b)` on `a`, returns no native match; MRI returns `['a', 'a']`.
+The endpoint and repeated-capture controls pass. Native diagnostics report
+DYNAMIC and zero fallback. The initial endpoint skips body condition and tag
+publication in C. This remains a cause hypothesis. No repair is accepted.
+Next: freeze all conditional-method inputs, then repair this bounded invariant.
+Root verified source and artifact hashes. One packet correction selected the
+accepted Bundler runner. No repository source or test changed during the audit.
+Evidence and exact commands:
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-retained-causes-01/worker/attempt-02/result.md`.
+Root review: `task-absence-retained-causes-01/root-review-02.json` under that relay root.
+
+
+TASK-BASE02-ABSENCE CONDITIONAL CAPTURES ACCEPT (2026-10-10): parent `ce89a095`.
+DYNAMIC now publishes body condition and result history to the initial absence
+endpoint. Semantic capture registers remain unchanged for backreferences.
+The frozen 25-case MRI artifact passes in two fresh processes with identical
+output. The conditional method passes 1 test and 31 assertions. The full
+absence file reports 70 tests, 455 assertions, and 10 known failures.
+Three baseline methods now pass. All ten retained failure details are unchanged.
+DYNAMIC differential passes 10 tests and 19,023 assertions. Calls, atomic,
+lookahead, and physical RSeq checks pass. Warning build, format, diff, and
+cleanup checks pass. Two warnings remain in unchanged files. No tests changed.
+Root reviewed the C state transfer and verified source, patch, artifact, and
+log hashes. Root full-file formatting passed. No full suite ran.
+Exact commands and results:
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-conditional-repair-01/worker/completion.json`.
+Root evidence: `task-absence-conditional-repair-01/root-acceptance.json` under that relay root.
+Next: inspect one retained capture-state cause. Remote publication remains pending.
+
+
+TASK-BASE02-ABSENCE QUANTIFIER AUDIT ACCEPT (2026-10-10): source `a381d458`.
+The target capture filter sets no clear bits for cases 25 and 26.
+Final tag materialization writes their leaked captures. Event chains do not
+restore them. The trace was removed; original source hashes match.
+A 27-row MRI matrix repeats with identical semantic records. Seven rows have
+capture mismatches. The `fixed_three` row separately raises a public RangeError.
+Its diagnostic pair is normalized; it does not prove valid public raw ranges.
+All diagnostic routes use DYNAMIC with zero fallback. The build passes with
+two known warnings; cleanup and source restoration pass. No tests changed.
+The matrix rejects global liveness and event identity alone as export rules.
+Capture lifetime remains unresolved. A new state field is not yet justified.
+Root verified 28 direct artifacts, source hashes, and paired case records.
+No production repair or representation change is accepted.
+Exact commands, matrix, and reports:
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-quantifier-capture-audit-01/worker/contract-03/completion.json`.
+Trace evidence is in the sibling `worker/trace-02` directory.
+Next: define the MRI rollback rule for the frozen pairs, then map native state.
+Keep `fixed_three` as a separate range-error finding.
+
+
+TASK-BASE02-ABSENCE MRI ROLLBACK CONTRACT ACCEPT (2026-10-11): source `0f8780b5`.
+Pinned MRI source selects direct or pushed capture writes during compilation.
+An absence pop restores both registers saved by each pushed record in reverse
+order. Direct writes remain. Conditions read the restored pair too.
+The default frozen subset uses pushed starts where rollback is required.
+A called-capture probe confirms restoration of an earlier non-nil value.
+The condition probes remain inconclusive; their rule follows source review.
+Root verified source and artifact hashes. No Onibi build or code change ran.
+Next: freeze E2E and physical verifier cases for compile-derived rollback
+metadata, then implement the reviewed state rule. No implementation is accepted.
+Internal end-only push modes and new recursion cases are outside this proof.
+Keep the fixed-three range error separate.
+Exact source references, probes, and limits:
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-mri-rollback-contract-01/worker/correction-02/completion.json`.
+
+
+TASK-BASE02-ABSENCE PUSHED CAPTURE ROLLBACK ACCEPT (2026-10-11): parent `c089b3e2`.
+The compiler derives pushed capture starts before normalization. GIR and RSeq
+v7 carry and validate the flag. Absence restores prior output and condition
+pairs for pushed captures. Direct capture writes remain visible.
+Frozen public and physical-verifier E2Es pass. The full absence file reports
+73 tests, 474 assertions, and 7 known failures. Three prior methods now pass.
+Two retained failures improve one capture; the other five details are unchanged.
+Six of seven prior matrix capture mismatches resolve across 27 repeated rows.
+The nested-alternation row and separate fixed-three RangeError remain open.
+Native DYNAMIC routes use zero fallback. Shared execution, GIR, syntax, and
+RSeq checks pass. Root subprogram check passes 6 tests and 46 assertions.
+Root compiler exception-safety check passes 1 test and 312 assertions.
+An existing subprogram E2E expected obsolete capture flag 0. Root changed that
+expectation to the required v7 flag 4. Both pre-code frozen test hashes remain
+unchanged. Source, patch, direct artifacts, and log hashes were verified.
+Warning builds report two existing warnings. Format, lint, diff, and cleanup
+checks pass. No full suite ran. Remote publication remains pending.
+Exact worker evidence:
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-rollback-implementation-01/worker/implementation-completion.json`.
+Root evidence: `root-acceptance.json` and `root-review/checks-02.json` under that unit.
+
+
+## Failed absence-probe capture repair (2026-10-11)
+
+Status: ACCEPTED. Relay: `task-absence-failed-probe-repair-01`.
+The DYNAMIC absence scan now clears only direct captures that remain open
+after a failed probe. It writes the MRI condition pair as start and unset end.
+It keeps semantic registers and skips pushed captures.
+
+Four new MRI differential E2Es pass on the DYNAMIC route with zero fallback.
+The focused run reports 4 tests and 44 assertions. The frozen four-case
+comparison passes all values and ranges. The physical verifier reports 29 tests
+and 100 assertions. The subprogram check reports 6 tests and 46 assertions.
+RuboCop reports no offenses in the changed feature file.
+
+The full absence file reports 77 tests, 524 assertions, and five failures.
+All five failures match the prior 73-test, seven-failure baseline. Two baseline
+failures now pass. The repair adds no failure. The warning build reports two
+warnings in unchanged `gir.c` and `rseq.c`. Final `make distclean` passes.
+
+Exact commands, exits, source and bundle hashes, log hashes, and the repeated
+MRI comparison are in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-failed-probe-repair-01/worker/checks-final.json`,
+`comparison-final.json`, and `baseline-comparison.json`. No commit or publication
+was made during worker execution. Root accepted the repair and evidence.
+
+
+## Failed-probe repair: 27-row regression evidence (2026-10-11)
+
+Status: ACCEPTED. Relay attempt 2, phase `regression-evidence`.
+Two fresh processes compared the same 27 rows with frozen MRI output. Their
+results match each other. All rows use native DYNAMIC with zero fallback.
+
+All 25 rows that matched before still return the same values and ranges. The
+`nested_alternation_repeat_full` capture now matches MRI. No capture mismatch
+remains. The separate `fixed_three` row still raises the same `RangeError`.
+
+The warning-enabled build passes. It reports two warnings in unchanged `gir.c`
+and `rseq.c`. `git diff --check` and final `make distclean` pass. No feature or
+verifier suite ran again.
+
+Exact commands, current source and bundle hashes, and all 27 row comparisons are
+in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-failed-probe-repair-01/worker/regression-02/run-manifest.json`,
+`comparison.json`, and `row-comparison.json`. The adapted driver changes only
+the expected C source hash. Root verified source and evidence hashes.
+Root acceptance is recorded in `root-acceptance.json` under the relay unit.
+Remote publication remains pending.
+
+
+## Complete direct capture after a failed absence probe (2026-10-13)
+
+Status: ACCEPTED. Relay: `task-absence-complete-failed-capture-01`.
+At the active absence bound, a failed probe can close a direct capture. The
+DYNAMIC executor now updates changed complete direct pairs in the endpoint and
+scan state. It skips pushed captures. It keeps backreference registers,
+capture-event history, and endpoint order.
+
+The outer-quantifier E2E compares public MRI values and character and byte
+ranges. It checks DYNAMIC execution with zero fallback. The focused E2E passes
+with 1 test and 14 assertions. The full absence file reports 77 tests, 536
+assertions, and 4 known failures. The target failure is resolved. No new failure
+appears. The 12 added assertions check the differential result and route.
+
+The 27-row frozen matrix passes twice with identical output. All 26 prior
+correct rows stay unchanged. The separate `fixed_three` RangeError stays the
+same. All rows use DYNAMIC with zero fallback. The physical verifier passes
+29 tests and 100 assertions. The subprogram check passes 6 tests and 46
+assertions. The warning build passes with two known warnings in `gir.c` and
+`rseq.c`. Ruby syntax, RuboCop, clang-format, and `git diff --check` pass.
+The full project suite did not run.
+
+Exact commands, results, and hashes are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-complete-failed-capture-01/worker/implementation-01/`.
+Root verified the source and evidence hashes and accepted this repair.
+Remote publication remains pending.
+
+
+## Ordered failed-probe capture replay (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-ordered-failure-continuation-01`.
+DYNAMIC now replays direct capture writes from each failed probe that has no
+positive body match. A direct start clears prior output tags. It sets the
+condition start and clears the condition end. A direct close adds a complete
+output pair only when its start remains set. A pushed start keeps its saved
+capture pair. A close-only repeat-exit edge skips its close when the fused
+suffix consumer fails at the active bound. The edge check requires a sibling
+pushed start and a cycle in that sibling path.
+
+The four frozen MRI differential E2Es pass with DYNAMIC and zero fallback.
+They report 4 tests and 51 assertions. The full absence file reports 77 tests,
+566 assertions, and 2 failures. Both failures existed before this repair:
+`test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix` and
+`test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary`.
+This repair resolves the failed-suffix and nested-suffix capture failures.
+It adds no failure.
+
+The physical verifier passes 29 tests and 100 assertions. The subprogram
+representation check passes 6 tests and 46 assertions. The 27-row MRI matrix
+passes twice with identical results. All 26 prior correct rows stay unchanged.
+The separate `fixed_three` RangeError stays unchanged. All rows use DYNAMIC and
+zero fallback. The warning build passes with two known warnings in `gir.c` and
+`rseq.c`. Ruby syntax, RuboCop, clang-format, `git diff --check`, and
+`make distclean` pass. The full project suite did not run.
+
+Exact commands, results, hashes, failure identities, and repeatable matrix
+outputs are in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/worker/`.
+No commit or publication occurred in this relay. Remote publication remains
+pending.
+
+## Failed-probe classifier review repair (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: task-absence-ordered-failure-continuation-01, attempt 2.
+The classifier now matches a pushed start with the close for the same capture.
+It requires a cyclic sibling path and a close-only edge to an input-consuming state.
+A sibling consuming edge with the same close program blocks fusion.
+The classifier builds one charged cycle map per absence call and caches each edge result.
+Normal failed-probe resets use a generation counter and cost O(1).
+The graph walk, edge scans, action scans, and capture-history replay charge the existing work budget.
+The six frozen cases test nested captures, repeated captures, alternate exits, and failures before and at the bound.
+They include MRI differential values, character ranges, byte ranges, native DYNAMIC use, and zero fallback.
+
+Five focused E2Es pass: 5 tests and 75 assertions.
+The full absence file reports 78 tests, 588 assertions, and two known failures.
+The same two test names failed before attempt 2. This repair adds no failure.
+The physical verifier passes 29 tests and 100 assertions.
+The subprogram check passes 6 tests and 46 assertions.
+Semantic state passes 19 tests and 107 assertions.
+Tagged-order differential passes 16 tests and 4,840 assertions.
+Work-budget polling passes 5 tests and 29 assertions.
+Timeout and interrupt coverage passes 15 tests and 24 assertions.
+The 27-row matrix passes twice with identical case results.
+All 26 prior correct rows stay unchanged. The separate fixed_three RangeError stays unchanged.
+All rows use DYNAMIC with zero fallback.
+The warning build passes with two known warnings in unchanged gir.c and rseq.c.
+Ruby syntax, RuboCop, clang-format, git diff --check, and make distclean pass.
+The full project suite did not run.
+
+The selected failed tag chain does not contain ordered writes from sibling failed branches.
+The edge-wide close marker also has unproved cases outside the six frozen shapes.
+See the exact limits and source analysis in the review-02 result packet.
+No commit or publication occurred.
+
+
+## DYNAMIC output-state review repair (2026-10-17)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-reversed-output-01`,
+attempt 4, phase `review-repair`.
+
+DYNAMIC call return now restores output pairs for captures that were active at
+call entry. It restores them from the saved caller capture file before it runs
+the call continuation. This keeps the output state aligned with the semantic
+state after a recursive call.
+
+The output-scope registry now uses stable indices and a free list. Scope
+creation and release do not scan registry entries. Scope creation charges two
+fixed work units. Registry growth also charges each added slot. Release makes
+one constant-time free-list update without a poll. Start identity insertion
+charges every slot probe. Rehash charges the replacement capacity, each old
+table slot, and every replacement-table probe. The output state owns
+replacement storage until the rehash finishes. Interrupt or timeout cleanup
+frees it safely.
+
+The full project suite on the changed source has 1177 runs, 36964 assertions,
+7 failures, and 7 errors. The isolated source-base run has 1172 runs, 36777
+assertions, 7 failures, and 7 errors. All 14 failure and error identities
+match the base run. The two new recursive-call failures from attempt 3 are
+fixed. The suite still has known baseline failures.
+
+The public resource E2Es were frozen before the C correction. The work-budget
+file now passes 7 tests and 58 assertions. DYNAMIC differential passes 10 and
+19023. The full absence file passes 94 and 929. Both frozen MRI runs match all
+27 rows with DYNAMIC and zero fallback. Semantic, capture, assertion, call,
+atomic, verifier, resource, timeout, and interrupt checks pass.
+
+The payload file still has its pre-existing three-register expectation. MRI
+and Onibi both return two registers for that named-capture pattern. The
+focused invalid-register check passes.
+
+A clean warning build passes. It reports two known warnings in unchanged
+`gir.c` and `rseq.c`. Format, lint, and diff checks pass. Exact commands,
+results, artifacts, and hashes are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-reversed-output-01/worker/review-04/result.md`.
+No commit or publication occurred.
+Exact commands, output hashes, source hashes, and repeatable matrix outputs are in
+/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/worker/review-02/.
+
+## DYNAMIC call-history resource repair (2026-10-17)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-reversed-output-01`, attempt 5,
+phase `final-resource-repair`.
+
+Output call restore now charges each tag-history node that it visits. It checks
+each node ID before access and bounds the walk by the arena tag count. The old
+semantic restore calls pass a null context. They keep their prior polling
+behavior.
+
+The recursive check passes 1 test and 4 assertions. DYNAMIC differential passes
+10 tests and 19023 assertions. Work-budget checks pass 7 tests and 58
+assertions. Timeout and interrupt checks pass. The full absence check passes 94
+tests and 929 assertions. Two frozen 27-row MRI runs match with DYNAMIC and
+zero fallback.
+
+The full census has 1177 tests, 36964 assertions, 7 failures, and 7 errors.
+It has the same 14 failure and error identities as review 04. A clean warning
+build passes with two known warnings in unchanged `gir.c` and `rseq.c`. Format,
+lint, syntax, trace, diff, and distclean checks pass. The result, exact commands,
+source patch, and hashes are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-reversed-output-01/worker/review-05/`.
+
+
+## Absence capture compiler tuples (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-ordered-failure-continuation-01`, attempt 8, phase `compiler-tuples`.
+The compiler stores logical tuples during compilation. Each tuple keeps
+separate target-close and pushed-witness slots. Each physical absence variant
+links the tuple to its semantic and physical owner IDs. The compiler saves and
+restores active owner IDs around nested subprogram compilation.
+
+The RSeq relation table stays empty. No markers, populated records, or runtime
+behavior changed. The warning build passes with two known warnings in existing
+functions in `gir.c` and `rseq.c`. Format and diff checks pass. No E2E tests
+ran in this increment.
+
+Exact commands, hashes, the source patch, and build log are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/worker/compiler-08/`.
+Next: wire marker placement and prove the mapping before table population.
+
+## Absence capture provenance markers (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-ordered-failure-continuation-01`, attempt 9, phase `marker-lowering`.
+The compiler now binds each logical tuple to its physical absence owner.
+Each tuple keeps separate target-close and pushed-witness slots. The compiler
+places `CLOSE`, `LOOP`, `EXIT`, and `SUFFIX` markers in GIR actions. RSeq v8
+stores the records after lookbehind widths.
+
+The compiler emits metadata only for a variable repeat with a pushed witness
+and a following positive-width suffix. It accepts only supported wrapper
+paths. It does not attach a zero-width child to a later consuming sibling.
+The physical verifier checks the records, action roles, owner, close pair,
+repeat-choice edges, and consuming suffix edge. Marker actions remain no-op.
+The ordered capture journal is not implemented in this unit.
+
+The clean warning build passes. It reports two known warnings in unchanged
+`gir.c` and `rseq.c` functions. The physical verifier passes 31 tests and 158
+assertions. The subprogram representation check passes 6 tests and 46
+assertions. Four capture controls run. Three pass. The remaining failure,
+`test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix`, also
+fails in the saved baseline. This unit did not run the full absence file or
+the full project suite.
+
+Public diagnostics accept a captured target with a two-branch consuming
+suffix. They reject relation metadata for a zero-width lookahead child before
+a consuming sibling. The physical verifier round-trip checks distinct target
+and witness slots and all four marker roles.
+
+Exact commands, logs, hashes, and patches are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/worker/metadata-09/`.
+No commit or publication occurred. Root review must accept this metadata
+stage before the next journal unit.
+
+## Ordered failed-probe capture journal (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-ordered-failure-continuation-01`, attempt 10.
+DYNAMIC now records capture writes in MRI path order across failed probes.
+A positive body match drops that probe's journal range. A failed probe can
+apply ordered writes to the scan state and saved endpoints. Direct starts clear
+old output pairs and update condition values. Direct closes publish complete
+pairs only. Pushed targets use their exact target and witness relation.
+
+For a direct close at the active bound, DYNAMIC reads the exact close and suffix
+relation. It defers that close only when all suffix markers name the same failed
+state and that state cannot consume the current subject. A consuming suffix
+keeps the close. The runtime does not infer relation records from graph cycles.
+Journal work uses the current work budget and the absence ensure block frees its
+storage.
+
+Five frozen MRI E2Es pass: 5 tests, 64 assertions. They cover both suffix
+targets, both prior regressions, and the earlier-sibling capture case. The full
+absence file reports 79 tests, 599 assertions, and two failures. The pre-edit
+source had 79 tests, 593 assertions, and three failures. This repair resolves
+the earlier-sibling failure. It adds no failure. The two remaining failures are
+`test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix` and
+`test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary`.
+
+The physical verifier passes 31 tests and 158 assertions. The subprogram check
+passes 6 tests and 46 assertions. Semantic-state checks pass 19 tests and 107
+assertions. Tagged lowering passes 7 tests and 33 assertions. Tagged resource
+checks pass 2 tests and 20 assertions. Tagged MRI differential checks pass 16
+tests and 4,840 assertions. Tagged UTF-8 checks pass 11 tests and 126
+assertions. Work-budget checks pass 5 tests and 29 assertions. Timeout and
+interrupt checks pass 15 tests and 24 assertions.
+
+Two fresh 27-row MRI matrix runs match. All 27 rows use DYNAMIC with zero
+fallback. The 26 prior correct rows match MRI. The separate `fixed_three`
+RangeError stays unchanged. The warning build passes with two known warnings in
+`gir.c` and `rseq.c`. Clang format, Ruby syntax, RuboCop, `git diff --check`,
+and `make distclean` pass. The full project suite did not run.
+
+Exact commands, logs, comparison results, source hashes, and matrix outputs are
+in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/worker/journal-10/`.
+No commit or publication occurred. Remote publication remains pending.
+
+
+## Ordered failed-probe capture pair repair (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-ordered-failure-continuation-01`, attempt 11, phase `review-repair`.
+DYNAMIC keeps an output capture pair only when both slots are set. It clears a
+lone start or end after it merges tag and capture-event histories. It keeps a
+pair with two set slots, including MRI empty ranges where start is greater than
+end. The raw-range validator did not change. Internal lineage diagnostics keep
+their partial-event behavior.
+
+The direct-close replay keeps both output tags and provenance inside the
+condition-start guard. It still updates the condition end register when the
+start is unset. Pushed target pairs, branch order, and journal ownership stay
+unchanged. The pair sweep charges its capture count before it allocates scratch
+arrays.
+
+Six frozen MRI E2Es pass: 6 tests and 75 assertions. The fixed-repeat case
+returns `xab` with capture 1 unset. The full absence file reports 80 tests, 610
+assertions, and the same two known failures:
+`test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix` and
+`test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary`.
+
+The physical verifier passes 31 tests and 158 assertions. The subprogram check
+passes 6 tests and 46 assertions. Semantic state passes 19 tests and 107
+assertions. Work-budget checks pass 5 tests and 29 assertions. Timeout and
+interrupt checks pass 15 tests and 24 assertions. Tagged lowering passes 7
+tests and 33 assertions. Tagged resource checks pass 2 tests and 20 assertions.
+Tagged MRI differential checks pass 16 tests and 4,840 assertions. Tagged
+UTF-8 checks pass 11 tests and 126 assertions.
+
+Two fresh 27-row MRI matrix runs match each other and MRI. All rows use DYNAMIC
+with zero fallback. The 26 prior correct rows stay unchanged. The `fixed_three`
+row now matches MRI and raises no public error. The warning build passes with
+two known warnings in `gir.c` and `rseq.c`. Ruby syntax, RuboCop, C format,
+`git diff --check`, and `make distclean` pass. The full project suite did not
+run.
+
+Exact commands, logs, source and bundle hashes, and matrix outputs are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/worker/review-11/`.
+No commit or publication occurred.
+
+## Ordered absence repair: root acceptance (2026-10-15)
+
+Root accepted the complete RSeq v8 metadata and ordered capture journal repair.
+Six focused E2Es pass. All 27 frozen MRI matrix rows now match.
+The fixed-three public range error is resolved. Two prior absence failures remain.
+Root verified final source and evidence hashes. Full-project acceptance remains open.
+Acceptance evidence: `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-ordered-failure-continuation-01/root-acceptance.json`.
+Remote publication remains pending.
+
+## Absence endpoint propagation candidate (2026-10-15)
+
+A later positive body probe now sends its output captures to earlier saved endpoints.
+The runtime keeps each endpoint's semantic registers for backreferences.
+
+The nested suffix E2E passes: one test and 28 assertions.
+The full absence file reports 80 tests, 633 assertions, and one failure:
+`test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary`.
+
+The lookahead failure has a separate current-source cause.
+Its empty direct capture closes before a failing assertion in one action program.
+The action transaction rolls back the close.
+The selected failure history keeps only the open slot.
+This case needs a separate ordered failure-action repair.
+
+This candidate awaits root review.
+Evidence and exact commands are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-final-two-01/worker/`.
+The full project suite did not run.
+No commit or publication occurred.
+
+## Absence endpoint work review (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-final-two-01`, attempt 2.
+
+DYNAMIC now charges one work unit for each earlier endpoint it updates.
+It stores each endpoint's byte positions before it polls.
+It keeps each endpoint's backreference registers.
+
+Five added public E2Es cover multiple captures, an unset capture, a condition,
+backreferences, and many saved endpoints. The focused run reports 11 tests and
+120 assertions with no failures. The late-probe case has 512 `a` bytes before
+`z` and charges 8,776 work units. Its normal-budget result matches MRI. It uses
+DYNAMIC with zero fallback. A 20,000-byte timeout case raises at 1 ms.
+
+The full absence file reports 85 tests, 688 assertions, and one known failure:
+`test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary`.
+Both 27-row frozen MRI runs match. Every row uses DYNAMIC and zero fallback.
+The semantic-state, physical-verifier, subprogram, work-budget, timeout, and
+interrupt checks pass. The warning build reports only the two known warnings in
+unchanged `gir.c` and `rseq.c`.
+
+The full project suite did not run. No commit or publication occurred.
+Evidence and commands are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-final-two-01/worker/review-02/`.
+
+## Failed assertion capture-prefix repair (2026-10-15)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-failed-action-01`, attempt 1.
+
+DYNAMIC now copies ordered parent capture-write identities before a failed
+assertion rolls back its parent action. It queues a failure-only stack frame.
+That frame adds only the parent path delta to the journal. Failed assertion
+child writes stay inside the child checkpoint.
+
+A nested absence transfers capture history when an empty forbidden body matches
+at its start. A later positive probe carries a prior output pair forward only
+when both condition slots stay unset. Positive probe slots keep priority.
+Backreference registers and pushed-capture rollback stay unchanged.
+
+The full absence E2E passes: 89 tests and 755 assertions. Two repeated 27-row
+frozen MRI runs match. Every row uses DYNAMIC and zero fallback. Semantic state
+passes 19/107. The physical verifier passes 31/158. Subprogram checks pass
+6/46. Work-budget checks pass 5/29. Semantic regression checks pass 15/24.
+Tagged capture checks pass 16/4,840. Tagged resource checks pass 2/20.
+Positive and negative lookahead controls pass 2/3.
+
+The absence timeout and interrupt probes both raise as required. A short match
+after each event matches MRI. A clean warning build passes with two known
+warnings in unchanged `gir.c` and `rseq.c`. Ruby syntax, RuboCop, C format,
+`git diff --check`, and `make distclean` pass. The full project suite did not
+run.
+
+Exact commands, logs, source and bundle hashes, and MRI matrix outputs are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-failed-action-01/worker/final-01/`.
+No commit or publication occurred. Root review must accept this unit before the
+remaining work queue continues.
+
+## Failed assertion capture-prefix review repair (2026-10-15)
+
+Status: NEEDS CONTINUATION. Relay: `task-absence-failed-action-01`, attempt 2.
+
+The endpoint resource E2E matches MRI and uses DYNAMIC with zero fallback.
+Work grows from 2,739 to 5,299 units. Tag events grow from 202 to 394.
+However, a transfer trace shows no capture history on this path.
+
+A second public probe transfers two capture events per history. It matches MRI
+and uses DYNAMIC with zero fallback. Its work grows from 74,466 to 478,026
+units when the `b` input grows from 32 to 64 bytes. Other nested search work
+also grows, so this result does not prove linear transfer growth. Root review
+must choose a narrow way to measure transfer work.
+
+The sparse pending scan test uses 257 capture slots. It matches MRI and reports
+13,140 work units. A clean build without the per-slot charge reports 12,883.
+The 13,000-unit test limit detects the missing charge.
+
+The absence E2E passes 91 tests and 777 assertions. Semantic state passes
+19/107. The physical verifier passes 31/158. Subprogram checks pass 6/46.
+Work-budget checks pass 5/29. Semantic regression checks pass 15/24. Tagged
+capture checks pass 16/4,840. Tagged resource checks pass 2/20. Lookahead
+controls pass 2/3. Two 27-row frozen MRI runs match. All rows use DYNAMIC with
+zero fallback.
+
+Timeout and interrupt probes raise as required. A short match after each event
+matches MRI. A clean warning build passes with the two known warnings in
+unchanged `gir.c` and `rseq.c`.
+
+The range probe reports MRI byte offsets `[2,1]`; MRI `MatchData#to_a` raises.
+The pending-merge trace reads condition range `[1,1]`. This path does not pass
+the reversed MRI output pair through the condition file. The range guard and
+raw-range validator stay unchanged. The public offset difference is recorded
+for root review.
+
+The focused resource E2Es pass 2/22. The full absence E2E passes 91/777.
+The warning build reports two known warnings in unchanged `gir.c` and `rseq.c`.
+Ruby syntax, RuboCop, C format, diff checks, and `make distclean` pass.
+
+Exact commands, logs, hashes, and repeatable probes are in
+`/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-failed-action-01/worker/review-02/`.
+The final C source SHA-256 is
+`4e483d0cb4cccdb9bcb6c6158dcb44cc3c0aa8eb223f2578e2ef55d19378a6d7`.
+The clean build bundle SHA-256 is
+`fdf27e1b285014e974f1956bee653eb533ee6e87eee50a702a73a97483b6d774`.
+Both final MRI matrices use this source and bundle.
+The full project suite did not run. No commit or publication occurred.
+
+## Failed-action capture repair: root acceptance (2026-10-15)
+
+Root accepted ordered parent capture effects before failed assertions. The 91
+absence E2Es and all 27 frozen MRI matrix rows pass. Transfer traces show one
+call per saved endpoint, including nonempty capture histories. Source and
+evidence hashes match. Full-project acceptance remains open.
+
+A separate reversed-range gap remains for
+`(?~(?:b(?~(?:(?=(?:(a?){9}){2}a)(?=a)))))` on `bab`.
+MRI reports capture `[2,1]` and raises ArgumentError from `to_a`. The base
+reports an unset capture. This repair reports `[1,1]`. Neither matches MRI.
+The next unit must resolve output history versus condition state.
+Evidence: `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-failed-action-01/worker/evidence-03/result.md`.
+Remote publication remains pending.
+
+
+## Ordered absence output captures and reversed ranges (2026-10-17)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-absence-reversed-output-01`, attempt 3.
+DYNAMIC keeps output capture slots separate from condition and semantic state.
+It follows executed branch order. It restores pushed pairs at rollback marks.
+It keeps direct writes across repeat rollback. Assertion and absence transcripts
+transfer only when their parent path selects them. Shared direct starts are
+applied once by capture-order ID, slot, and byte offset.
+
+The target E2Es preserve MRI's reversed capture pair `[2,1]` on `bab` and
+`[4,3]` on `ébab`. They check raw offsets, negative `match_length`, and
+`ArgumentError` from `to_a`, `captures`, and `[](1)`. They confirm DYNAMIC and
+zero fallback. Normal empty, unset, fixed-three, repeat-count, and nested-form
+controls match MRI.
+
+The full absence file passes 94 tests and 929 assertions. The focused reversed
+range E2Es pass 3 tests and 152 assertions. The invalid payload check passes
+1 test and 22 assertions. Semantic state passes 19/107. Tagged capture checks
+pass 16/4,840; nullable UTF-8 checks pass 11/126. The GIR verifier passes
+51/122. The physical verifier passes 31/158. Subprogram checks pass 6/46.
+Work-budget checks pass 5/29. Semantic regression checks pass 15/24. Tagged
+resource checks pass 2/20. Absence timeout checks pass 1/11. Positive and
+negative lookahead controls pass 2/3. Timeout and interrupt probes both raise.
+The later short match matches MRI after each event.
+
+Both frozen MRI matrix runs match all 27 rows. Every row uses DYNAMIC with zero
+fallback. A clean warning build passes with two known warnings in unchanged
+`gir.c` and `rseq.c`. Ruby syntax, RuboCop, clang-format, and `git diff --check`
+pass. The full project suite did not run.
+
+The full MatchData payload file reports 10 tests and 47 assertions. It has one
+pre-existing failure: `test_native_diagnostic_constructor_copies_raw_search_result`
+expects 3 registers. MRI and Onibi return 2 for its named-capture pattern. The
+pre-code run has the same failure. The focused range validation check passes.
+
+Exact commands, exit codes, source and bundle hashes, logs, and matrix outputs
+are in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-reversed-output-01/worker/implementation-03/result.md`.
+No commit or publication occurred.
+
+## Reversed output ranges: root acceptance (2026-10-17)
+
+Root accepted ordered output capture slots and reversed capture payloads.
+The 94 absence tests pass. All 27 frozen MRI matrix rows match.
+DYNAMIC differential checks pass 19,023 assertions. The full census reports
+1,177 tests and 36,964 assertions, with seven failures and seven errors.
+All 14 identities match the isolated base. No new failure remains.
+Root verified final source, patch and evidence hashes.
+Evidence: `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-absence-reversed-output-01/worker/review-05/result.md`.
+The baseline failure queue and final acceptance gates remain open.
+Remote publication remains pending.
+
+## Inline modifier scope restoration (2026-10-17)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-inline-modifier-baseline-01`, attempt 1, phase `cause-and-repair`.
+
+The shared runtime used the RSeq header's initial `MULTILINE` bit for each wildcard. This overrode each wildcard state's resolved `m` option inside negative scopes. The runtime now reads newline behavior from the wildcard state. The G-IR contract states that the header bit cannot override the wildcard state. No parser, compiler, RSeq layout, or fallback path changed.
+
+Both assigned modifier E2Es pass: 19 tests and 37 assertions. All 23 MRI controls match. The three affected controls use RSeq without fallback.
+
+Extended-mode, syntax, subexpression, anchor, regular-fast, DYNAMIC, absence, and verifier E2Es pass. The absence suite passes 94 tests and 929 assertions. DYNAMIC differential checks pass 10 tests and 19,023 assertions.
+
+Two frozen MRI matrix runs match all 27 rows. Each row uses DYNAMIC with zero fallback. The artifacts are byte-identical.
+
+The full census reports 1,177 tests, 36,968 assertions, 5 failures, and 7 errors. It resolves the two modifier failures. It adds no failure or error identity. Twelve baseline identities remain.
+
+A clean warning build passes. It reports two known warnings in unchanged `gir.c` and `rseq.c`. The focused RuboCop check, clang-format, Ruby syntax, and diff checks pass. Full RuboCop reports 70 offenses across 154 files. No Ruby file changed. `make distclean` passes.
+
+Exact commands, logs, hashes, matrix results, census comparison, and patch are in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-inline-modifier-baseline-01/worker/result.md`. No commit or publication occurred.
+
+## Pattern-comment baseline repair (2026-10-17)
+
+The C tokenizer now skips pattern comments outside character classes. It stops at the first unescaped close parenthesis. It reads source characters with the source encoding. Comments emit no token and create no group or capture. GIR records this rule.
+
+PatternCommentTest passes 8 tests and 83 assertions. Extended-mode, inline-modifier, syntax-differential, and compile-outcome E2Es pass. Sixteen supported MRI controls match captures, match results, and offsets. Thirteen public controls use RSeq with no fallback.
+
+The compile-outcome cleanup test now uses a nested quantifier that MRI accepts and the Onibi parser rejects. It still checks token cleanup before the error returns.
+
+The full census reports 1,182 tests, 37,050 assertions, 5 failures, and 5 errors. Both target pattern-comment errors are resolved. No new failure or error identity remains. Ten other baseline identities remain.
+
+A clean warning build passes. It reports the same two warnings in unchanged gir.c and rseq.c. Focused RuboCop, clang-format, Ruby syntax, and diff checks pass. Final make distclean passes.
+
+Exact commands, logs, paired MRI controls, native-routing results, census comparison, hashes, and source patch are in /Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-pattern-comments-baseline-01/worker/result.md. No commit or publication occurred.
+
+## Nested quantifier composition repair (2026-10-17)
+
+Status: READY FOR ROOT REVIEW. Relay: `task-nested-quantifier-baseline-01`, attempt 2, phase `cleanup-and-parser-repair`.
+
+The parser now nests each accepted postfix quantifier around the prior atom.
+The GIR contract requires the compiler to preserve MRI's ordered choices and
+capture changes. It forbids repeat flattening without MRI evidence.
+
+The cleanup E2E uses a private, per-instance diagnostic context. It injects
+an internal error after tokenization through `onibi_initialize`. The normal
+protected error path frees the token vector and re-raises the error. The E2E
+checks token counts, storage release, error class, no fallback, and a later
+normal compilation.
+
+The focused quantifier E2E passes 2 tests and 25 assertions. Two frozen MRI
+matrix runs match all 27 rows. Every row uses native DYNAMIC execution with no
+fallback. The 84-row composition controls match MRI after error-wrapper
+normalization. They include 60 native rows and 21 explicit fallback rows for
+unsupported possessive or zero-width forms.
+
+The cleanup, compiler safety, parser, absence, comment, modifier, GIR verifier,
+physical verifier, work-budget, and regular-fast E2Es pass. The full census
+reports 1,182 tests, 37,074 assertions, 5 failures, and 4 errors. It resolves
+the target quantifier error and adds no failure or error identity. Four other
+errors and five other failures remain from the baseline.
+
+A clean warning build passes with two known warnings in unchanged `gir.c` and
+`rseq.c`. Focused RuboCop, Ruby syntax, clang-format, and diff checks pass.
+Final `make distclean` passes. Commands, logs, hashes, matrix results, and the
+census comparison are in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-nested-quantifier-baseline-01/worker/repair-02/`.
+
+## Non-ASCII-compatible character-class repair (2026-10-17)
+
+Initial relay result: `task-class-encoding-baseline-01`, attempt 1, phase `cause-and-repair`.
+The coordinator accepted the completed repair on 2026-10-19. See the review below.
+
+The tokenizer scans a temporary UTF-8 view for non-ASCII-compatible source.
+It maps token spans back to byte offsets in the original source.
+The parser compares class range endpoints as Unicode codepoints.
+The compiler encodes Unicode property names before MRI lookup.
+The runtime allows non-ASCII-compatible source encodings when RSeq has a class descriptor.
+Class-less programs keep MRI fallback for these source encodings.
+
+The 244-row MRI census has zero semantic mismatches after error-wrapper normalization.
+Of 200 UTF-16 and UTF-32 class rows, 188 use native RSeq without fallback.
+The other 12 need incomplete multi-character case folds and use MRI fallback.
+An equivalent UTF-8 pattern uses the same explicit fold fallback.
+The GIR states that incomplete folds use MRI.
+
+The encoding E2E passes 24 runs and 196 assertions.
+The character-class corpus E2E passes 3 runs and 76 assertions.
+The full census reports 1,183 runs, 37,200 assertions, 5 failures, and 1 error.
+It resolves the three target errors and adds no failure or error identity.
+Six other baseline identities remain.
+
+A clean warning build passes with two known warnings in unchanged `gir.c` and `rseq.c`.
+Focused RuboCop, Ruby syntax, changed-line clang-format, diff checks, and final distclean pass.
+The E2E, route census, full census, hashes, and patch are in `/Users/masa/.codex/relay/01a122e0-9c12-7182-8ea5-c60635527db0/task-class-encoding-baseline-01/worker/`.
+No commit or publication occurred.
+
+### Integrated encoding review (2026-10-19)
+
+Status: ACCEPTED for the bounded UTF-16 and UTF-32 class profile.
+The review also covers literals, repeats, capture names, and byte escapes in
+mixed class programs. Capture metadata preserves source encoding.
+Range selectors retain MRI's separate binary-name rules.
+Class-less programs and unsupported escape forms retain explicit fallback.
+This acceptance does not complete the gem PoC.
+
+The encoding E2E passes 31 tests and 1,562 assertions with seed 51748.
+The escape cursor E2E passes one test and 154 assertions.
+The 335-row mixed encoding matrix has zero differences after error-class normalization.
+The matrix compares captures, offsets, encodings, names, and error bytes.
+Route evidence records native execution and fallback separately.
+The test compares each encoding with MRI before it checks native routing.
+MRI rejects incomplete UTF-32 byte escapes, so those cases have no execution route.
+
+The full suite reports 1,190 tests, 38,566 assertions, five failures, and one error.
+Its six failure and error identities match the inherited baseline exactly.
+They concern octal syntax, line anchors, two capture-count expectations,
+nesting-limit errors, and caller-local backreference state.
+No new failure identity remains.
+
+The forced warning build passes with the two known warnings in `gir.c` and `rseq.c`.
+Focused RuboCop, changed-line clang-format, and `git diff --check` pass.
+The repeatable runner records exact commands, environment, exit codes, and logs:
+`/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/final-review-03/verify.py`.
+Its `commands.json`, `matrix-comparison.json`, and `census-comparison.json`
+provide acceptance evidence. `compare.py` repeats the result comparisons.
+The earlier relay evidence above remains valid for the original class corpus.
+Publication and remote integration remain pending.
+
+## Capture-count test correction (2026-10-19)
+
+Status: ACCEPTED. MRI disables unnamed captures when a pattern has named captures.
+Two old tests expected an unnamed optional group to retain a capture slot.
+Both fixtures now name that group. The unmatched register assertions remain.
+The public scan differential test also retains the original mixed-group pattern.
+No production code changed.
+
+The contract file passes four tests and 27 assertions.
+The payload file passes ten tests and 50 assertions.
+Both use seed 51748. Focused RuboCop and whitespace checks pass.
+The warning build passes with the two existing warnings.
+The full suite reports 1,190 tests, 38,570 assertions, three failures, and one error.
+Only the two target failure identities disappeared. No new identity appeared.
+Commands, MRI proof, logs, source hashes, and parent review are saved under
+`/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/capture-count-01/`.
+`result.json` records the executed checks. `reproduce.py` repeats those checks.
+Publication remains pending.
+
+## Line-start boundary repair (2026-10-19)
+
+Status: ACCEPTED. `BEGIN_LINE` now decodes the preceding character.
+It accepts input start and interior positions after LF.
+It rejects the position after a final LF, as MRI does.
+The shared C assertion preserves character boundaries for UTF-16 and UTF-32.
+
+The frozen MRI matrix has 13 boundary cases and eight encoded class cases.
+All 21 cases agree after the repair. The encoded cases use native execution without fallback.
+The anchor E2E passes six tests and 106 assertions.
+The encoding E2E passes 31 tests and 1,562 assertions.
+The full suite uses seed 51748 and reports 1,192 tests and 38,670 assertions.
+Two failures and one error remain: nesting-limit text, caller-local backreference state, and octal syntax.
+Only the line-start failure resolved. No new failure identity appeared.
+
+The forced warning build passes with the two known warnings.
+Focused RuboCop, C format, and diff checks pass.
+The worker result records exact commands, environment, source hashes, and extension hash:
+`/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/line-start-01/result.json`.
+`line_start_matrix.rb` repeats the MRI comparison. `review.json` records parent acceptance.
+End-line and semi-end assertions still use byte-based checks. Their encoded behavior needs a separate audit.
+Those assertions were outside this repair. Publication remains pending.
+
+## Encoded end-line assertions (2026-10-19)
+
+Status: ACCEPTED. `END_LINE` and `SEMI_END_BUFFER` now decode the next character.
+The first accepts input end or a boundary before LF.
+The second also requires that LF to end the input.
+Neither treats a newline byte inside another character as LF.
+
+Before the C change, the worker froze 174 MRI cases and the public E2Es.
+The matrix covers ASCII-8BIT, UTF-8, UTF-16LE/BE, and UTF-32LE/BE.
+All 174 cases now match frozen MRI outputs on native routes with zero fallback.
+The anchor E2E passes eight tests and 386 assertions.
+The encoding E2E passes 31 tests and 1,562 assertions.
+The full suite reports 1,194 tests and 38,950 assertions with seed 51748.
+Its two failures and one error have the same three identities as the prior census.
+The prior line-start repair remains covered.
+
+The forced warning build, focused RuboCop, C format, diff check, and distclean pass.
+The two existing C warnings remain. This result does not prove all encoding behavior.
+Exact commands, environment, logs, source hashes, frozen results, and parent review are under
+`/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/end-line-01/`.
+`end_line_matrix.rb` repeats the MRI comparison. `result.json` records the checks.
+Publication remains pending.
+
+## Numeric escape support decision (2026-10-19)
+
+Status: AUDIT ACCEPTED; implementation pending.
+Octal bytes and numbered backreferences remain in the supported MRI-compatible subset.
+GIR sections 34 and 42 define these features. Section 133.1 requires compatible results.
+The existing syntax tests require both octal `\10` and capture-10 references.
+The audit closes the support decision in TASK-BASE02-OCTAL-SCOPE.
+It does not close the implementation defects.
+
+The frozen matrix contains 35 patterns and 11 differing patterns.
+Without prior captures, MRI reads `\10` and `\11` as octal bytes.
+It reads `\18` as an octal byte followed by `8`.
+The measured `\80`, `\81`, and `\99` forms are literal digits.
+Multi-digit references depend on captures opened before the escape.
+Single-digit forward references retain their separate rule.
+Inside classes, `\1`, `\10`, and `\8` expose a separate scanner defect.
+The repair must preserve the single source scan and encoded-byte assembly.
+
+The warning build passes with two existing warnings.
+The two existing target methods report two tests, three assertions, and one error at `\10`.
+No repository source or test changed during the audit. No full suite was repeated.
+Exact probes, outputs, source hashes, contract references, and review are under
+`/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/octal-audit-01/`.
+The parent verified all source hashes and independently counted the 11 differences.
+`numeric_octal_matrix.rb` repeats the audit. Its binary-input fallback control is not native support evidence.
+
+## Character-class digit escapes (2026-10-20)
+
+Status: ACCEPTED. The scanner excludes class escapes from numbered references.
+Inside classes, `\1` through `\7` start octal bytes. `\8` and `\9` remain literal digits.
+The existing byte-assembly path remains unchanged.
+Public MRI E2Es were frozen before the C change.
+The 35-pattern audit resolves exactly three class differences.
+Its eight outside-class differences remain unchanged.
+
+Parent acceptance corrected the worker's test environment and seed commands.
+Standalone Ruby loaded Minitest 6.0.6; Bundler loaded Minitest 5.26.2.
+The worker's full-suite argument selected seed 5837, not 51748.
+The parent repeated affected checks with Bundler and explicit seed 51748.
+The encoding suite passes 31 tests and 1,562 assertions.
+The escape-cursor suite passes one test and 154 assertions.
+The syntax suite retains only the known outside-class octal error.
+The full suite reports 1,195 tests, 38,952 assertions, two failures, and one error.
+The three failure/error identities match the accepted baseline exactly.
+
+The forced warning build, focused RuboCop, changed C format, and diff checks pass.
+The two known compiler warnings remain.
+Worker evidence is in `class-digits-01/`; parent checks and acceptance are in its `parent-review/` directory,
+under `/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/`.
+`parent-review/verify.py` repeats the corrected checks and records exact commands and environment.
+Publication remains pending.
+
+## Outside-class numeric escapes (2026-10-20)
+
+Status: ACCEPTED. The tokenizer counts captures as their opening tokens appear.
+Multi-digit decimal escapes refer only to captures already opened.
+Other runs start octal bytes or literal digits under MRI's rules.
+Single-digit forward references retain their existing behavior.
+Bounded decimal accumulation prevents overflow on long digit runs.
+The repair adds no source rescan or matcher source checks.
+
+Public MRI E2Es preceded the C change. They include capture 101, forward references,
+open captures, noncapturing groups, comments, and long digit suffixes.
+All 35 frozen audit patterns now match MRI, including the accepted class cases.
+The syntax suite passes 39 tests and 106 assertions.
+The escape-cursor and encoding suites pass one/154 and 31/1,562 respectively.
+Constructor and lexer-error controls also pass.
+The full suite uses seed 51748 and reports 1,196 tests and 38,958 assertions.
+The octal error is resolved. Only the two known failures remain:
+nesting-limit message text and excluded caller-local MRI backreference state.
+
+The first full-suite checkpoint incorrectly reported an octal error.
+The parent read the raw logs. All three saved full runs have two failures and zero errors.
+The incorrect checkpoint remains as audit history; the raw logs define acceptance.
+The final warning build, focused E2E, RuboCop, C format, diff check, and distclean pass.
+Two unchanged C warnings remain.
+Evidence and exact commands are under
+`/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/numeric-escape-01/`.
+`result.json` records checks and hashes. `review.json` records parent acceptance.
+Publication remains pending.
+
+## Nesting error contract decision (2026-10-20)
+
+Status: AUDIT ACCEPTED. Preserve the intentional 256-level group nesting limit.
+Current documents require an explicit controlled error, but promise no exact message text.
+The current `Onibi::RegexpError` message is `regexp nesting is too deep`.
+The token guard runs before recursive parser entry.
+
+Capture and noncapture probes at depths 255 and 256 construct and match natively.
+At depth 257, both raise the current error with ASCII-8BIT message encoding.
+MRI 4.0.6 accepts all six controls. This is an intentional gem resource limit.
+The existing nesting test still fails its old exact-message expectation.
+Correcting that expectation is a separate pending test repair. Preserve its depth and error-class checks.
+No source or test changed during this audit.
+
+The warning build passes with two existing warnings. The bounded probe and cleanup pass.
+The focused test reports one test, four assertions, one failure, and zero errors at seed 51748.
+No full suite was repeated. The last full census still has two known failures.
+Commands, probe script, raw results, source hashes, and parent decision are under
+`/Users/masa/.codex/onibi-subagent/01a14955-63a7-7fc0-81d1-989c3a8bedc1/nesting-audit-01/`.
+`result.json` and `review.json` record the evidence and acceptance.
+Publication remains pending.
+
+## Nesting error test correction (2026-10-20)
+
+Status: ACCEPTED. The existing public E2E now expects the accepted current diagnostic.
+Depths 255 and 256 still construct and match. Depth 257 still requires `Onibi::RegexpError`.
+No production code changed.
+
+The focused E2E passes one test and four assertions at seed 51748.
+The full suite reports 1,196 tests, 38,958 assertions, one failure, and zero errors or skips.
+Only the excluded caller-local MRI backreference test fails.
+The warning build retains two known warnings. RuboCop, Ruby syntax, diff checks, and cleanup pass.
+Exact commands, complete logs, hashes, and parent review are under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/nesting-test-01/`.
+`result.json` records evidence. `review.json` records acceptance.
+Publication remains pending.
+
+## Census test lint correction (2026-10-20)
+
+Status: ACCEPTED. All 70 findings across the seven TASK-BASE02-LINT-HYGIENE files are resolved.
+Documented exceptions preserve 66 exact backreference and operator expressions. Four safe style fixes resolve the remaining findings.
+Test identities and expected values remain unchanged. No production code changed.
+Both baseline and final E2Es pass 74 tests and 886 assertions at seed 51748.
+Focused RuboCop, syntax checks, diff checks, warning build, and cleanup pass.
+The two known C warnings remain. The full suite was not repeated for this unit.
+Complete logs, source hashes, patch, and parent review are under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/lint-hygiene-01/`.
+Publication remains pending.
+
+## Local gem acceptance gate (2026-10-21)
+
+Status: ACCEPTED locally. `bundle exec rake test:acceptance` runs the current suite
+except the exact excluded caller-local backreference test. The runner rejects filter inputs
+and checks that the excluded identity and other tests exist.
+`bundle exec rake test` retains the complete legacy suite and its normal exit status.
+CI saves legacy stdout, stderr, and exit status. Unexpected failures, errors, and skips fail CI.
+
+At seed 51748, acceptance passes 1,195 tests and 38,956 assertions, without failures, errors, or skips.
+The retained legacy run has 1,196 tests, 38,958 assertions, and only the documented failure.
+Full RuboCop passes for 155 files. Syntax, workflow shell fixtures, YAML parsing, and cleanup pass.
+The warning build retains two existing C warnings.
+Actionlint was unavailable. Remote GitHub CI and installed-gem checks remain pending.
+Bundler loads Minitest from the 5.27.0 gem path; its source reports version 5.26.2.
+
+Final evidence and parent review are under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/ci-gate-04/`.
+The result links valid earlier logs from attempts 02 and 03.
+Two workers lost assignment state. A later worker stopped at the account usage limit.
+Ownership transfers and recovery packets are recorded outside the repository. Publication remains pending.
+
+## Installed loader and package acceptance (2026-10-21)
+
+Status: ACCEPTED locally. The first isolated install built the C extension,
+but the Ruby loader required itself again and returned without loading the bundle.
+The loader now requests the platform native suffix. It uses the checkout bundle
+when present and propagates missing or invalid extension errors.
+Only `lib/onibi/onibi.rb` changed in production.
+
+The repaired isolated gem passes 18 public smoke checks outside the checkout.
+Native match, capture access, scan, and gsub report zero fallback and no intercepted MRI calls.
+The explicit NOENCODING control reports one fallback. The invalid constructor raises `Onibi::RegexpError`.
+Checkout loading and missing-extension controls pass.
+Acceptance passes 1,195 tests and 38,956 assertions at seed 51748, with no failures, errors, or skips.
+Focused RuboCop, syntax, diff checks, and cleanup pass. Two existing C warnings remain.
+All 118 packaged files match the tested source. Only the loader differs from the original package.
+The pre-existing ignored package artifact was restored.
+
+Parent review corrected two smoke assumptions without changing the original artifact.
+RubyGems can load the installed bundle from its gem lib directory.
+The original constructor literal contained byte 0x01; both engines accept it.
+The corrected smoke uses an unmatched parenthesis and verifies the expected errors.
+
+The repaired gem SHA256 is `d96c7d99760d6c1f2396e5a88bec5ad700e443ec4e1e33e9b9f88b91a19f4514`.
+Complete logs, gem, hashes, raw probes, and parent review are under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/loader-01/`.
+The original package failure remains under sibling `package-01/`.
+Remote CI, final PoC evidence review, and publication remain pending.
+
+## PoC evidence audit (2026-10-21)
+
+Status: findings accepted; PoC acceptance remains open.
+Binary capture-name probes match MRI for ASCII binary, UTF-8 non-ASCII, and binary non-ASCII names.
+The three cases use native execution with zero fallback.
+Explicit grapheme fallback for `x\K(?<letter>\X)` on UTF-8 `あxa` returns 2; MRI returns 1.
+These values are character offsets. Onibi reads the post-reset match start.
+Both runtimes return nil and clear prior match state on the tested miss.
+Conditions 2 and 6 remain open because of this mismatch.
+Condition 7 also needs the complete unsupported-feature rejection inventory.
+The audit reused accepted local acceptance and package evidence. It ran no new full suite.
+No production source changed. Remote CI and publication remain pending.
+Reports, repeatable probes, exact commands, logs, and review are under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/poc-audit-03/`.
+That report references the original probes in sibling `poc-audit-01/`.
+The parent corrected a reversed explanation and incorrect byte-offset labels during review.
+Account use reached 93%; the user stop rule deferred TASK-API-TILDE.
+
+## Explicit tilde fallback reset repair (2026-10-22)
+
+Status: ACCEPTED locally. `onibi_tilde` now uses `rb_reg_match` for explicit fallback.
+The return value uses the original search-attempt character offset, including patterns with `\K`.
+Native eligibility and native execution stay unchanged.
+Public regression cases preceded the C edit and reproduced the expected offset failure.
+Final tilde checks pass 7 tests and 67 assertions; native reset controls pass 1 test and 82 assertions.
+Acceptance passes 1,198 tests and 38,982 assertions at seed 51748, without failures, errors, or skips.
+Focused lint, syntax, diff checks, and cleanup pass. Two known C warnings remain.
+The initial incremental build did not recompile the included C source.
+A clean rebuild compiled the repair before final checks.
+Exact commands, complete logs, source hashes, patch, and parent review are under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/tilde-fallback-01/`.
+Fresh installed-package evidence, the unsupported-feature inventory, remote CI, and publication remain pending.
+
+## Refreshed package and unsupported-reason evidence (2026-10-22)
+
+Status: package ACCEPTED; unsupported inventory PARTIAL.
+The fresh gem contains 118 files that match source `6fced5ed`.
+All 18 installed smoke checks pass outside the checkout.
+Three name cases and two tilde cases match frozen MRI outputs, except documented native MatchData identity.
+The gem SHA256 is `7aa7fb69053a7e7add5bc74d03dd19119206dbb2b62860cf860323b385d7c1c9`.
+The previous ignored package artifact was restored byte-for-byte. No checkout build was needed.
+Exact package commands, logs, hashes, and review are under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/package-refresh-01/`.
+
+The inventory maps all seven unsupported reason values to producer sites.
+Five values have existing test evidence. Four external cases now verify `zero_width_repeat` fallback against MRI.
+Their frozen inputs, commands, outputs, and comparison are in sibling `unsupported-parent-probe/`.
+The partial inventory and parent review are in sibling `unsupported-audit-02/`.
+The parent corrected the reason count and restored the reference to accepted TASK-RAC01 evidence.
+Condition 7 remains open for limit reachability and input-gate/verifier evidence reconciliation.
+No new supported-subset mismatch was found. No PoC completion claim is made.
+Account use reached 93%; the user stop rule deferred the next unit.
+Remote CI and publication remain pending. PR #421 remains draft on another branch.
+
+## Local gem PoC acceptance (2026-10-22)
+
+Status: ACCEPTED locally for GIR 133.1. Remote CI and publication remain pending.
+The parent reviewed all eight conditions against the accepted 1,198-test gate and installed package.
+The class-descriptor limit probe uses 2,732 members and 8,198 source bytes.
+MRI accepts the pattern. Onibi matches its results through explicit `limit` fallback without process failure.
+All seven unsupported reason categories now have direct evidence.
+Eight saved encoding cases match MRI. Two parent probes cover zero-width input and non-binary encoding incompatibility.
+Exception parity combines with source guard order; no post-exception diagnostic counters are claimed.
+Existing negative RSeq tests call the production validator on corrupted copies.
+Production programs stay frozen. Separate executor tests verify hard errors do not select fallback.
+The prior TASK-RAC01 main-Ractor boundary remains valid; native child-Ractor support is outside scope.
+Numeric representation guards have structural evidence. Not every integer ceiling was executed.
+Two known C warnings remain. No production file changed during this closure review.
+Final parent acceptance is recorded under
+`/Users/masa/.codex/onibi-subagent/01a15920-73d8-7fa0-ae13-c1046e05c190/condition7-parent-review/`.
+Sibling `condition7-close-01/evidence/`, `input-gate-map-01/`, and parent probe directories retain exact commands and outputs.
+A worker lost assignment after saving probes. The parent preserved them and narrowed the replacement task.
+This acceptance does not claim full MRI replacement or remote CI success.

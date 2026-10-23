@@ -150,6 +150,59 @@ onibi_token_vector_copy(OnibiTokenVector *vector, const char *bytes,
     return slice;
 }
 
+static int
+onibi_shadow_slice_ascii_digits(const OnibiTokenVector *tokens,
+				OnibiTokenSlice slice, int allow_angle_brackets)
+{
+    if (!slice.present || slice.length == 0 ||
+	slice.offset > tokens->bytes_count ||
+	slice.length > tokens->bytes_count - slice.offset)
+	return 0;
+    size_t start = 0;
+    size_t end = slice.length;
+    const unsigned char *bytes = tokens->bytes + slice.offset;
+    if (allow_angle_brackets && end >= 2 && bytes[0] == '<' &&
+	bytes[end - 1] == '>') {
+	start++;
+	end--;
+    }
+    if (start == end) return 0;
+    for (size_t i = start; i < end; i++)
+	if (bytes[i] < '0' || bytes[i] > '9') return 0;
+    return 1;
+}
+
+static int
+onibi_shadow_identity_name_p(const OnibiTokenVector *tokens,
+			     const OnibiTokenRecord *token)
+{
+    switch (token->kind) {
+    case ONIBI_TOKEN_GROUP_START:
+    case ONIBI_TOKEN_BACKREF: return 1;
+    case ONIBI_TOKEN_SUBROUTINE:
+	return !onibi_shadow_slice_ascii_digits(tokens, token->name, 0);
+    case ONIBI_TOKEN_CONDITIONAL_START:
+	return !onibi_shadow_slice_ascii_digits(tokens, token->name, 1);
+    default: return 0;
+    }
+}
+
+static OnibiTokenSlice
+onibi_token_encode_scalar(OnibiTokenVector *tokens, uint32_t codepoint,
+			  rb_encoding *encoding)
+{
+    unsigned char encoded[16];
+    int width = rb_enc_code_to_mbclen((int)codepoint, encoding);
+    if (width <= 0 || (size_t)width > sizeof(encoded))
+	rb_raise(eRegexpError, "invalid character encoding in regexp");
+    int written =
+	rb_enc_mbcput((unsigned int)codepoint, (char *)encoded, encoding);
+    if (written != width)
+	rb_raise(eRegexpError, "invalid character encoding in regexp");
+    return onibi_token_vector_copy(tokens, (const char *)encoded,
+				   (size_t)written);
+}
+
 static inline const OnibiTokenRecord *
 onibi_token_at(const OnibiTokenVector *vector, long index)
 {
@@ -279,6 +332,7 @@ typedef struct {
     long repeat_close;
     int extended_stack[256];
     long extended_depth;
+    long opened_capture_count;
 } OnibiTokenScanState;
 
 /* Treat braces as interval syntax only when their complete body has the
@@ -380,6 +434,51 @@ onibi_token_find_ascii_delimiter(const OnibiTokenScanState *scan, long start,
 	    if (character == delimiter) return (long)(cursor - source);
 	    if (character_width <= 0) return -1;
 	    cursor += character_width;
+	    continue;
+	}
+	int encoded_length = rb_enc_precise_mbclen(cursor, end, scan->encoding);
+	if (!ONIGENC_MBCLEN_CHARFOUND_P(encoded_length)) return -1;
+	int width = ONIGENC_MBCLEN_CHARFOUND_LEN(encoded_length);
+	if (width <= 0 || cursor + width > end) return -1;
+	cursor += width;
+    }
+    return -1;
+}
+
+/* Find an ASCII delimiter without treating encoded trail bytes or escaped
+ * characters as syntax. */
+static long
+onibi_token_find_unescaped_ascii_delimiter(const OnibiTokenScanState *scan,
+					   long start, unsigned char delimiter)
+{
+    if (start < 0 || start > scan->length) return -1;
+    const char *source = scan->bytes;
+    const char *cursor = source + start;
+    const char *end = source + scan->length;
+    while (cursor < end) {
+	int character_width = 0;
+	int character =
+	    rb_enc_ascget(cursor, end, &character_width, scan->encoding);
+	if (character >= 0) {
+	    if (character_width <= 0) return -1;
+	    if (character == delimiter) return (long)(cursor - source);
+	    cursor += character_width;
+	    if (character != '\\') continue;
+	    if (cursor >= end) return -1;
+	    int escaped_width = 0;
+	    int escaped_character =
+		rb_enc_ascget(cursor, end, &escaped_width, scan->encoding);
+	    if (escaped_character >= 0) {
+		if (escaped_width <= 0) return -1;
+		cursor += escaped_width;
+		continue;
+	    }
+	    int encoded_length =
+		rb_enc_precise_mbclen(cursor, end, scan->encoding);
+	    if (!ONIGENC_MBCLEN_CHARFOUND_P(encoded_length)) return -1;
+	    int width = ONIGENC_MBCLEN_CHARFOUND_LEN(encoded_length);
+	    if (width <= 0 || cursor + width > end) return -1;
+	    cursor += width;
 	    continue;
 	}
 	int encoded_length = rb_enc_precise_mbclen(cursor, end, scan->encoding);
@@ -615,16 +714,8 @@ static void
 onibi_token_push_unicode_scalar(OnibiTokenVector *tokens, long start, long end,
 				uint32_t codepoint, rb_encoding *encoding)
 {
-    unsigned char encoded[16];
-    int width = rb_enc_code_to_mbclen((int)codepoint, encoding);
-    if (width <= 0 || (size_t)width > sizeof(encoded))
-	rb_raise(eRegexpError, "invalid Unicode range");
-    int written =
-	rb_enc_mbcput((unsigned int)codepoint, (char *)encoded, encoding);
-    if (written != width) rb_raise(eRegexpError, "invalid Unicode range");
-
     OnibiTokenSlice bytes =
-	onibi_token_vector_copy(tokens, (const char *)encoded, (size_t)written);
+	onibi_token_encode_scalar(tokens, codepoint, encoding);
     OnibiTokenRecord token = {0};
     token.kind = ONIBI_TOKEN_LITERAL;
     token.byte = tokens->bytes[bytes.offset];
@@ -813,7 +904,8 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 	    cursor_on_last_consumed = 1;
 	    hex_literal = 1;
 	    while (onibi_token_decoded_char_needs_more(
-		tokens, decoded_offset, decoded_length, scan->encoding)) {
+		tokens, decoded_offset, decoded_length,
+		scan->effective_encoding)) {
 		long next_cursor = i;
 		unsigned char next_byte = 0;
 		if (!onibi_token_next_encoded_byte(scan, i, &next_cursor,
@@ -829,29 +921,47 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 		    (OnibiTokenSlice){decoded_offset, decoded_length, 1};
 	}
     }
-    /* Three octal digits form one byte.  Resolve this form before the
-     * numeric backreference rule. */
-    int three_digit_octal = escaped >= '1' && escaped <= '7' &&
-			    i + 2 < scan->length && source[i + 2] >= '0' &&
-			    source[i + 2] <= '7' && i + 3 < scan->length &&
-			    source[i + 3] >= '0' && source[i + 3] <= '7';
-    if (!three_digit_octal && escaped >= '1' && escaped <= '9' &&
-	i + 1 < scan->length && source[i + 1] >= '0' && source[i + 1] <= '9') {
+    /* Resolve a multi-digit reference against captures opened before this
+     * escape. Stop as soon as its value exceeds that bounded count, so a long
+     * digit run cannot overflow the numeric accumulator. */
+    int unresolved_numeric_run = 0;
+    int multi_digit_numeric_run = !scan->in_class && escaped >= '1' &&
+				  escaped <= '9' && i + 2 < scan->length &&
+				  source[i + 2] >= '0' && source[i + 2] <= '9';
+    if (multi_digit_numeric_run) {
 	long number = escaped - '0';
 	long digit = i + 2;
-	while (digit < scan->length && source[digit] >= '0' &&
-	       source[digit] <= '9') {
-	    number = onibi_checked_decimal_append(
-		number, (unsigned char)(source[digit] - '0'));
-	    i = digit++;
+	int matches_opened_capture = number <= scan->opened_capture_count;
+	while (matches_opened_capture && digit < scan->length &&
+	       source[digit] >= '0' && source[digit] <= '9') {
+	    unsigned char decimal_digit = (unsigned char)(source[digit] - '0');
+	    long capture_count = scan->opened_capture_count;
+	    if (number > capture_count / 10 ||
+		(number == capture_count / 10 &&
+		 decimal_digit > (unsigned char)(capture_count % 10))) {
+		matches_opened_capture = 0;
+		break;
+	    }
+	    number = onibi_checked_decimal_append(number, decimal_digit);
+	    digit++;
+	}
+	if (matches_opened_capture &&
+	    (digit == scan->length || source[digit] < '0' ||
+	     source[digit] > '9')) {
+	    recognition->kind = ONIBI_TOKEN_BACKREF;
+	    recognition->capture_number = number;
+	    recognition->has_capture_number = 1;
+	    i = digit - 1;
 	    cursor_on_last_consumed = 1;
 	}
-	recognition->kind = ONIBI_TOKEN_BACKREF;
-	recognition->capture_number = number;
-	recognition->has_capture_number = 1;
+	else {
+	    unresolved_numeric_run = 1;
+	}
     }
     if (!recognition->has_capture_number && escaped >= '1' && escaped <= '7' &&
-	i + 2 < scan->length && source[i + 2] >= '0' && source[i + 2] <= '7') {
+	(scan->in_class || unresolved_numeric_run ||
+	 (i + 2 < scan->length && source[i + 2] >= '0' &&
+	  source[i + 2] <= '7'))) {
 	size_t decoded_offset = tokens->bytes_count;
 	size_t decoded_length = 1;
 	int value = 0;
@@ -866,7 +976,7 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 	unsigned char first_byte = (unsigned char)value;
 	(void)onibi_token_vector_copy(tokens, (const char *)&first_byte, 1);
 	while (onibi_token_decoded_char_needs_more(
-	    tokens, decoded_offset, decoded_length, scan->encoding)) {
+	    tokens, decoded_offset, decoded_length, scan->effective_encoding)) {
 	    long next_cursor = i;
 	    unsigned char next_byte = 0;
 	    if (!onibi_token_next_encoded_byte(scan, i, &next_cursor,
@@ -915,7 +1025,8 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
 	recognition->kind = ONIBI_TOKEN_ANCHOR;
     else if (!scan->in_class && escaped == 'K')
 	recognition->kind = ONIBI_TOKEN_MATCH_RESET;
-    else if (!scan->in_class && escaped >= '1' && escaped <= '9')
+    else if (!scan->in_class && escaped >= '1' && escaped <= '9' &&
+	     !(unresolved_numeric_run && escaped >= '8'))
 	recognition->kind = ONIBI_TOKEN_BACKREF;
     else if (onibi_class_escape_p(escaped))
 	recognition->kind = ONIBI_TOKEN_ESCAPE;
@@ -1056,9 +1167,8 @@ onibi_token_index_delimiters(OnibiTokenVector *tokens)
 }
 
 static void
-onibi_tokenize_internal(VALUE src, int extended,
-			rb_encoding *effective_encoding,
-			OnibiTokenVector *tokens)
+onibi_tokenize_scan(VALUE src, int extended, rb_encoding *effective_encoding,
+		    OnibiTokenVector *tokens)
 {
     onibi_token_vector_init(tokens);
     /* One escape is one semantic token.  Do not let an escaped metacharacter
@@ -1074,8 +1184,18 @@ onibi_tokenize_internal(VALUE src, int extended,
 				.class_body_starts = {0},
 				.repeat_close = -1,
 				.extended_stack = {0},
-				.extended_depth = 0};
+				.extended_depth = 0,
+				.opened_capture_count = 0};
     for (long i = 0; i < scan.length; i++) {
+	if (!scan.in_class && scan.length - i >= 3 && scan.bytes[i] == '(' &&
+	    scan.bytes[i + 1] == '?' && scan.bytes[i + 2] == '#') {
+	    long close =
+		onibi_token_find_unescaped_ascii_delimiter(&scan, i + 3, ')');
+	    if (close >= 0) {
+		i = close;
+		continue;
+	    }
+	}
 	long start = i;
 	OnibiTokenKind kind = ONIBI_TOKEN_LITERAL;
 	unsigned char byte = (unsigned char)scan.bytes[i];
@@ -1159,12 +1279,25 @@ onibi_tokenize_internal(VALUE src, int extended,
 		/* rb_str_substr uses character offsets.  `start` and `char_len`
 		   are byte offsets from the encoding callback, so copy bytes
 		   directly and keep the complete encoded character only. */
-		literal_slice = onibi_token_vector_copy(
-		    tokens, RSTRING_PTR(src) + start, (size_t)char_len);
+		if (rb_enc_asciicompat(effective_encoding)) {
+		    literal_slice = onibi_token_vector_copy(
+			tokens, RSTRING_PTR(src) + start, (size_t)char_len);
+		}
+		else {
+		    uint32_t codepoint = (uint32_t)rb_enc_mbc_to_codepoint(
+			RSTRING_PTR(src) + start,
+			RSTRING_PTR(src) + start + char_len, rb_enc_get(src));
+		    literal_slice = onibi_token_encode_scalar(
+			tokens, codepoint, effective_encoding);
+		}
 		i += char_len - 1;
 		byte = (unsigned char)RSTRING_PTR(src)[start];
 	    }
 	}
+	if (kind == ONIBI_TOKEN_LITERAL && !literal_slice.present &&
+	    !rb_enc_asciicompat(effective_encoding) && byte < 0x80)
+	    literal_slice =
+		onibi_token_encode_scalar(tokens, byte, effective_encoding);
 	if (kind == ONIBI_TOKEN_GROUP_START ||
 	    kind == ONIBI_TOKEN_NONCAPTURE_START ||
 	    kind == ONIBI_TOKEN_ATOMIC_START ||
@@ -1223,10 +1356,148 @@ onibi_tokenize_internal(VALUE src, int extended,
 	    (unsigned char)(option_negative ? 1 : 0),
 	    (unsigned char)from_escape};
 	onibi_token_record_push(tokens, record);
+	if (kind == ONIBI_TOKEN_GROUP_START) {
+	    if (scan.opened_capture_count == LONG_MAX)
+		rb_raise(eRegexpError, "too many capture groups in regexp");
+	    scan.opened_capture_count++;
+	}
 	if (kind == ONIBI_TOKEN_GROUP_END && scan.extended_depth > 0) {
 	    int prior_extended = scan.extended_stack[--scan.extended_depth];
 	    if (prior_extended >= 0) scan.extended = prior_extended;
 	}
     }
     onibi_token_index_delimiters(tokens);
+}
+
+typedef struct {
+    VALUE source;
+    VALUE shadow;
+    int extended;
+    rb_encoding *effective_encoding;
+    OnibiTokenVector *tokens;
+    long *source_offsets;
+} OnibiTokenShadowArgs;
+
+static void
+onibi_token_source_offsets(VALUE source, VALUE shadow, long **output)
+{
+    long source_length = RSTRING_LEN(source);
+    long shadow_length = RSTRING_LEN(shadow);
+    if (shadow_length < 0 ||
+	(size_t)shadow_length > SIZE_MAX / sizeof(long) - 1)
+	rb_raise(rb_eNoMemError, "regexp source offset map is too large");
+    long *offsets = ALLOC_N(long, (size_t)shadow_length + 1);
+    *output = offsets;
+    rb_encoding *source_encoding = rb_enc_get(source);
+    rb_encoding *shadow_encoding = rb_enc_get(shadow);
+    const char *source_bytes = RSTRING_PTR(source);
+    const char *shadow_bytes = RSTRING_PTR(shadow);
+    long source_position = 0;
+    long shadow_position = 0;
+
+    while (source_position < source_length && shadow_position < shadow_length) {
+	int source_width_result = rb_enc_precise_mbclen(
+	    source_bytes + source_position, source_bytes + source_length,
+	    source_encoding);
+	int shadow_width_result = rb_enc_precise_mbclen(
+	    shadow_bytes + shadow_position, shadow_bytes + shadow_length,
+	    shadow_encoding);
+	if (!ONIGENC_MBCLEN_CHARFOUND_P(source_width_result) ||
+	    !ONIGENC_MBCLEN_CHARFOUND_P(shadow_width_result))
+	    rb_raise(eRegexpError, "invalid character encoding in regexp");
+	int source_width = ONIGENC_MBCLEN_CHARFOUND_LEN(source_width_result);
+	int shadow_width = ONIGENC_MBCLEN_CHARFOUND_LEN(shadow_width_result);
+	uint32_t source_codepoint = (uint32_t)rb_enc_mbc_to_codepoint(
+	    source_bytes + source_position,
+	    source_bytes + source_position + source_width, source_encoding);
+	uint32_t shadow_codepoint = (uint32_t)rb_enc_mbc_to_codepoint(
+	    shadow_bytes + shadow_position,
+	    shadow_bytes + shadow_position + shadow_width, shadow_encoding);
+	if (source_codepoint != shadow_codepoint)
+	    rb_raise(eRegexpError,
+		     "regexp source conversion changed a character");
+	for (int i = 0; i < shadow_width; i++)
+	    offsets[shadow_position + i] = source_position;
+	source_position += source_width;
+	shadow_position += shadow_width;
+	offsets[shadow_position] = source_position;
+    }
+    if (source_position != source_length || shadow_position != shadow_length)
+	rb_raise(eRegexpError, "regexp source conversion changed its length");
+    offsets[0] = 0;
+    offsets[shadow_length] = source_length;
+}
+
+static VALUE
+onibi_tokenize_shadow_body(VALUE opaque)
+{
+    OnibiTokenShadowArgs *args = (OnibiTokenShadowArgs *)(uintptr_t)opaque;
+    onibi_token_source_offsets(args->source, args->shadow,
+			       &args->source_offsets);
+    onibi_tokenize_scan(args->shadow, args->extended, args->effective_encoding,
+			args->tokens);
+    long shadow_length = RSTRING_LEN(args->shadow);
+    for (size_t i = 0; i < args->tokens->count; i++) {
+	OnibiTokenRecord *token = &args->tokens->items[i];
+	if (token->name.present &&
+	    onibi_shadow_identity_name_p(args->tokens, token)) {
+	    VALUE utf8_name = rb_enc_str_new(
+		(const char *)args->tokens->bytes + token->name.offset,
+		(long)token->name.length, rb_utf8_encoding());
+	    VALUE source_name =
+		rb_str_export_to_enc(utf8_name, rb_enc_get(args->source));
+	    token->name =
+		onibi_token_vector_copy(args->tokens, RSTRING_PTR(source_name),
+					(size_t)RSTRING_LEN(source_name));
+	    RB_GC_GUARD(utf8_name);
+	    RB_GC_GUARD(source_name);
+	}
+	if (token->start >= 0) {
+	    if (token->start > shadow_length)
+		rb_raise(eRegexpError, "regexp token starts outside source");
+	    token->start = args->source_offsets[token->start];
+	}
+	if (token->end >= 0) {
+	    if (token->end > shadow_length)
+		rb_raise(eRegexpError, "regexp token ends outside source");
+	    token->end = args->source_offsets[token->end];
+	}
+    }
+    return Qnil;
+}
+
+static VALUE
+onibi_tokenize_shadow_cleanup(VALUE opaque)
+{
+    OnibiTokenShadowArgs *args = (OnibiTokenShadowArgs *)(uintptr_t)opaque;
+    if (args->source_offsets != NULL) {
+	xfree(args->source_offsets);
+	args->source_offsets = NULL;
+    }
+    return Qnil;
+}
+
+static void
+onibi_tokenize_internal(VALUE source, int extended,
+			rb_encoding *effective_encoding,
+			OnibiTokenVector *tokens)
+{
+    rb_encoding *source_encoding = rb_enc_get(source);
+    if (rb_enc_asciicompat(source_encoding)) {
+	onibi_tokenize_scan(source, extended, effective_encoding, tokens);
+	return;
+    }
+
+    OnibiTokenShadowArgs args = {
+	.source = source,
+	.shadow = rb_str_export_to_enc(source, rb_utf8_encoding()),
+	.extended = extended,
+	.effective_encoding = effective_encoding,
+	.tokens = tokens,
+	.source_offsets = NULL,
+    };
+    rb_ensure(onibi_tokenize_shadow_body, (VALUE)(uintptr_t)&args,
+	      onibi_tokenize_shadow_cleanup, (VALUE)(uintptr_t)&args);
+    RB_GC_GUARD(args.source);
+    RB_GC_GUARD(args.shadow);
 }

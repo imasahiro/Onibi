@@ -23,5 +23,7 @@ onibi_rseq_lower_with_failure(VALUE compiled, int failure_phase,
 static int onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view);
 static void onibi_rseq_view_prepare(OnibiRSeqView *view);
 static void onibi_rseq_blob_validate(VALUE blob);
+static VALUE onibi_rseq_initialization_failure_diagnostics(VALUE pattern,
+							   VALUE details);
 
 #endif

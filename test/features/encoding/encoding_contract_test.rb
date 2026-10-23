@@ -6,6 +6,9 @@ require "yaml"
 class EncodingContractTest < Minitest::Test
   MATRIX = :encoding
   REQUIRED_ENCODINGS = %w[ASCII-8BIT EUC-JP US-ASCII UTF-8 Windows-31J].freeze
+  NON_ASCII_COMPATIBLE_ENCODINGS = [
+    Encoding::UTF_16LE, Encoding::UTF_16BE, Encoding::UTF_32LE, Encoding::UTF_32BE
+  ].freeze
 
   def test_matrix_covers_ascii_compatible_pairs_including_us_ascii
     matrix = TestFixtures.load(MATRIX)
@@ -90,6 +93,287 @@ class EncodingContractTest < Minitest::Test
         onibi = Onibi::Regexp.new(pattern).match?(input)
 
         assert_equal mri, onibi
+      end
+    end
+  end
+
+  def test_non_ascii_compatible_class_tokens_use_codepoint_boundaries
+    cases = [
+      ["[ś]", %w[ś], %w[Š A]],
+      ["[ŝ]", %w[ŝ], %w[Ŝ A]],
+      ["[ĭ-ŝ]", %w[ĭ Ŕ ŝ], %w[Ť A]],
+      ["[Ş]", %w[Ş], %w[ş A]],
+      ["[Ħ&&[^Ŝ]]", %w[Ħ], %w[Ŝ A]],
+      ["[Ŝ]", %w[Ŝ], %w[ŝ A]],
+      ["[ÿ-Ā]", %w[ÿ Ā], %w[A ŷ]]
+    ]
+
+    [Encoding::UTF_16LE, Encoding::UTF_16BE, Encoding::UTF_32LE, Encoding::UTF_32BE].each do |encoding|
+      cases.each do |source, matching_inputs, nonmatching_inputs|
+        regexp = Regexp.new(source.encode(encoding))
+        onibi = Onibi::Regexp.new(source.encode(encoding))
+
+        (matching_inputs + nonmatching_inputs).each do |input|
+          assert_equal regexp.match?(input.encode(encoding)),
+                       onibi.match?(input.encode(encoding)),
+                       "#{encoding.name} #{source.inspect} #{input.inspect}"
+        end
+      end
+    end
+  end
+
+  def test_mixed_class_programs_match_mri_with_same_native_route
+    programs = [
+      ["class_ascii_tail", "(?<glyph>[あ])x", [["あx", nil], ["いx", nil], ["zあx", 1]]],
+      ["escaped_punctuation", '(?<glyph>[あ])\\-\\]', [["あ-]", nil], ["あ--", nil]]],
+      ["control_octal_hex", '(?<glyph>[あ])\\n\\101\\x42', [["あ\nAB", nil], ["あ\nAC", nil]]],
+      ["named_backreference", '(?<unit>[あ])\\k<unit>', [["ああ", nil], ["あい", nil]]],
+      ["named_subexpression_call", '(?<unit>[あ])\\g<unit>', [["ああ", nil], ["あい", nil]]],
+      ["anchors_and_dot", '\\A(?<head>x)(?<glyph>[あ]).\\z', [["xあ😀", nil], ["xあ\n", nil]]],
+      ["lookahead", '\\A(?<head>x)(?<glyph>[あ])(?=y)', [["xあy", nil], ["xあz", nil]]],
+      ["lookbehind", "(?<=(?<head>x))(?<glyph>[あ])", [["xあy", nil], ["zあy", nil]]],
+      ["extended_comment", "(?x:(?<head>x) [あ] # skip\n \\k<head>)", [["xあx", nil], ["xあy", nil]]],
+      ["pattern_comment", "(?<head>x)(?#skip)[あ]", [["xあ", nil], ["yあ", nil]]],
+      ["nonbmp_before_named_class", "😀(?<kana>[あ])", [["x😀あ", 1], ["😀あ", 0]]],
+      ["nonbmp_and_property_name", '(?<face>😀)(?<kana>\\p{Hiragana}+)[a-z]', [["x😀あいx", 1], ["😀カx", 0]]],
+      ["unicode_capture_name", "(?<顔>😀)[あ]", [["😀あ", nil], ["x😀あ", nil]]],
+      ["suffix_search", "[あ](?<tail>x)", [["zあxzあx", 0], ["zあxzあx", 3]]]
+    ]
+
+    programs.each do |name, pattern_source, inputs|
+      inputs.each do |input_text, start|
+        utf8_pattern = pattern_source.encode(Encoding::UTF_8)
+        utf8_input = input_text.encode(Encoding::UTF_8)
+        expected = match_signature(::Regexp, utf8_pattern, utf8_input, start)
+        actual = match_signature(Onibi::Regexp, utf8_pattern, utf8_input, start)
+        assert_equal expected, actual, "#{name} UTF-8 control"
+        utf8_route = route_signature(utf8_pattern, utf8_input)
+
+        NON_ASCII_COMPATIBLE_ENCODINGS.each do |encoding|
+          pattern = pattern_source.encode(encoding)
+          input = input_text.encode(encoding)
+          expected = match_signature(::Regexp, pattern, input, start)
+          actual = match_signature(Onibi::Regexp, pattern, input, start)
+
+          assert_equal expected, actual, "#{name} #{encoding.name}"
+          next if expected.key?(:error_class)
+
+          route = route_signature(pattern, input)
+          assert_equal utf8_route.slice(:fallback, :exec_kind, :rseq),
+                       route.slice(:fallback, :exec_kind, :rseq),
+                       "#{name} route in #{encoding.name}"
+          assert_operator route.fetch(:native_runs), :>, 0
+        end
+      end
+    end
+  end
+
+  def test_non_ascii_compatible_class_repeats_match_mri
+    programs = [
+      ["exact_repeat", '\\A[あ]{2}\\z', %w[ああ あ あああ]],
+      ["bounded_repeat", '\\A[あ]{2,3}\\z', %w[ああ あああ あ ああああ]],
+      ["open_upper_repeat", '\\A[あ]{2,}\\z', %w[ああ あああ あ]]
+    ]
+
+    programs.each do |name, pattern_source, input_texts|
+      input_texts.each do |input_text|
+        utf8_pattern = pattern_source.encode(Encoding::UTF_8)
+        utf8_input = input_text.encode(Encoding::UTF_8)
+        expected = match_signature(::Regexp, utf8_pattern, utf8_input, nil)
+        actual = match_signature(Onibi::Regexp, utf8_pattern, utf8_input, nil)
+        assert_equal expected, actual, "#{name} UTF-8 control"
+        utf8_route = route_signature(utf8_pattern, utf8_input)
+
+        NON_ASCII_COMPATIBLE_ENCODINGS.each do |encoding|
+          pattern = pattern_source.encode(encoding)
+          input = input_text.encode(encoding)
+          expected = match_signature(::Regexp, pattern, input, nil)
+          actual = match_signature(Onibi::Regexp, pattern, input, nil)
+
+          assert_equal expected, actual, "#{name} #{encoding.name}"
+          assert_equal utf8_route, route_signature(pattern, input),
+                       "#{name} route in #{encoding.name}"
+        end
+      end
+    end
+  end
+
+  def test_non_ascii_compatible_named_capture_and_property_slices_match_mri
+    programs = [
+      ["named_property", '(?<kana>\\p{Hiragana}+)', %w[あい カ]],
+      ["named_capture_condition", "(?<unit>[あ])?(?(<unit>)x|y)", %w[あx y]]
+    ]
+
+    programs.each do |name, pattern_source, input_texts|
+      utf8_pattern = pattern_source.encode(Encoding::UTF_8)
+
+      NON_ASCII_COMPATIBLE_ENCODINGS.each do |encoding|
+        pattern = pattern_source.encode(encoding)
+        input_texts.each do |input_text|
+          input = input_text.encode(encoding)
+          utf8_input = input_text.encode(Encoding::UTF_8)
+          expected_utf8 = match_signature(::Regexp, utf8_pattern, utf8_input, nil)
+          actual_utf8 = match_signature(Onibi::Regexp, utf8_pattern, utf8_input, nil)
+
+          assert_equal expected_utf8, actual_utf8, "#{name} UTF-8 control"
+          utf8_route = route_signature(utf8_pattern, utf8_input)
+          expected = match_signature(::Regexp, pattern, input, nil)
+          actual = match_signature(Onibi::Regexp, pattern, input, nil)
+          route = route_signature(pattern, input)
+
+          assert_equal expected, actual, "#{name} #{encoding.name} #{input_text.inspect}"
+          assert_equal utf8_route.slice(:status, :fallback, :exec_kind, :rseq),
+                       route.slice(:status, :fallback, :exec_kind, :rseq),
+                       "#{name} route in #{encoding.name}"
+          assert_operator route.fetch(:native_runs), :>, 0
+        end
+      end
+    end
+  end
+
+  def test_named_match_data_lookup_preserves_source_encoded_names
+    names = %w[unit 顔]
+    encodings = [Encoding::UTF_8, *NON_ASCII_COMPATIBLE_ENCODINGS]
+
+    encodings.each do |encoding|
+      names.each do |capture_name|
+        source = "(?<#{capture_name}>[あ])".encode(encoding)
+        input = "あ".encode(encoding)
+        mri_regexp = ::Regexp.new(source)
+        onibi_regexp = Onibi::Regexp.new(source)
+        mri = mri_regexp.match(input)
+        onibi = onibi_regexp.match(input)
+
+        assert_instance_of Onibi::MatchData, onibi
+        assert_equal encoded_strings(mri_regexp.names), encoded_strings(onibi_regexp.names)
+        assert_equal encoded_named_capture_indexes(mri_regexp.named_captures),
+                     encoded_named_capture_indexes(onibi_regexp.named_captures)
+        assert_equal encoded_strings(mri.names), encoded_strings(onibi.names)
+        assert_equal encoded_named_captures(mri.named_captures),
+                     encoded_named_captures(onibi.named_captures)
+        assert_equal encoded_named_captures(mri.named_captures(symbolize_names: true)),
+                     encoded_named_captures(onibi.named_captures(symbolize_names: true))
+
+        route = route_signature(source, input)
+        assert_operator route.fetch(:native_runs), :>, 0, "#{capture_name} #{encoding.name}"
+
+        name = mri.names.fetch(0)
+        utf8_name = name.encode(Encoding::UTF_8)
+        selectors = [name, utf8_name, name.b, name.to_sym, utf8_name.to_sym]
+        %i[[] begin end offset byteoffset match_length].each do |method|
+          selectors.each do |selector|
+            expected = named_access_signature(mri, method, selector)
+            actual = named_access_signature(onibi, method, selector)
+
+            assert_equal expected, actual,
+                         "#{method} #{selector.inspect} #{capture_name} #{encoding.name}"
+          end
+        end
+      end
+    end
+  end
+
+  def test_duplicate_unmatched_and_missing_encoded_names_match_mri
+    [Encoding::UTF_8, *NON_ASCII_COMPATIBLE_ENCODINGS].each do |encoding|
+      duplicate_source = "(?<dup>[あ])?(?<dup>[い])?".encode(encoding)
+      %w[あい あ い].each do |input_text|
+        input = input_text.encode(encoding)
+        mri = ::Regexp.new(duplicate_source).match(input)
+        onibi_regexp = Onibi::Regexp.new(duplicate_source)
+        onibi = onibi_regexp.match(input)
+
+        assert_instance_of Onibi::MatchData, onibi
+        assert_equal encoded_named_captures(mri.named_captures),
+                     encoded_named_captures(onibi.named_captures)
+        name = mri.names.fetch(0)
+        [name, name.to_sym].each do |selector|
+          assert_equal named_access_signature(mri, :[], selector),
+                       named_access_signature(onibi, :[], selector),
+                       "duplicate #{selector.inspect} #{encoding.name}"
+        end
+        route = route_signature(duplicate_source, input)
+        assert_operator route.fetch(:native_runs), :>, 0, "duplicate #{encoding.name}"
+      end
+
+      unmatched_source = "(?<unit>[あ])?い".encode(encoding)
+      input = "い".encode(encoding)
+      mri = ::Regexp.new(unmatched_source).match(input)
+      onibi = Onibi::Regexp.new(unmatched_source).match(input)
+      assert_instance_of Onibi::MatchData, onibi
+      assert_equal encoded_named_captures(mri.named_captures),
+                   encoded_named_captures(onibi.named_captures)
+
+      missing = "missing".encode(encoding)
+      selectors = [missing, missing.encode(Encoding::UTF_8), missing.to_sym]
+      selectors.each do |selector|
+        assert_equal named_access_signature(mri, :[], selector),
+                     named_access_signature(onibi, :[], selector),
+                     "missing #{selector.inspect} #{encoding.name}"
+      end
+      route = route_signature(unmatched_source, input)
+      assert_operator route.fetch(:native_runs), :>, 0, "unmatched #{encoding.name}"
+    end
+  end
+
+  def test_non_ascii_compatible_numbered_capture_slices_keep_syntax
+    programs = [
+      ["numbered_backreference", '([あ])\\1', %w[ああ あい]],
+      ["numbered_subroutine_call", '([あ])\\g<1>', %w[ああ あ]],
+      ["numbered_capture_condition", "([あ])?(?(1)x|y)", %w[あx y]]
+    ]
+
+    programs.each do |name, pattern_source, input_texts|
+      utf8_pattern = pattern_source.encode(Encoding::UTF_8)
+
+      NON_ASCII_COMPATIBLE_ENCODINGS.each do |encoding|
+        pattern = pattern_source.encode(encoding)
+        input_texts.each do |input_text|
+          input = input_text.encode(encoding)
+          utf8_input = input_text.encode(Encoding::UTF_8)
+          expected_utf8 = match_signature(::Regexp, utf8_pattern, utf8_input, nil)
+          actual_utf8 = match_signature(Onibi::Regexp, utf8_pattern, utf8_input, nil)
+
+          assert_equal expected_utf8, actual_utf8, "#{name} UTF-8 control"
+          utf8_route = route_signature(utf8_pattern, utf8_input)
+          expected = match_signature(::Regexp, pattern, input, nil)
+          actual = match_signature(Onibi::Regexp, pattern, input, nil)
+          route = route_signature(pattern, input)
+
+          assert_equal expected, actual, "#{name} #{encoding.name} #{input_text.inspect}"
+          assert_equal utf8_route.slice(:status, :fallback, :exec_kind, :rseq),
+                       route.slice(:status, :fallback, :exec_kind, :rseq),
+                       "#{name} route in #{encoding.name}"
+          assert_operator route.fetch(:native_runs), :>, 0
+        end
+      end
+    end
+  end
+
+  def test_mixed_width_nested_class_ranges_match_mri
+    programs = [
+      ["nested_without_trailing_literal", "[a-[b]]", %w[a b c]],
+      ["nested_with_trailing_literal", "[a-[b]c]", %w[a b c d]],
+      ["mixed_width_range_endpoints", "[Ā-[a]😀]", %w[a ÿ Ā ā あ 😀 😁]],
+      ["mixed_width_range_without_trailing_literal", "[Ā-[a]]", %w[a Ā 😀]]
+    ]
+
+    programs.each do |name, pattern_source, input_texts|
+      input_texts.each do |input_text|
+        NON_ASCII_COMPATIBLE_ENCODINGS.each do |encoding|
+          pattern = pattern_source.encode(encoding)
+          input = input_text.encode(encoding)
+          expected = match_signature(::Regexp, pattern, input, nil)
+          actual = match_signature(Onibi::Regexp, pattern, input, nil)
+
+          assert_equal expected, actual, "#{name} #{encoding.name} #{input_text.inspect}"
+          route = route_signature(pattern, input)
+          assert route.fetch(:rseq),
+                 "#{name} must compile RSeq in #{encoding.name}"
+          assert_equal 0, route.fetch(:fallback),
+                       "#{name} must not use runtime fallback in #{encoding.name}"
+          assert_operator route.fetch(:native_runs), :>, 0,
+                          "#{name} must enter a native VM in #{encoding.name}"
+        end
       end
     end
   end
@@ -243,5 +527,78 @@ class EncodingContractTest < Minitest::Test
       @valid_encoding_calls += 1
       super
     end
+  end
+
+  private
+
+  def encoded_strings(values)
+    values.map { |value| [value.encoding.name, value.b] }
+  end
+
+  def encoded_named_capture_indexes(captures)
+    captures.map do |name, indices|
+      [[name.encoding.name, name.b], indices]
+    end
+  end
+
+  def encoded_named_captures(captures)
+    captures.map do |name, value|
+      encoded_name = if name.is_a?(Symbol)
+                       [:symbol, name.to_s.encoding.name, name.to_s.b]
+                     else
+                       [:string, name.encoding.name, name.b]
+                     end
+      encoded_value = value && [value.encoding.name, value.b]
+      [encoded_name, encoded_value]
+    end
+  end
+
+  def named_access_signature(match, method, selector)
+    value = method == :[] ? match[selector] : match.public_send(method, selector)
+    if value.is_a?(String)
+      [:value, value.encoding.name, value.b]
+    else
+      [:value, value]
+    end
+  rescue StandardError => e
+    [:error, e.class.name, e.message.encoding.name, e.message.b]
+  end
+
+  def match_signature(regexp_class, source, input, start)
+    regexp = regexp_class.new(source)
+    match = start.nil? ? regexp.match(input) : regexp.match(input, start)
+    result = if match
+               {
+                 matched: true,
+                 captures: match.to_a.map { |value| value && [value.encoding.name, value.b] },
+                 offsets: (0...match.length).map { |index| match.offset(index) },
+                 byte_offsets: (0...match.length).map { |index| match.byteoffset(index) },
+                 named_values: match.named_captures.transform_values do |value|
+                   value && [value.encoding.name, value.b]
+                 end
+               }
+             else
+               { matched: false }
+             end
+    { encoding: regexp.encoding.name, names: regexp.names,
+      named_captures: regexp.named_captures, result: result }
+  rescue StandardError => e
+    error_class = if e.is_a?(::RegexpError) || e.instance_of?(::Onibi::RegexpError)
+                    "RegexpError"
+                  else
+                    e.class.name
+                  end
+    { error_class: error_class, error_encoding: e.message.encoding.name,
+      error_bytes: e.message.b }
+  end
+
+  def route_signature(source, input)
+    regexp = Onibi::Regexp.new(source)
+    info = regexp.send(:__onibi_diagnostics__, input)
+    native_runs = info.values_at(:regular, :tagged, :dynamic).sum
+    {
+      status: info[:status], fallback: info[:fallback], exec_kind: info[:exec_kind],
+      rseq: info[:rseq], native_runs: native_runs
+    }
   end
 end

@@ -597,6 +597,8 @@ struct onibi_regexp_t {
     OnibiCompileErrorKind compile_error_kind;
     OnibiUnsupportedReason unsupported_reason;
     OnibiUnsupportedReason fallback_reason;
+    /* Per-instance context for private initialization diagnostics. */
+    void *initialization_failure_diagnostic;
     /* Private compile telemetry. It records lowering work for focused tests. */
     OnibiLoweringWork lowering_work;
     double timeout_seconds;
@@ -626,7 +628,10 @@ onibi_vm_input_eligible(const onibi_regexp_t *obj, VALUE str)
 {
     int encoding = rb_enc_get_index(str);
     int subject_ascii_only = rb_enc_str_asciionly_p(str);
-    if (!rb_enc_asciicompat(rb_enc_from_index(obj->source_encoding_index)))
+    /* Class descriptors decode characters through MRI's encoding callbacks.
+     * Keep other non-ASCII-compatible source encodings outside this path. */
+    if (!rb_enc_asciicompat(rb_enc_from_index(obj->source_encoding_index)) &&
+	obj->rseq_view.header->class_count == 0)
 	return ONIBI_RUNTIME_FALLBACK_INPUT_INELIGIBLE;
     /* DYNAMIC executes all case-fold paths in the native interpreter. */
     if (obj->rseq_view.header->exec_kind != ONIBI_EXEC_DYNAMIC &&

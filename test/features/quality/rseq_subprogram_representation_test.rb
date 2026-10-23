@@ -73,7 +73,7 @@ class RSeqSubprogramRepresentationTest < Minitest::Test
 
     assert_operator entry_edge[1], :>, 0
     action_index = (entry_edge[1] / 8) - 1
-    assert_equal [1, 0, 0], info[:actions][action_index]
+    assert_equal [1, 4, 0], info[:actions][action_index]
   end
 
   def test_called_subprogram_keeps_definition_site_options
