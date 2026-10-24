@@ -1582,3 +1582,20 @@ Final parent acceptance is recorded under
 Sibling `condition7-close-01/evidence/`, `input-gate-map-01/`, and parent probe directories retain exact commands and outputs.
 A worker lost assignment after saving probes. The parent preserved them and narrowed the replacement task.
 This acceptance does not claim full MRI replacement or remote CI success.
+
+## Native incremental build dependencies (2026-10-24)
+
+Status: ACCEPTED locally. Remote CI and integration remain pending.
+The extension object now depends on the local C modules included by `onibi.c`.
+The dependency rule follows the generated targets. This preserves default linking and mkmf header dependencies.
+The saved baseline confirms that an included C edit previously left the object unchanged.
+The E2E check now confirms compilation after C and header edits, followed by an unchanged build.
+The linked extension returns native MatchData with the same offsets and captures as MRI.
+The fresh gem builds and installs outside the checkout. Its packaged E2E check also passes.
+Acceptance passes 1,198 tests and 38,982 assertions at seed 51748, without failures, errors, or skips.
+Focused lint, syntax, diff checks, and `make distclean` pass. Two known C warnings remain.
+The parent corrected the inherited default-target defect and three style errors.
+Only whitespace changed in `extconf.rb` after acceptance. Final build and package checks use the final configuration.
+Exact commands, complete logs, source hashes, and review are under
+`/Users/masa/.codex/onibi-subagent/01a16c16-2107-7ca2-a3b8-cb2a07ea1ddb/`.
+The prior baseline remains under sibling run `01a15920-73d8-7fa0-ae13-c1046e05c190/build-dependencies-01/`.
