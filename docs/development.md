@@ -319,3 +319,20 @@ ruby -Ilib -Itest test/features/compatibility/fuzz_test.rb
 
 Use `make distclean` after verification. Do not remove generated files with
 manual recursive deletion.
+
+### Incremental build verification
+
+The extension compiles `onibi.c` as one translation unit.
+Its object depends on all local C modules and the headers tracked by mkmf.
+Run this E2E check with new output paths:
+
+```sh
+ruby script/build_dependency_e2e.rb --mode fixed \
+  --work-dir /tmp/onibi-build-check --output /tmp/onibi-build-check.json
+```
+
+The check copies extension sources before it changes a C module and a header.
+Both changes must cause compilation. A further build must leave the object unchanged.
+The check also loads the extension and compares a native match with MRI.
+The JSON report records commands, results, source hashes, and build artifacts.
+The `baseline` mode checks the old missing C dependency before a repair.
